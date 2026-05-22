@@ -283,7 +283,7 @@ function setupPINHandler() {
 function setupPWA() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
-      .register("./js/service-worker.js")
+      .register("/moneymanagement/js/service-worker.js", { scope: "/moneymanagement/" })
       .then((reg) => console.log("Service Worker registered:", reg))
       .catch((err) => console.log("Service Worker registration failed:", err));
   }
