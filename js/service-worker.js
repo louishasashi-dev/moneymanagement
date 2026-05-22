@@ -1,39 +1,51 @@
-// Service Worker sederhana untuk PWA
-const CACHE_NAME = "money-manager-v1";
+const CACHE_NAME = "money-manager-v2";
+const BASE = "/moneymanagement";
+
+const ASSETS = [
+  BASE + "/",
+  BASE + "/index.html",
+  BASE + "/css/style.css",
+  BASE + "/js/app.js",
+  BASE + "/js/db.js",
+  BASE + "/js/utils.js",
+  BASE + "/js/dashboard.js",
+  BASE + "/js/transaction.js",
+  BASE + "/js/wallet.js",
+  BASE + "/js/savings.js",
+  BASE + "/js/debt.js",
+  BASE + "/js/report.js",
+  BASE + "/js/settings.js",
+  BASE + "/manifest.json",
+  BASE + "/images/icons/icon-192x192.png",
+  BASE + "/images/icons/icon-512x512.png",
+];
 
 self.addEventListener("install", (event) => {
-  console.log("Service Worker installed");
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll([
-        "/",
-        "/index.html",
-        "/css/style.css",
-        "/js/app.js",
-        "/manifest.json",
-      ]);
-    }),
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)),
   );
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)),
+        ),
+      ),
+  );
+  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    }),
-  );
-});
-
-self.addEventListener("activate", (event) => {
-  console.log("Service Worker activated");
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
-        }),
+    caches.match(event.request).then((cached) => {
+      return (
+        cached ||
+        fetch(event.request).catch(() => caches.match(BASE + "/index.html"))
       );
     }),
   );
