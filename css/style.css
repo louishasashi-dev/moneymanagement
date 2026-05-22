@@ -114,7 +114,6 @@ body {
   padding-bottom: 80px;
 }
 
-/* Bottom Navigation - Mobile */
 .bottom-nav {
   display: none;
   position: fixed;
@@ -125,7 +124,7 @@ body {
   border-top: 1px solid var(--border-color);
   padding: 10px 20px;
   justify-content: space-around;
-  z-index: 99;
+  z-index: 600;
 }
 
 .bottom-nav-item {
@@ -287,7 +286,10 @@ body {
 }
 .more-menu-backdrop {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 60px;
   background: rgba(0, 0, 0, 0.4);
 }
 .more-menu-content {
