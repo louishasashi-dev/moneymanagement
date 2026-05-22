@@ -377,9 +377,8 @@ function togglePin() {
   );
 }
 
-// Backup data to JSON file
 async function backupData() {
-  showToast("Membackup data...", "info");
+  showToast("Menyiapkan backup...", "info");
 
   try {
     const data = await exportAllData();
@@ -390,15 +389,70 @@ async function backupData() {
     const date = new Date();
     const filename = `money_manager_backup_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}.json`;
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    showToast("Backup berhasil!", "success");
+    if (isMobile) {
+      // Popup khusus mobile — tidak auto-trigger download browser
+      const overlay = document.createElement("div");
+      overlay.style.cssText = `
+        position:fixed;inset:0;background:rgba(0,0,0,.5);
+        z-index:99999;display:flex;align-items:flex-end;justify-content:center;
+      `;
+      overlay.innerHTML = `
+        <div style="
+          background:var(--bg-secondary);width:100%;max-width:480px;
+          border-radius:20px 20px 0 0;padding:24px 24px 36px;
+        ">
+          <div style="width:40px;height:4px;background:var(--border-color);border-radius:2px;margin:0 auto 20px;"></div>
+          <h3 style="margin:0 0 6px;font-size:1.1rem;">💾 Backup Siap</h3>
+          <p style="margin:0 0 20px;color:var(--text-secondary);font-size:.9rem;">
+            File: <strong>${filename}</strong>
+          </p>
+          <a id="backup-download-btn" href="${url}" download="${filename}" style="
+            display:block;width:100%;padding:14px;text-align:center;
+            background:var(--info);color:#fff;border-radius:12px;
+            font-size:1rem;font-weight:600;text-decoration:none;
+            box-sizing:border-box;margin-bottom:10px;
+          ">
+            <i class="fas fa-download"></i>&nbsp; Download File
+          </a>
+          <button id="backup-close-btn" style="
+            display:block;width:100%;padding:12px;text-align:center;
+            background:var(--border-color);color:var(--text-primary);
+            border:none;border-radius:12px;font-size:.95rem;cursor:pointer;
+          ">Tutup</button>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const close = () => {
+        overlay.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      document
+        .getElementById("backup-download-btn")
+        .addEventListener("click", () => {
+          showToast("Backup berhasil didownload!", "success");
+          setTimeout(close, 800);
+        });
+      document
+        .getElementById("backup-close-btn")
+        .addEventListener("click", close);
+      overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+      });
+    } else {
+      // Desktop — tetap pakai cara lama
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("Backup berhasil!", "success");
+    }
   } catch (error) {
     console.error("Backup error:", error);
     showToast("Gagal backup data", "error");
