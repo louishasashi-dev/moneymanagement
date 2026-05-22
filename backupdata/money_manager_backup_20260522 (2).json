@@ -1,0 +1,364 @@
+{
+  "transactions": [
+    {
+      "itemName": "Makan di warteg",
+      "amount": 15000,
+      "type": "expense",
+      "category": "Makanan",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "10:00",
+      "createdAt": 1779431053796,
+      "id": 4
+    },
+    {
+      "itemName": "Jajan di kantin kampus",
+      "amount": 14000,
+      "type": "expense",
+      "category": "Makanan",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "10:20",
+      "createdAt": 1779431096845,
+      "id": 5
+    },
+    {
+      "itemName": "Sedekah",
+      "amount": 29000,
+      "type": "income",
+      "category": "Hadiah",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "13:25",
+      "createdAt": 1779431190998,
+      "id": 6
+    }
+  ],
+  "wallets": [
+    {
+      "id": "wallet_1",
+      "name": "Tunai",
+      "type": "cash",
+      "balance": 5167998,
+      "icon": "fa-money-bill-wave",
+      "color": "#10b981"
+    },
+    {
+      "id": "wallet_2",
+      "name": "OVO",
+      "type": "ewallet",
+      "balance": 0,
+      "icon": "fa-mobile-alt",
+      "color": "#3b82f6"
+    },
+    {
+      "id": "wallet_3",
+      "name": "GoPay",
+      "type": "ewallet",
+      "balance": 0,
+      "icon": "fa-mobile-alt",
+      "color": "#00a9b4"
+    },
+    {
+      "id": "wallet_4",
+      "name": "Dana",
+      "type": "ewallet",
+      "balance": 0,
+      "icon": "fa-mobile-alt",
+      "color": "#2d7a5f"
+    },
+    {
+      "id": "wallet_5",
+      "name": "BCA",
+      "type": "bank",
+      "balance": 0,
+      "icon": "fa-university",
+      "color": "#ef4444"
+    },
+    {
+      "id": "wallet_6",
+      "name": "Mandiri",
+      "type": "bank",
+      "balance": 0,
+      "icon": "fa-university",
+      "color": "#f59e0b"
+    }
+  ],
+  "savings": [
+    {
+      "name": "motor",
+      "targetAmount": 11000000,
+      "currentAmount": 3150000,
+      "description": "",
+      "deadline": "2027-01-31",
+      "status": "active",
+      "icon": "fa-piggy-bank",
+      "createdAt": "21/05/2026 22:20",
+      "updatedAt": "22/05/2026 13:17",
+      "id": 1,
+      "history": [
+        {
+          "type": "deposit",
+          "amount": 500000,
+          "note": "",
+          "date": "21/05/2026 22:21",
+          "previousAmount": 3150000,
+          "newAmount": 3650000
+        },
+        {
+          "type": "deposit",
+          "amount": 500000,
+          "note": "",
+          "date": "21/05/2026 22:21",
+          "previousAmount": 3650000,
+          "newAmount": 4150000
+        },
+        {
+          "type": "withdraw",
+          "amount": 500000,
+          "note": "",
+          "date": "21/05/2026 22:22",
+          "previousAmount": 4150000,
+          "newAmount": 3650000
+        },
+        {
+          "type": "withdraw",
+          "amount": 500000,
+          "note": "",
+          "date": "21/05/2026 22:22",
+          "previousAmount": 3650000,
+          "newAmount": 3150000
+        },
+        {
+          "type": "deposit",
+          "amount": 500000,
+          "note": "uang bulanan",
+          "date": "21/05/2026 22:22",
+          "previousAmount": 3150000,
+          "newAmount": 3650000
+        },
+        {
+          "type": "withdraw",
+          "amount": 500000,
+          "note": "",
+          "date": "21/05/2026 22:22",
+          "previousAmount": 3650000,
+          "newAmount": 3150000
+        },
+        {
+          "type": "deposit",
+          "amount": 50000,
+          "note": "",
+          "date": "22/05/2026 13:17",
+          "previousAmount": 3150000,
+          "newAmount": 3200000
+        },
+        {
+          "type": "withdraw",
+          "amount": 50000,
+          "note": "",
+          "date": "22/05/2026 13:17",
+          "previousAmount": 3200000,
+          "newAmount": 3150000
+        }
+      ]
+    }
+  ],
+  "debts": [
+    {
+      "partyName": "Nani yunengsih",
+      "amount": 500000,
+      "remainingAmount": 0,
+      "type": "debt",
+      "description": "",
+      "dueDate": "2026-09-24",
+      "status": "completed",
+      "createdAt": "22/05/2026 13:18",
+      "updatedAt": "22/05/2026 13:19",
+      "payments": [],
+      "id": 2
+    },
+    {
+      "partyName": "Nani yunengsih",
+      "amount": 500000,
+      "remainingAmount": 0,
+      "type": "debt",
+      "description": "",
+      "dueDate": "2026-07-01",
+      "status": "completed",
+      "createdAt": "22/05/2026 13:19",
+      "updatedAt": "22/05/2026 13:19",
+      "payments": [],
+      "id": 3
+    },
+    {
+      "partyName": "Nani yunengsih",
+      "amount": 1000000,
+      "remainingAmount": 0,
+      "type": "debt",
+      "description": "",
+      "dueDate": "2026-06-01",
+      "status": "completed",
+      "createdAt": "22/05/2026 13:21",
+      "updatedAt": "22/05/2026 13:21",
+      "payments": [],
+      "id": 5
+    }
+  ],
+  "categories": [
+    {
+      "name": "Gaji",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 1
+    },
+    {
+      "name": "Bonus",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 2
+    },
+    {
+      "name": "Investasi",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 3
+    },
+    {
+      "name": "Hadiah",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 4
+    },
+    {
+      "name": "Jualan",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 5
+    },
+    {
+      "name": "Lainnya",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 6
+    },
+    {
+      "name": "Makanan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 7
+    },
+    {
+      "name": "Transportasi",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 8
+    },
+    {
+      "name": "Belanja",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 9
+    },
+    {
+      "name": "Hiburan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 10
+    },
+    {
+      "name": "Kesehatan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 11
+    },
+    {
+      "name": "Pendidikan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 12
+    },
+    {
+      "name": "Tagihan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 13
+    },
+    {
+      "name": "Lainnya",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 14
+    }
+  ],
+  "settings": [
+    {
+      "key": "app_settings",
+      "dailyBudget": 29000,
+      "theme": "light",
+      "currency": "IDR",
+      "firstDayOfWeek": "monday"
+    }
+  ],
+  "trash": [
+    {
+      "itemName": "Uang bulanan",
+      "amount": 100000,
+      "type": "income",
+      "category": "Gaji",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-15",
+      "time": "22:05",
+      "createdAt": 1779375964623,
+      "id": 1,
+      "deletedAt": "22/05/2026 13:13",
+      "originalStore": "transactions"
+    },
+    {
+      "itemName": "Makan di warteg",
+      "amount": 15000,
+      "type": "expense",
+      "category": "Makanan",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "13:10",
+      "createdAt": 1779430279710,
+      "id": 2,
+      "deletedAt": "22/05/2026 13:13",
+      "originalStore": "transactions"
+    },
+    {
+      "itemName": "Jajan di kantin",
+      "amount": 14000,
+      "type": "expense",
+      "category": "Makanan",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "13:11",
+      "createdAt": 1779430321766,
+      "id": 3,
+      "deletedAt": "22/05/2026 13:13",
+      "originalStore": "transactions"
+    }
+  ]
+}

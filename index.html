@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#1a1a2e" />
+    <title>Money Manager - Keuangan Harian</title>
+
+    <!-- Favicon menggunakan logo yang sudah ada -->
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="512x512"
+      href="images/logo/logo.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x192"
+      href="images/logo/logo.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="images/logo/logo.png"
+    />
+    <link rel="shortcut icon" href="images/logo/logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="images/logo/logo.png" />
+
+    <!-- CSS Files -->
+    <link rel="stylesheet" href="css/style.css" />
+
+    <!-- Di dalam <head> setelah CSS -->
+    <script>
+      // Apply theme from localStorage immediately
+      const savedTheme = localStorage.getItem("theme");
+      if (savedTheme === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    </script>
+
+    <!-- Font Awesome Icons (CDN, will work offline after caching) -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <div class="app-container">
+        <!-- Sidebar akan diisi JavaScript -->
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-header">
+            <img
+              src="images/logo/logo.png"
+              alt="Logo"
+              class="logo"
+              onerror="this.src = 'https://via.placeholder.com/40x40?text=MM'"
+            />
+            <h2>Money Manager</h2>
+          </div>
+          <nav class="sidebar-nav">
+            <a href="#" data-page="dashboard" class="nav-item active">
+              <i class="fas fa-tachometer-alt"></i>
+              <span>Dashboard</span>
+            </a>
+            <a href="#" data-page="transactions" class="nav-item">
+              <i class="fas fa-exchange-alt"></i>
+              <span>Transaksi</span>
+            </a>
+            <a href="#" data-page="wallets" class="nav-item">
+              <i class="fas fa-wallet"></i>
+              <span>Dompet</span>
+            </a>
+            <a href="#" data-page="savings" class="nav-item">
+              <i class="fas fa-piggy-bank"></i>
+              <span>Tabungan</span>
+            </a>
+            <a href="#" data-page="debts" class="nav-item">
+              <i class="fas fa-hand-holding-usd"></i>
+              <span>Piutang</span>
+            </a>
+            <a href="#" data-page="reports" class="nav-item">
+              <i class="fas fa-chart-line"></i>
+              <span>Laporan</span>
+            </a>
+            <a href="#" data-page="settings" class="nav-item">
+              <i class="fas fa-cog"></i>
+              <span>Pengaturan</span>
+            </a>
+          </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+          <!-- Bottom Navigation (Mobile) -->
+          <div class="bottom-nav">
+            <button data-page="dashboard" class="bottom-nav-item active">
+              <i class="fas fa-tachometer-alt"></i>
+              <span>Beranda</span>
+            </button>
+            <button data-page="transactions" class="bottom-nav-item">
+              <i class="fas fa-plus-circle"></i>
+              <span>Transaksi</span>
+            </button>
+            <button data-page="reports" class="bottom-nav-item">
+              <i class="fas fa-chart-simple"></i>
+              <span>Laporan</span>
+            </button>
+            <button data-page="settings" class="bottom-nav-item">
+              <i class="fas fa-user"></i>
+              <span>Saya</span>
+            </button>
+          </div>
+
+          <!-- Dynamic Content Pages -->
+          <div id="page-content" class="page-content">
+            <!-- Content akan di-load oleh JavaScript -->
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- PIN Lock Screen -->
+    <div id="pin-screen" class="pin-screen hidden">
+      <div class="pin-container">
+        <h3>Masukkan PIN</h3>
+        <div class="pin-display">
+          <input
+            type="password"
+            id="pin-input"
+            maxlength="6"
+            pattern="[0-9]*"
+            inputmode="numeric"
+          />
+        </div>
+        <div class="pin-keypad">
+          <button data-pin="1">1</button>
+          <button data-pin="2">2</button>
+          <button data-pin="3">3</button>
+          <button data-pin="4">4</button>
+          <button data-pin="5">5</button>
+          <button data-pin="6">6</button>
+          <button data-pin="7">7</button>
+          <button data-pin="8">8</button>
+          <button data-pin="9">9</button>
+          <button data-pin="clear">C</button>
+          <button data-pin="0">0</button>
+          <button data-pin="enter">✓</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- JavaScript Modules -->
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
