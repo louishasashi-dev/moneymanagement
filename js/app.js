@@ -93,28 +93,45 @@ function showLoading(show) {
   }
 }
 
-// Navigation Setup
 function setupNavigation() {
   // Desktop navigation
   document.querySelectorAll(".nav-item").forEach((item) => {
     item.addEventListener("click", (e) => {
       e.preventDefault();
       const page = item.dataset.page;
-      if (page) {
-        navigateTo(page);
-      }
+      if (page) navigateTo(page);
     });
   });
 
-  // Mobile bottom navigation
+  // Mobile bottom navigation (5 tombol utama)
   document.querySelectorAll(".bottom-nav-item").forEach((item) => {
     item.addEventListener("click", () => {
       const page = item.dataset.page;
-      if (page) {
-        navigateTo(page);
-      }
+      if (page) navigateTo(page);
     });
   });
+
+  // Tombol "Lainnya"
+  const moreBtn = document.getElementById("bottom-nav-more");
+  const drawer = document.getElementById("more-menu-drawer");
+  const backdrop = drawer?.querySelector(".more-menu-backdrop");
+
+  if (moreBtn && drawer) {
+    moreBtn.addEventListener("click", () => {
+      drawer.classList.toggle("hidden");
+    });
+    backdrop?.addEventListener("click", () => {
+      drawer.classList.add("hidden");
+    });
+    // Tombol di dalam drawer
+    drawer.querySelectorAll(".more-menu-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const page = item.dataset.page;
+        drawer.classList.add("hidden");
+        if (page) navigateTo(page);
+      });
+    });
+  }
 }
 
 // Navigate to Page
@@ -135,6 +152,9 @@ async function navigateTo(page) {
   if (sidebar && sidebar.classList.contains("open")) {
     sidebar.classList.remove("open");
   }
+
+  // Close more-menu drawer if open
+  document.getElementById("more-menu-drawer")?.classList.add("hidden");
 
   // Load page content
   await loadPage(page);
