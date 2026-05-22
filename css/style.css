@@ -210,39 +210,143 @@ body {
 
 .pin-container {
   text-align: center;
-  padding: 30px;
+  padding: 40px 24px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.pin-container h3 {
+  font-size: 1.4rem;
+  margin-bottom: 8px;
+  color: var(--text-primary);
 }
 
 .pin-display {
-  margin: 20px 0;
+  margin: 24px auto;
+  display: flex;
+  justify-content: center;
 }
 
 .pin-display input {
   font-size: 2rem;
   text-align: center;
-  letter-spacing: 10px;
+  letter-spacing: 12px;
   background: var(--bg-secondary);
   border: 2px solid var(--border-color);
-  border-radius: 12px;
-  padding: 10px 20px;
+  border-radius: 14px;
+  padding: 12px 24px;
   color: var(--text-primary);
+  width: 240px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.pin-display input:focus {
+  border-color: var(--info);
 }
 
 .pin-keypad {
   display: grid;
-  grid-template-columns: repeat(3, 80px);
-  gap: 12px;
-  margin-top: 20px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 0 auto;
+  max-width: 280px;
 }
 
 .pin-keypad button {
-  padding: 15px;
+  aspect-ratio: 1;
   font-size: 1.5rem;
+  font-weight: 500;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 50%;
   cursor: pointer;
   color: var(--text-primary);
+  transition:
+    background 0.15s,
+    transform 0.1s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-keypad button:active {
+  background: var(--info);
+  color: #fff;
+  transform: scale(0.93);
+}
+
+/* ── More Menu Drawer (Mobile) ─────────────────────────── */
+.more-menu-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+}
+.more-menu-drawer.hidden {
+  display: none;
+}
+.more-menu-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+.more-menu-content {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 88%;
+  max-width: 360px;
+  background: var(--bg-secondary);
+  border-radius: 20px 20px 16px 16px;
+  padding: 8px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: drawerUp 0.25s ease;
+}
+.more-menu-handle {
+  width: 40px;
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  margin: 8px auto 12px;
+}
+.more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 1rem;
+  border-radius: 12px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.2s;
+}
+.more-menu-item:hover,
+.more-menu-item:active {
+  background: rgba(59, 130, 246, 0.08);
+  color: var(--info);
+}
+.more-menu-item i {
+  font-size: 1.1rem;
+  width: 24px;
+  text-align: center;
+  color: var(--info);
+}
+@keyframes drawerUp {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 /* Responsive */
