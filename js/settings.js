@@ -531,74 +531,106 @@ async function restoreData(file) {
   );
 }
 
-// Export to CSV
 async function exportToCSV() {
   showToast("Mengekspor data...", "info");
 
   try {
     const transactions = await getAllItems(STORES.TRANSACTIONS);
-    const wallets = await getAllItems(STORES.WALLETS);
+    const wallets      = await getAllItems(STORES.WALLETS);
 
-    // Header
-    const headers = [
-      "ID",
-      "Tanggal",
-      "Waktu",
-      "Tipe",
-      "Kategori",
-      "Deskripsi",
-      "Nominal",
-      "Catatan",
-      "Dompet",
-    ];
-    const rows = [headers];
+    const headers = ["ID","Tanggal","Waktu","Tipe","Kategori","Deskripsi","Nominal","Catatan","Dompet"];
+    const rows    = [headers];
 
-    // Data rows
     for (const t of transactions) {
       const wallet = wallets.find((w) => w.id === t.walletId);
       rows.push([
-        t.id,
-        t.date,
-        t.time || "",
+        t.id, t.date, t.time || "",
         t.type === "income" ? "Pemasukan" : "Pengeluaran",
-        t.category || "",
-        t.itemName,
-        t.amount,
-        t.note || "",
+        t.category || "", t.itemName, t.amount, t.note || "",
         wallet ? wallet.name : "",
       ]);
     }
 
-    // Convert to CSV
     const csvContent = rows
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
-      )
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
       .join("\n");
 
-    const blob = new Blob(["\uFEFF" + csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
+    const blob     = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url      = URL.createObjectURL(blob);
+    const date     = new Date();
+    const filename = `money_manager_transactions_${date.getFullYear()}${String(date.getMonth()+1).padStart(2,"0")}${String(date.getDate()).padStart(2,"0")}.csv`;
 
-    const date = new Date();
-    const filename = `money_manager_transactions_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}.csv`;
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (isMobile) {
+      document.getElementById("csv-overlay")?.remove();
 
-    showToast(`Export ${transactions.length} transaksi berhasil!`, "success");
+      const overlay = document.createElement("div");
+      overlay.id = "csv-overlay";
+      overlay.style.cssText = `
+        position:fixed;inset:0;background:rgba(0,0,0,.5);
+        z-index:99999;display:flex;align-items:flex-end;justify-content:center;
+      `;
+      overlay.innerHTML = `
+        <div style="
+          background:var(--bg-secondary);width:100%;max-width:480px;
+          border-radius:20px 20px 0 0;padding:24px 24px 36px;
+        ">
+          <div style="width:40px;height:4px;background:var(--border-color);border-radius:2px;margin:0 auto 20px;"></div>
+          <h3 style="margin:0 0 6px;font-size:1.1rem;">📊 Export CSV Siap</h3>
+          <p style="margin:0 0 20px;color:var(--text-secondary);font-size:.9rem;">
+            <strong>${transactions.length}</strong> transaksi siap diexport.<br>
+            File: <strong>${filename}</strong>
+          </p>
+          <a id="csv-download-btn" href="${url}" download="${filename}" style="
+            display:block;width:100%;padding:14px;text-align:center;
+            background:var(--info);color:#fff;border-radius:12px;
+            font-size:1rem;font-weight:600;text-decoration:none;
+            box-sizing:border-box;margin-bottom:10px;
+          ">
+            <i class="fas fa-file-csv"></i>&nbsp; Download CSV
+          </a>
+          <button id="csv-close-btn" style="
+            display:block;width:100%;padding:12px;text-align:center;
+            background:var(--border-color);color:var(--text-primary);
+            border:none;border-radius:12px;font-size:.95rem;cursor:pointer;
+          ">Tutup</button>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      let closed = false;
+      const close = () => {
+        if (closed) return;
+        closed = true;
+        overlay.remove();
+        URL.revokeObjectURL(url);
+      };
+
+      overlay.querySelector("#csv-download-btn").addEventListener("click", () => {
+        showToast(`Export ${transactions.length} transaksi berhasil!`, "success");
+        close();
+      });
+      overlay.querySelector("#csv-close-btn").addEventListener("click", close);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+
+    } else {
+      // Desktop
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`Export ${transactions.length} transaksi berhasil!`, "success");
+    }
+
   } catch (error) {
     console.error("Export error:", error);
     showToast("Gagal export data", "error");
   }
 }
-
 // Reset all data
 async function resetAllData() {
   confirmDialog(
