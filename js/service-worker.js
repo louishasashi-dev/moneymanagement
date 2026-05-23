@@ -1,4 +1,4 @@
-const CACHE_NAME = "money-manager-v3";
+const CACHE_NAME = "money-manager-v4";
 const BASE_URL = "/moneymanagement";
 
 const ASSETS = [
