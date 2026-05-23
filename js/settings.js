@@ -416,19 +416,22 @@ async function backupData() {
   showToast("Menyiapkan backup...", "info");
 
   try {
-    const data = await exportAllData();
+    const data    = await exportAllData();
     const jsonStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+    const blob    = new Blob([jsonStr], { type: "application/json" });
+    const url     = URL.createObjectURL(blob);
 
-    const date = new Date();
-    const filename = `money_manager_backup_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}.json`;
+    const date     = new Date();
+    const filename = `money_manager_backup_${date.getFullYear()}${String(date.getMonth()+1).padStart(2,"0")}${String(date.getDate()).padStart(2,"0")}.json`;
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     if (isMobile) {
-      // Popup khusus mobile — tidak auto-trigger download browser
+      // Pastikan tidak ada overlay backup yang masih terbuka
+      document.getElementById("backup-overlay")?.remove();
+
       const overlay = document.createElement("div");
+      overlay.id = "backup-overlay";
       overlay.style.cssText = `
         position:fixed;inset:0;background:rgba(0,0,0,.5);
         z-index:99999;display:flex;align-items:flex-end;justify-content:center;
@@ -460,25 +463,31 @@ async function backupData() {
       `;
       document.body.appendChild(overlay);
 
+      // Satu fungsi close, pastikan hanya dipanggil sekali
+      let closed = false;
       const close = () => {
+        if (closed) return;
+        closed = true;
         overlay.remove();
         URL.revokeObjectURL(url);
       };
 
-      document
-        .getElementById("backup-download-btn")
-        .addEventListener("click", () => {
-          showToast("Backup berhasil didownload!", "success");
-          setTimeout(close, 800);
-        });
-      document
-        .getElementById("backup-close-btn")
-        .addEventListener("click", close);
+      // Download btn - langsung close tanpa setTimeout
+      overlay.querySelector("#backup-download-btn").addEventListener("click", () => {
+        showToast("Backup berhasil didownload!", "success");
+        close();
+      });
+
+      // Tutup btn
+      overlay.querySelector("#backup-close-btn").addEventListener("click", close);
+
+      // Klik backdrop (luar box)
       overlay.addEventListener("click", (e) => {
         if (e.target === overlay) close();
       });
+
     } else {
-      // Desktop — tetap pakai cara lama
+      // Desktop
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
@@ -488,6 +497,7 @@ async function backupData() {
       URL.revokeObjectURL(url);
       showToast("Backup berhasil!", "success");
     }
+
   } catch (error) {
     console.error("Backup error:", error);
     showToast("Gagal backup data", "error");
