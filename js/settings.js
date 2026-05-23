@@ -158,27 +158,24 @@ export async function renderSettingsPage() {
                 <div class="settings-item">
                     <div class="item-info">
                         <span class="item-title">Dibuat oleh</span>
-                        <span class="item-desc">Louis Hasashi</span>
+                        <span class="item-desc">Louis Hasashi Halim</span>
                     </div>
                 </div>
                 <a href="https://github.com/louishasashi-dev" target="_blank" class="settings-item clickable" style="text-decoration:none;">
                     <div class="item-info">
                         <span class="item-title"><i class="fab fa-github" style="margin-right:8px;"></i>GitHub</span>
-                        <span class="item-desc">louishasashi-dev</span>
                     </div>
                     <i class="fas fa-external-link-alt" style="color:var(--text-secondary);font-size:.8rem;"></i>
                 </a>
                 <a href="https://www.instagram.com/lhshlm9/" target="_blank" class="settings-item clickable" style="text-decoration:none;">
                     <div class="item-info">
                         <span class="item-title"><i class="fab fa-instagram" style="margin-right:8px;color:#e1306c;"></i>Instagram</span>
-                        <span class="item-desc">@lhshlm9</span>
                     </div>
                     <i class="fas fa-external-link-alt" style="color:var(--text-secondary);font-size:.8rem;"></i>
                 </a>
                 <a href="https://www.youtube.com/@louisskyzhii7203" target="_blank" class="settings-item clickable" style="text-decoration:none;">
                     <div class="item-info">
                         <span class="item-title"><i class="fab fa-youtube" style="margin-right:8px;color:#ff0000;"></i>YouTube</span>
-                        <span class="item-desc">An Louis official</span>
                     </div>
                     <i class="fas fa-external-link-alt" style="color:var(--text-secondary);font-size:.8rem;"></i>
                 </a>
