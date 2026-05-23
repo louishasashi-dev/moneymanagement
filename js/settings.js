@@ -74,8 +74,8 @@ export async function renderSettingsPage() {
                 </div>
                 <div class="settings-item clickable" id="toggle-pin-item">
                     <div class="item-info">
-                        <span class="item-title">Nonaktifkan PIN</span>
-                        <span class="item-desc">Hapus PIN keamanan</span>
+                        <span class="item-title">Kelola PIN</span>
+<span class="item-desc">Aktifkan, nonaktifkan, atau ubah PIN</span>
                     </div>
                     <i class="fas fa-chevron-right"></i>
                 </div>
