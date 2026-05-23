@@ -227,33 +227,28 @@ async function loadPage(page) {
   showLoading(false);
 }
 
-// Check PIN Status
 function checkPINStatus() {
   const hasPIN = localStorage.getItem("app_pin");
   const pinScreen = document.getElementById("pin-screen");
 
   if (hasPIN) {
-    // Show PIN screen
     pinScreen.classList.remove("hidden");
     setupPINHandler();
-  } else {
-    // First time setup - ask to create PIN
-    const newPIN = prompt("Buat PIN 6 digit untuk keamanan:");
-    if (newPIN && newPIN.length === 6 && /^\d+$/.test(newPIN)) {
-      localStorage.setItem("app_pin", newPIN);
-      showToast("PIN berhasil dibuat!", "success");
-    } else if (newPIN) {
-      alert("PIN harus 6 digit angka!");
-    }
   }
 }
 
-// Setup PIN Handler
 function setupPINHandler() {
   const pinInput = document.getElementById("pin-input");
   const keypadButtons = document.querySelectorAll("[data-pin]");
 
+  // Hapus listener lama dulu supaya tidak ganda
   keypadButtons.forEach((btn) => {
+    const newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+  });
+
+  // Pasang listener baru
+  document.querySelectorAll("[data-pin]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const value = btn.dataset.pin;
 
@@ -261,7 +256,7 @@ function setupPINHandler() {
         pinInput.value = "";
       } else if (value === "enter") {
         const enteredPIN = pinInput.value;
-        const savedPIN = localStorage.getItem("app_pin");
+        const savedPIN   = localStorage.getItem("app_pin");
 
         if (enteredPIN === savedPIN) {
           document.getElementById("pin-screen").classList.add("hidden");
@@ -270,6 +265,9 @@ function setupPINHandler() {
         } else {
           showToast("PIN salah!", "error");
           pinInput.value = "";
+          // Efek getar input kalau salah
+          pinInput.style.borderColor = "#ef4444";
+          setTimeout(() => { pinInput.style.borderColor = ""; }, 800);
         }
       } else {
         if (pinInput.value.length < 6) {
@@ -279,7 +277,6 @@ function setupPINHandler() {
     });
   });
 }
-
 function setupPWA() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
