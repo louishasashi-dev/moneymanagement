@@ -1,0 +1,225 @@
+{
+  "transactions": [
+    {
+      "itemName": "Uang bulanan",
+      "amount": 239001,
+      "type": "income",
+      "category": "Gaji",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "14:05",
+      "createdAt": 1779433551796,
+      "id": 1
+    },
+    {
+      "itemName": "Sedekah ke panti jompo",
+      "amount": 1,
+      "type": "expense",
+      "category": "Lainnya",
+      "walletId": "wallet_1",
+      "note": "",
+      "date": "2026-05-22",
+      "time": "14:06",
+      "createdAt": 1779433587148,
+      "id": 2
+    }
+  ],
+  "wallets": [
+    {
+      "id": "wallet_1",
+      "name": "Tunai",
+      "type": "cash",
+      "balance": 239000,
+      "icon": "fa-money-bill-wave",
+      "color": "#10b981"
+    },
+    {
+      "id": "wallet_2",
+      "name": "OVO",
+      "type": "ewallet",
+      "balance": 0,
+      "icon": "fa-mobile-alt",
+      "color": "#3b82f6"
+    },
+    {
+      "id": "wallet_3",
+      "name": "GoPay",
+      "type": "ewallet",
+      "balance": 1266,
+      "icon": "fa-mobile-alt",
+      "color": "#00a9b4"
+    },
+    {
+      "id": "wallet_4",
+      "name": "Dana",
+      "type": "ewallet",
+      "balance": 0,
+      "icon": "fa-mobile-alt",
+      "color": "#2d7a5f"
+    },
+    {
+      "id": "wallet_5",
+      "name": "BCA",
+      "type": "bank",
+      "balance": 21545,
+      "icon": "fa-university",
+      "color": "#ef4444"
+    },
+    {
+      "id": "wallet_6",
+      "name": "Mandiri",
+      "type": "bank",
+      "balance": 0,
+      "icon": "fa-university",
+      "color": "#f59e0b"
+    },
+    {
+      "id": "wallet_custom_1779433817264_zs3n9w",
+      "name": "Shopeepay",
+      "type": "ewallet",
+      "icon": "fa-mobile-alt",
+      "color": "#f97316",
+      "balance": 24
+    }
+  ],
+  "savings": [
+    {
+      "name": "motor",
+      "targetAmount": 11500000,
+      "currentAmount": 3150000,
+      "description": "beli motor buat keperluan kerja dimasa depan",
+      "deadline": "2027-01-01",
+      "status": "active",
+      "icon": "fa-piggy-bank",
+      "createdAt": "22/05/2026 14:07",
+      "updatedAt": "22/05/2026 14:07",
+      "id": 1
+    }
+  ],
+  "debts": [
+    {
+      "partyName": "Nani yunengsih",
+      "amount": 500000,
+      "remainingAmount": 300000,
+      "type": "debt",
+      "description": "",
+      "dueDate": "2026-06-01",
+      "status": "partial",
+      "createdAt": "22/05/2026 14:08",
+      "updatedAt": "22/05/2026 14:08",
+      "payments": [],
+      "id": 1
+    }
+  ],
+  "categories": [
+    {
+      "name": "Gaji",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 1
+    },
+    {
+      "name": "Bonus",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 2
+    },
+    {
+      "name": "Investasi",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 3
+    },
+    {
+      "name": "Hadiah",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 4
+    },
+    {
+      "name": "Jualan",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 5
+    },
+    {
+      "name": "Lainnya",
+      "type": "income",
+      "icon": "fa-arrow-up",
+      "color": "#10b981",
+      "id": 6
+    },
+    {
+      "name": "Makanan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 7
+    },
+    {
+      "name": "Transportasi",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 8
+    },
+    {
+      "name": "Belanja",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 9
+    },
+    {
+      "name": "Hiburan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 10
+    },
+    {
+      "name": "Kesehatan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 11
+    },
+    {
+      "name": "Pendidikan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 12
+    },
+    {
+      "name": "Tagihan",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 13
+    },
+    {
+      "name": "Lainnya",
+      "type": "expense",
+      "icon": "fa-arrow-down",
+      "color": "#ef4444",
+      "id": 14
+    }
+  ],
+  "settings": [
+    {
+      "key": "app_settings",
+      "dailyBudget": 100000,
+      "theme": "light",
+      "currency": "IDR",
+      "firstDayOfWeek": "monday"
+    }
+  ],
+  "trash": []
+}
