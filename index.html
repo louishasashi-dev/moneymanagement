@@ -94,16 +94,30 @@
             <a href="#" data-page="notifications" class="nav-item">
               <i class="fas fa-bell"></i>
               <span>Notifikasi</span>
-              <span id="notif-badge" style="
-                display:none;background:#ef4444;color:#fff;
-                border-radius:50%;width:18px;height:18px;
-                font-size:.65rem;align-items:center;justify-content:center;
-                margin-left:auto;
-              ">0</span>
+              <span
+                id="notif-badge"
+                style="
+                  display: none;
+                  background: #ef4444;
+                  color: #fff;
+                  border-radius: 50%;
+                  width: 18px;
+                  height: 18px;
+                  font-size: 0.65rem;
+                  align-items: center;
+                  justify-content: center;
+                  margin-left: auto;
+                "
+                >0</span
+              >
             </a>
             <a href="#" data-page="recurring" class="nav-item">
               <i class="fas fa-redo-alt"></i>
               <span>Transaksi Rutin</span>
+            </a>
+            <a href="#" data-page="planned" class="nav-item">
+              <i class="fas fa-calendar-check"></i>
+              <span>Rencana Transaksi</span>
             </a>
             <a href="#" data-page="reports" class="nav-item">
               <i class="fas fa-chart-line"></i>
@@ -186,13 +200,17 @@
       <div class="more-menu-content">
         <div class="more-menu-handle"></div>
         <button data-page="notifications" class="more-menu-item">
-                <i class="fas fa-bell"></i>
-                <span>Notifikasi</span>
-              </button>
-              <button data-page="recurring" class="more-menu-item">
-                <i class="fas fa-redo-alt"></i>
-                <span>Transaksi Rutin</span>
-              </button>
+          <i class="fas fa-bell"></i>
+          <span>Notifikasi</span>
+        </button>
+        <button data-page="recurring" class="more-menu-item">
+          <i class="fas fa-redo-alt"></i>
+          <span>Transaksi Rutin</span>
+        </button>
+        <button data-page="planned" class="more-menu-item">
+          <i class="fas fa-calendar-check"></i>
+          <span>Rencana Transaksi</span>
+        </button>
         <button data-page="debts" class="more-menu-item">
           <i class="fas fa-hand-holding-usd"></i>
           <span>Piutang</span>

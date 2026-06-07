@@ -12,12 +12,12 @@ import {
 } from "./db.js";
 import { setupEventListeners, showToast } from "./utils.js";
 import { renderDashboard } from "./dashboard.js";
-import {
-  checkAndCreateNotifications,
+import { checkAndCreateNotifications,
   cleanOldNotifications,
   getUnreadNotifications,
 } from "./notifications.js";
 import { processRecurringTransactions } from "./recurring.js";
+import { checkAndAutoReset, checkPlannedReminder } from "./planned.js";
 
 // App State
 let currentPage = "dashboard";
@@ -65,6 +65,10 @@ async function initApp() {
     // Cek & buat notifikasi
     await checkAndCreateNotifications();
     await cleanOldNotifications();
+
+    // Cek auto-reset dan reminder rencana transaksi
+    await checkAndAutoReset();
+    await checkPlannedReminder();
 
     // Update badge notifikasi
     await updateNotificationBadge();
@@ -237,6 +241,11 @@ async function loadPage(page) {
       case "recurring": {
         const { renderRecurringPage } = await import("./recurring.js");
         await renderRecurringPage();
+        break;
+      }
+      case "planned": {
+        const { renderPlannedPage } = await import("./planned.js");
+        await renderPlannedPage();
         break;
       }
       case "settings":

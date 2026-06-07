@@ -2,7 +2,7 @@
 // Mengelola koneksi dan operasi dasar IndexedDB
 
 const DB_NAME = "MoneyManagerDB";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORES = {
   TRANSACTIONS: "transactions",
@@ -14,19 +14,31 @@ const STORES = {
   TRASH: "trash",
   RECURRING: "recurring",
   NOTIFICATIONS: "notifications",
+  PLANNED: "planned_transactions",
 };
 
 // Default Categories
 const DEFAULT_CATEGORIES = {
-  income: ["Gaji", "Bonus", "Investasi", "Hadiah", "Jualan", "Lainnya"],
+  income: [
+    "Gaji",
+    "Bonus",
+    "Investasi",
+    "Hadiah",
+    "Jualan",
+    "Dana Pensiun",
+    "Di luar gaji",
+    "Lainnya",
+  ],
   expense: [
-    "Makanan",
+    "Makanan & Minuman",
+    "Kebutuhan Pokok",
     "Transportasi",
     "Belanja",
     "Hiburan",
     "Kesehatan",
     "Pendidikan",
     "Tagihan",
+    "Digital & Komunikasi",
     "Lainnya",
   ],
 };
@@ -175,26 +187,38 @@ export async function initDB() {
         trashStore.createIndex("originalStore", "originalStore", {
           unique: false,
         });
-      // Recurring Transactions Store
-      if (!db.objectStoreNames.contains(STORES.RECURRING)) {
-        const recurringStore = db.createObjectStore(STORES.RECURRING, {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        recurringStore.createIndex("nextDate", "nextDate", { unique: false });
-        recurringStore.createIndex("isActive", "isActive", { unique: false });
+        // Recurring Transactions Store
+        if (!db.objectStoreNames.contains(STORES.RECURRING)) {
+          const recurringStore = db.createObjectStore(STORES.RECURRING, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+          recurringStore.createIndex("nextDate", "nextDate", { unique: false });
+          recurringStore.createIndex("isActive", "isActive", { unique: false });
+        }
+
+        // Notifications Store
+        if (!db.objectStoreNames.contains(STORES.NOTIFICATIONS)) {
+          const notifStore = db.createObjectStore(STORES.NOTIFICATIONS, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+          notifStore.createIndex("isRead", "isRead", { unique: false });
+          notifStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+        console.log("Trash store created");
       }
 
-      // Notifications Store
-      if (!db.objectStoreNames.contains(STORES.NOTIFICATIONS)) {
-        const notifStore = db.createObjectStore(STORES.NOTIFICATIONS, {
+      // Planned Transactions Store (v3)
+      // Planned Transactions Store (v3)
+      if (!db.objectStoreNames.contains("planned_transactions")) {
+        const plannedStore = db.createObjectStore("planned_transactions", {
           keyPath: "id",
           autoIncrement: true,
         });
-        notifStore.createIndex("isRead", "isRead", { unique: false });
-        notifStore.createIndex("createdAt", "createdAt", { unique: false });
-      }
-        console.log("Trash store created");
+        plannedStore.createIndex("status", "status", { unique: false });
+        plannedStore.createIndex("date", "date", { unique: false });
+        plannedStore.createIndex("createdAt", "createdAt", { unique: false });
       }
     };
   });
