@@ -12,7 +12,8 @@ import {
 } from "./db.js";
 import { setupEventListeners, showToast } from "./utils.js";
 import { renderDashboard } from "./dashboard.js";
-import { checkAndCreateNotifications,
+import {
+  checkAndCreateNotifications,
   cleanOldNotifications,
   getUnreadNotifications,
 } from "./notifications.js";
@@ -330,8 +331,8 @@ function setupPINHandler() {
 function setupPWA() {
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker
-      .register("/moneymanagement/js/service-worker.js", {
-        scope: "/moneymanagement/",
+      .register("./js/service-worker.js", {
+        scope: "./",
       })
       .then((reg) => console.log("Service Worker registered:", reg))
       .catch((err) => console.log("Service Worker registration failed:", err));
