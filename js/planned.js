@@ -299,6 +299,61 @@ export async function renderPlannedPage() {
         </div>
       </div>
 
+      <!-- Statistik rencana transaksi -->
+      ${(() => {
+        const allItems = [...pending, ...confirmed];
+        const totalPemasukan = allItems.filter(i => i.type === "income").reduce((s, i) => s + i.amount, 0);
+        const totalPengeluaran = allItems.filter(i => i.type === "expense").reduce((s, i) => s + i.amount, 0);
+        const pendingPemasukan = pending.filter(i => i.type === "income").reduce((s, i) => s + i.amount, 0);
+        const pendingPengeluaran = pending.filter(i => i.type === "expense").reduce((s, i) => s + i.amount, 0);
+        const selisih = totalPemasukan - totalPengeluaran;
+        return `
+      <div class="card" style="margin-bottom:16px;padding:16px;">
+        <div style="font-weight:600;font-size:.9rem;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+          <i class="fas fa-chart-pie" style="color:var(--primary,#6366f1);"></i>
+          Statistik Rencana Transaksi
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          <div style="
+            background:rgba(16,185,129,.1);
+            border-radius:12px;padding:14px;
+            border-left:3px solid #10b981;
+          ">
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">
+              <i class="fas fa-arrow-down" style="color:#10b981;"></i> Total Pemasukan
+            </div>
+            <div style="font-weight:700;color:#10b981;font-size:1.05rem;">${formatCurrency(totalPemasukan)}</div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-top:4px;">
+              Pending: ${formatCurrency(pendingPemasukan)}
+            </div>
+          </div>
+          <div style="
+            background:rgba(239,68,68,.1);
+            border-radius:12px;padding:14px;
+            border-left:3px solid #ef4444;
+          ">
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">
+              <i class="fas fa-arrow-up" style="color:#ef4444;"></i> Total Pengeluaran
+            </div>
+            <div style="font-weight:700;color:#ef4444;font-size:1.05rem;">${formatCurrency(totalPengeluaran)}</div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-top:4px;">
+              Pending: ${formatCurrency(pendingPengeluaran)}
+            </div>
+          </div>
+        </div>
+        <div style="
+          background:var(--bg-primary);
+          border-radius:10px;padding:12px 14px;
+          display:flex;justify-content:space-between;align-items:center;
+        ">
+          <span style="font-size:.83rem;color:var(--text-secondary);">Selisih (Pemasukan − Pengeluaran)</span>
+          <span style="font-weight:700;font-size:1rem;color:${selisih >= 0 ? "#10b981" : "#ef4444"};">
+            ${selisih >= 0 ? "+" : ""}${formatCurrency(selisih)}
+          </span>
+        </div>
+      </div>`;
+      })()}
+
       <!-- List pending -->
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">

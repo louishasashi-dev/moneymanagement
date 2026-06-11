@@ -127,6 +127,9 @@ function renderSavingsList() {
                         <button class="icon-btn withdraw-saving" data-id="${saving.id}" title="Ambil Tabungan">
                             <i class="fas fa-minus-circle"></i>
                         </button>
+                        <button class="icon-btn view-history" data-id="${saving.id}" title="Lihat Riwayat">
+                            <i class="fas fa-eye"></i>
+                        </button>
                         <button class="icon-btn edit-saving" data-id="${saving.id}" title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
@@ -216,6 +219,15 @@ function setupSavingsEventListeners() {
       e.stopPropagation();
       const id = parseInt(btn.dataset.id);
       showWithdrawModal(id);
+    });
+  });
+
+  // View history buttons
+  document.querySelectorAll(".view-history").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.id);
+      showHistoryModal(id);
     });
   });
 
@@ -611,6 +623,115 @@ async function showWithdrawModal(savingId) {
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
   });
+}
+
+// Show modal riwayat tabungan
+async function showHistoryModal(savingId) {
+  const saving = await getItem(STORES.SAVINGS, savingId);
+  if (!saving) {
+    showToast("Target tabungan tidak ditemukan", "error");
+    return;
+  }
+
+  const history = saving.history || [];
+  const totalMasuk = history
+    .filter((h) => h.type === "deposit")
+    .reduce((sum, h) => sum + h.amount, 0);
+  const totalKeluar = history
+    .filter((h) => h.type === "withdraw")
+    .reduce((sum, h) => sum + h.amount, 0);
+
+  const historyRows =
+    history.length === 0
+      ? `<div style="text-align:center;padding:30px 0;color:var(--text-secondary);">
+           <i class="fas fa-history" style="font-size:2.5rem;display:block;margin-bottom:10px;opacity:0.4;"></i>
+           <p>Belum ada riwayat transaksi</p>
+         </div>`
+      : [...history]
+          .reverse()
+          .map((h) => {
+            const isDeposit = h.type === "deposit";
+            const dateObj = new Date(h.date);
+            const dateStr = dateObj.toLocaleDateString("id-ID", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            });
+            const timeStr = dateObj.toLocaleTimeString("id-ID", {
+              hour: "2-digit",
+              minute: "2-digit",
+            });
+            return `
+              <div style="
+                display:flex;align-items:center;gap:12px;
+                padding:12px 0;
+                border-bottom:1px solid var(--border-color);
+              ">
+                <div style="
+                  width:36px;height:36px;border-radius:50%;flex-shrink:0;
+                  background:${isDeposit ? "rgba(16,185,129,.15)" : "rgba(239,68,68,.15)"};
+                  display:flex;align-items:center;justify-content:center;
+                ">
+                  <i class="fas ${isDeposit ? "fa-arrow-down" : "fa-arrow-up"}"
+                     style="color:${isDeposit ? "#10b981" : "#ef4444"};font-size:.85rem;"></i>
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;font-size:.88rem;">
+                    ${isDeposit ? "Uang Masuk" : "Uang Keluar"}
+                  </div>
+                  <div style="font-size:.75rem;color:var(--text-secondary);margin-top:2px;">
+                    ${dateStr} • ${timeStr}
+                    ${h.note ? `<br><span style="font-style:italic;">${escapeHtml(h.note)}</span>` : ""}
+                  </div>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                  <div style="font-weight:700;color:${isDeposit ? "#10b981" : "#ef4444"};font-size:.95rem;">
+                    ${isDeposit ? "+" : "-"}${formatCurrency(h.amount)}
+                  </div>
+                  <div style="font-size:.7rem;color:var(--text-secondary);">
+                    Saldo: ${formatCurrency(h.newAmount)}
+                  </div>
+                </div>
+              </div>`;
+          })
+          .join("");
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal-container modal-medium" style="max-height:90vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <h3><i class="fas fa-eye"></i> Riwayat — ${escapeHtml(saving.name)}</h3>
+        <button class="modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);padding:0 8px;">&times;</button>
+      </div>
+      <div style="padding:16px;border-bottom:1px solid var(--border-color);background:var(--bg-primary);">
+        <div style="display:flex;gap:16px;justify-content:space-around;text-align:center;">
+          <div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Uang Masuk</div>
+            <div style="font-weight:700;color:#10b981;font-size:1rem;">${formatCurrency(totalMasuk)}</div>
+          </div>
+          <div style="width:1px;background:var(--border-color);"></div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Uang Keluar</div>
+            <div style="font-weight:700;color:#ef4444;font-size:1rem;">${formatCurrency(totalKeluar)}</div>
+          </div>
+          <div style="width:1px;background:var(--border-color);"></div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Transaksi</div>
+            <div style="font-weight:700;font-size:1rem;">${history.length}</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        ${historyRows}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector(".modal-close-x").addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
 }
 
 // Delete saving
