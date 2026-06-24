@@ -106,6 +106,13 @@ export async function renderSettingsPage() {
                     </div>
                     <i class="fas fa-download"></i>
                 </div>
+                <div class="settings-item clickable" id="backup-folder-item">
+                    <div class="item-info">
+                        <span class="item-title">Folder Backup</span>
+                        <span class="item-desc" id="backup-folder-desc">Atur lokasi penyimpanan backup</span>
+                    </div>
+                    <i class="fas fa-folder-open"></i>
+                </div>
                 <div class="settings-item clickable" id="restore-data-item">
                     <div class="item-info">
                         <span class="item-title">Restore Data</span>
@@ -286,6 +293,15 @@ function setupSettingsEventListeners() {
     backupItem.addEventListener("click", () => backupData());
   }
 
+  // Backup folder setting
+  const backupFolderItem = document.getElementById("backup-folder-item");
+  if (backupFolderItem) {
+    backupFolderItem.addEventListener("click", () => showBackupFolderModal());
+  }
+
+  // Update tampilan folder desc saat load
+  updateBackupFolderDesc();
+
   // Restore data
   const restoreItem = document.getElementById("restore-data-item");
   if (restoreItem) {
@@ -345,76 +361,174 @@ function applyTheme(theme) {
 
 // Toggle dark mode
 function toggleDarkMode(isDark) {
-  if (isDark) {
-    document.documentElement.setAttribute("data-theme", "dark");
-    localStorage.setItem("theme", "dark");
-    currentSettings.theme = "dark";
-  } else {
-    document.documentElement.setAttribute("data-theme", "light");
-    localStorage.setItem("theme", "light");
-    currentSettings.theme = "light";
+  const theme = isDark ? "dark" : "light";
+  applyTheme(theme);
+
+  const selector = document.getElementById("theme-selector");
+  if (selector) selector.value = theme;
+}
+
+// Toggle PIN (disable/enable)
+function togglePin() {
+  const pinDisabled = localStorage.getItem("app_pin_disabled") === "true";
+  const activePin = localStorage.getItem("app_pin");
+  const savedValue = localStorage.getItem("app_pin_value");
+  const hasAnyPin = activePin || savedValue;
+
+  if (!hasAnyPin) {
+    showSetNewPinModal();
+    return;
   }
-  updateItem(STORES.SETTINGS, currentSettings);
-  showToast(isDark ? "Mode gelap aktif" : "Mode terang aktif", "success");
+
+  if (pinDisabled) {
+    confirmDialog("Aktifkan PIN kembali?", async (confirmed) => {
+      if (confirmed) {
+        const pinToRestore = savedValue || activePin;
+        localStorage.setItem("app_pin", pinToRestore);
+        localStorage.setItem("app_pin_value", pinToRestore);
+        localStorage.removeItem("app_pin_disabled");
+        showToast("PIN berhasil diaktifkan", "success");
+      }
+    });
+  } else {
+    confirmDialog(
+      "Apakah Anda yakin ingin menonaktifkan PIN? Aplikasi akan lebih rentan ke orang lain.",
+      async (confirmed) => {
+        if (confirmed) {
+          const pinToSave = activePin || savedValue;
+          localStorage.setItem("app_pin_value", pinToSave);
+          localStorage.removeItem("app_pin");
+          localStorage.setItem("app_pin_disabled", "true");
+          showToast("PIN berhasil dinonaktifkan", "success");
+        }
+      },
+    );
+  }
+}
+
+// Modal buat PIN baru (saat belum ada PIN sama sekali)
+function showSetNewPinModal() {
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3><i class="fas fa-key"></i> Buat PIN Baru</h3>
+        <button class="modal-close-btn modal-close-x">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="new-pin-form">
+          <div class="form-group">
+            <label>PIN Baru</label>
+            <input type="password" id="set-new-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
+          </div>
+          <div class="form-group">
+            <label>Konfirmasi PIN</label>
+            <input type="password" id="set-confirm-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
+          </div>
+          <div class="modal-buttons">
+            <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+            <button type="submit" class="btn-primary">Simpan PIN</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector("#new-pin-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const newPin = modal.querySelector("#set-new-pin").value;
+    const confirmPin = modal.querySelector("#set-confirm-pin").value;
+
+    if (newPin.length !== 6 || !/^\d+$/.test(newPin)) {
+      showToast("PIN harus 6 digit angka", "error");
+      return;
+    }
+    if (newPin !== confirmPin) {
+      showToast("Konfirmasi PIN tidak cocok", "error");
+      return;
+    }
+
+    localStorage.setItem("app_pin", newPin);
+    localStorage.setItem("app_pin_value", newPin);
+    localStorage.removeItem("app_pin_disabled");
+    showToast("PIN berhasil dibuat dan diaktifkan", "success");
+    modal.remove();
+  });
+
+  const closeModal = () => modal.remove();
+  modal
+    .querySelectorAll(".modal-close-btn")
+    .forEach((btn) => btn.addEventListener("click", closeModal));
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
 }
 
 // Show change PIN modal
 async function showChangePinModal() {
-  const modalContent = `
-        <form id="change-pin-form">
-            <div class="form-group">
-                <label>PIN Lama</label>
-                <input type="password" id="old-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
-            </div>
-            <div class="form-group">
-                <label>PIN Baru</label>
-                <input type="password" id="new-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
-            </div>
-            <div class="form-group">
-                <label>Konfirmasi PIN Baru</label>
-                <input type="password" id="confirm-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
-            </div>
-            <div class="modal-buttons">
-                <button type="button" class="btn-secondary modal-close-btn">Batal</button>
-                <button type="submit" class="btn-primary">Ubah PIN</button>
-            </div>
-        </form>
-    `;
+  const currentPin =
+    localStorage.getItem("app_pin") || localStorage.getItem("app_pin_value");
+  const pinDisabled = localStorage.getItem("app_pin_disabled") === "true";
+
+  if (!currentPin) {
+    showToast(
+      "PIN belum diatur. Gunakan Kelola PIN untuk mengatur PIN baru.",
+      "error",
+    );
+    return;
+  }
 
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-small">
-            <div class="modal-header">
-                <h3><i class="fas fa-key"></i> Ubah PIN</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
-            </div>
-            <div class="modal-body">
-                ${modalContent}
-            </div>
-        </div>
-    `;
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3><i class="fas fa-key"></i> Ubah PIN</h3>
+        <button class="modal-close-btn modal-close-x">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="change-pin-form">
+          ${pinDisabled ? `<div class="form-group"><p style="color:orange;font-size:0.85em;margin:0 0 8px;"><i class="fas fa-info-circle"></i> PIN sedang nonaktif. PIN baru akan tersimpan tapi tetap nonaktif.</p></div>` : ""}
+          <div class="form-group">
+            <label>PIN Lama</label>
+            <input type="password" id="old-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
+          </div>
+          <div class="form-group">
+            <label>PIN Baru</label>
+            <input type="password" id="new-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
+          </div>
+          <div class="form-group">
+            <label>Konfirmasi PIN Baru</label>
+            <input type="password" id="confirm-pin" class="form-input" maxlength="6" pattern="[0-9]*" inputmode="numeric" placeholder="6 digit angka" required>
+          </div>
+          <div class="modal-buttons">
+            <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+            <button type="submit" class="btn-primary">Ubah PIN</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
 
   document.body.appendChild(modal);
 
-  const form = modal.querySelector("#change-pin-form");
-  form.addEventListener("submit", (e) => {
+  modal.querySelector("#change-pin-form").addEventListener("submit", (e) => {
     e.preventDefault();
 
     const oldPin = modal.querySelector("#old-pin").value;
     const newPin = modal.querySelector("#new-pin").value;
     const confirmPin = modal.querySelector("#confirm-pin").value;
 
-    const savedPin = localStorage.getItem("app_pin");
+    const storedPin =
+      localStorage.getItem("app_pin") || localStorage.getItem("app_pin_value");
 
-    if (!savedPin) {
-      showToast("PIN belum diatur", "error");
-      modal.remove();
-      return;
-    }
-
-    if (oldPin !== savedPin) {
+    if (oldPin !== storedPin) {
       showToast("PIN lama salah", "error");
+      modal.querySelector("#old-pin").value = "";
+      modal.querySelector("#old-pin").focus();
       return;
     }
 
@@ -428,39 +542,141 @@ async function showChangePinModal() {
       return;
     }
 
-    localStorage.setItem("app_pin", newPin);
-    showToast("PIN berhasil diubah", "success");
+    const isPinDisabled = localStorage.getItem("app_pin_disabled") === "true";
+    localStorage.setItem("app_pin_value", newPin);
+
+    if (isPinDisabled) {
+      showToast("PIN berhasil diubah (PIN masih nonaktif)", "success");
+    } else {
+      localStorage.setItem("app_pin", newPin);
+      showToast("PIN berhasil diubah", "success");
+    }
+
     modal.remove();
   });
 
   const closeModal = () => modal.remove();
-  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
-    btn.addEventListener("click", closeModal);
-  });
+  modal
+    .querySelectorAll(".modal-close-btn")
+    .forEach((btn) => btn.addEventListener("click", closeModal));
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
   });
 }
 
-// Toggle PIN (disable)
-function togglePin() {
-  const hasPin = localStorage.getItem("app_pin");
+// ─── Backup folder helpers ────────────────────────────────────────────────────
 
-  if (!hasPin) {
-    showToast("PIN belum diatur", "error");
-    return;
-  }
-
-  confirmDialog(
-    "Apakah Anda yakin ingin menonaktifkan PIN? Aplikasi akan lebih rentan ke orang lain.",
-    async (confirmed) => {
-      if (confirmed) {
-        localStorage.removeItem("app_pin");
-        showToast("PIN berhasil dinonaktifkan", "success");
-      }
-    },
-  );
+function getBackupFolderName() {
+  return localStorage.getItem("backup_folder_name") || "";
 }
+
+function setBackupFolderName(name) {
+  localStorage.setItem("backup_folder_name", name.trim());
+}
+
+function getBackupFilename() {
+  // Nama file selalu tetap agar file lama tertimpa saat download ke folder yg sama
+  return "money_manager_backup.json";
+}
+
+function updateBackupFolderDesc() {
+  const el = document.getElementById("backup-folder-desc");
+  if (!el) return;
+  const folder = getBackupFolderName();
+  el.textContent = folder
+    ? `Folder: ${folder}`
+    : "Belum diatur — file disimpan ke folder Download default";
+}
+
+function showBackupFolderModal() {
+  document.getElementById("backup-folder-modal")?.remove();
+
+  const current = getBackupFolderName();
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+  // Petunjuk berbeda antara mobile dan desktop
+  const guideHtml = isMobile
+    ? `<div style="
+        background:var(--bg-primary);border-radius:10px;
+        padding:12px 14px;font-size:.82rem;color:var(--text-secondary);
+        line-height:1.6;margin-bottom:16px;
+      ">
+        <strong style="color:var(--text-primary);">📱 Cara pakai di Android:</strong><br>
+        1. Buka <em>File Manager</em> di HP kamu.<br>
+        2. Buat folder baru, misalnya <code>MoneyManagerBackup</code>.<br>
+        3. Ketik nama folder yang sama di kolom di atas (hanya sebagai label — tidak membuat folder otomatis).<br>
+        4. Setiap kali backup, pindahkan file <strong>${getBackupFilename()}</strong> ke folder tersebut secara manual, atau biarkan di Downloads.<br>
+        <br>
+        <strong style="color:var(--text-primary);">💡 Tips:</strong> Karena nama file backup selalu sama (<strong>${getBackupFilename()}</strong>), file lama akan tertimpa jika kamu download ke folder yang sama — tidak akan menumpuk.
+      </div>`
+    : `<div style="
+        background:var(--bg-primary);border-radius:10px;
+        padding:12px 14px;font-size:.82rem;color:var(--text-secondary);
+        line-height:1.6;margin-bottom:16px;
+      ">
+        <strong style="color:var(--text-primary);">🖥️ Cara pakai di Desktop/PC:</strong><br>
+        1. Buat folder khusus di komputer kamu, misalnya <code>D:\\BackupKeuangan</code>.<br>
+        2. Ketik nama atau path folder di kolom di atas (hanya sebagai label pengingat).<br>
+        3. Setiap kali backup, browser akan mendownload file <strong>${getBackupFilename()}</strong>.<br>
+        4. Pindahkan atau arahkan browser kamu agar menyimpan ke folder tersebut.<br>
+        &nbsp;&nbsp;&nbsp;<em>(Chrome: Pengaturan → Downloads → ubah lokasi download)</em><br>
+        <br>
+        <strong style="color:var(--text-primary);">💡 Tips:</strong> Nama file selalu sama, jadi file lama akan tertimpa otomatis jika folder download-mu sama.
+      </div>`;
+
+  const modal = document.createElement("div");
+  modal.id = "backup-folder-modal";
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal-container modal-small" style="max-width:440px;width:95%;">
+      <div class="modal-header">
+        <h3><i class="fas fa-folder-open"></i> Pengaturan Folder Backup</h3>
+        <button class="modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);padding:0 8px;">&times;</button>
+      </div>
+      <div class="modal-body">
+        ${guideHtml}
+        <div class="form-group">
+          <label style="font-size:.85rem;font-weight:500;display:block;margin-bottom:6px;">
+            Nama / Label Folder Backup
+          </label>
+          <input
+            type="text"
+            id="backup-folder-input"
+            class="form-input"
+            placeholder="Contoh: MoneyManagerBackup atau D:\\BackupKeuangan"
+            value="${escapeHtml(current)}"
+          >
+          <small style="color:var(--text-secondary);font-size:.75rem;display:block;margin-top:4px;">
+            Ini hanya label pengingat. Nama file backup akan selalu: <strong>${getBackupFilename()}</strong>
+          </small>
+        </div>
+        <div class="modal-buttons">
+          <button type="button" class="btn-secondary" id="backup-folder-cancel">Batal</button>
+          <button type="button" class="btn-primary" id="backup-folder-save">Simpan</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector("#backup-folder-save").addEventListener("click", () => {
+    const val = modal.querySelector("#backup-folder-input").value;
+    setBackupFolderName(val);
+    updateBackupFolderDesc();
+    showToast("Pengaturan folder backup disimpan", "success");
+    modal.remove();
+  });
+
+  const close = () => modal.remove();
+  modal.querySelector(".modal-close-x").addEventListener("click", close);
+  modal.querySelector("#backup-folder-cancel").addEventListener("click", close);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) close();
+  });
+}
+
+// ─── backupData (nama file tetap, dengan info folder) ────────────────────────
 
 async function backupData() {
   showToast("Menyiapkan backup...", "info");
@@ -470,16 +686,25 @@ async function backupData() {
     const jsonStr = JSON.stringify(data, null, 2);
     const blob = new Blob([jsonStr], { type: "application/json" });
 
-    const date = new Date();
-    const filename = `money_manager_backup_${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}.json`;
+    // Nama file SELALU TETAP — file lama akan tertimpa jika disimpan di folder yang sama
+    const filename = getBackupFilename();
+    const folderName = getBackupFolderName();
 
     const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     if (isMobile) {
       document.getElementById("backup-overlay")?.remove();
 
-      // Buat URL baru setiap kali overlay dibuat
       const url = URL.createObjectURL(blob);
+
+      const folderInfo = folderName
+        ? `<p style="margin:0 0 4px;color:var(--text-secondary);font-size:.82rem;">
+            📁 Folder tujuan: <strong>${escapeHtml(folderName)}</strong><br>
+            <span style="font-size:.78rem;">Pindahkan file ke folder tersebut setelah didownload.</span>
+           </p>`
+        : `<p style="margin:0 0 4px;color:var(--text-secondary);font-size:.82rem;">
+            💡 Belum ada folder yang diatur. Atur folder di <em>Pengaturan Folder Backup</em>.
+           </p>`;
 
       const overlay = document.createElement("div");
       overlay.id = "backup-overlay";
@@ -493,10 +718,12 @@ async function backupData() {
           border-radius:20px 20px 0 0;padding:24px 24px 36px;
         ">
           <div style="width:40px;height:4px;background:var(--border-color);border-radius:2px;margin:0 auto 20px;"></div>
-          <h3 style="margin:0 0 6px;font-size:1.1rem;">💾 Backup Siap</h3>
-          <p style="margin:0 0 20px;color:var(--text-secondary);font-size:.9rem;">
+          <h3 style="margin:0 0 8px;font-size:1.1rem;">💾 Backup Siap</h3>
+          <p style="margin:0 0 6px;color:var(--text-secondary);font-size:.9rem;">
             File: <strong>${filename}</strong>
           </p>
+          ${folderInfo}
+          <div style="margin-bottom:16px;"></div>
           <a id="backup-download-btn" href="${url}" download="${filename}" style="
             display:block;width:100%;padding:14px;text-align:center;
             background:var(--info);color:#fff;border-radius:12px;
@@ -519,7 +746,6 @@ async function backupData() {
         if (closed) return;
         closed = true;
         overlay.remove();
-        // Revoke URL dengan delay agar browser sempat download
         if (revokeUrl) setTimeout(() => URL.revokeObjectURL(url), 5000);
         else URL.revokeObjectURL(url);
       };
@@ -528,7 +754,6 @@ async function backupData() {
         .querySelector("#backup-download-btn")
         .addEventListener("click", () => {
           showToast("Backup berhasil didownload!", "success");
-          // Tutup overlay tapi beri waktu browser untuk proses download dulu
           setTimeout(() => close(false), 1000);
         });
 
@@ -548,7 +773,11 @@ async function backupData() {
       a.click();
       document.body.removeChild(a);
       setTimeout(() => URL.revokeObjectURL(url), 3000);
-      showToast("Backup berhasil!", "success");
+
+      const msg = folderName
+        ? `Backup berhasil! Simpan ke folder: ${folderName}`
+        : "Backup berhasil!";
+      showToast(msg, "success");
     }
   } catch (error) {
     console.error("Backup error:", error);
@@ -715,6 +944,8 @@ async function resetAllData() {
         showToast("Menghapus semua data...", "info");
         await clearAllData();
         localStorage.removeItem("app_pin");
+        localStorage.removeItem("app_pin_value");
+        localStorage.removeItem("app_pin_disabled");
         localStorage.removeItem("theme");
         showToast(
           "Semua data telah dihapus! Aplikasi akan dimuat ulang.",

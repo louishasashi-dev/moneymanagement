@@ -486,7 +486,7 @@ async function showAddMoneyModal(savingId) {
       type: "deposit",
       amount: amount,
       note: note,
-      date: getCurrentDateTime().datetime,
+      date: new Date().toISOString(),
       previousAmount: saving.currentAmount - amount,
       newAmount: saving.currentAmount,
     });
@@ -601,7 +601,7 @@ async function showWithdrawModal(savingId) {
       type: "withdraw",
       amount: amount,
       note: note,
-      date: getCurrentDateTime().datetime,
+      date: new Date().toISOString(),
       previousAmount: saving.currentAmount + amount,
       newAmount: saving.currentAmount,
     });
@@ -651,16 +651,31 @@ async function showHistoryModal(savingId) {
           .reverse()
           .map((h) => {
             const isDeposit = h.type === "deposit";
-            const dateObj = new Date(h.date);
-            const dateStr = dateObj.toLocaleDateString("id-ID", {
-              day: "2-digit",
-              month: "short",
-              year: "numeric",
-            });
-            const timeStr = dateObj.toLocaleTimeString("id-ID", {
-              hour: "2-digit",
-              minute: "2-digit",
-            });
+            // Support both ISO string (baru) dan format lama "dd/mm/yyyy HH:MM"
+            let dateObj;
+            if (h.date && h.date.includes("/")) {
+              // Format lama: "24/06/2026 14:30"
+              const parts = h.date.split(" ");
+              const [d, m, y] = parts[0].split("/");
+              const [hr, mn] = (parts[1] || "00:00").split(":");
+              dateObj = new Date(y, m - 1, d, hr, mn);
+            } else {
+              dateObj = new Date(h.date);
+            }
+            const isValidDate = !isNaN(dateObj.getTime());
+            const dateStr = isValidDate
+              ? dateObj.toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "Tanggal tidak tersedia";
+            const timeStr = isValidDate
+              ? dateObj.toLocaleTimeString("id-ID", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })
+              : "";
             return `
               <div style="
                 display:flex;align-items:center;gap:12px;
@@ -730,8 +745,12 @@ async function showHistoryModal(savingId) {
 
   document.body.appendChild(modal);
 
-  modal.querySelector(".modal-close-x").addEventListener("click", () => modal.remove());
-  modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+  modal
+    .querySelector(".modal-close-x")
+    .addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.remove();
+  });
 }
 
 // Delete saving

@@ -105,8 +105,13 @@ export function showToast(message, type = "success", duration = 3000) {
 
 // Show Modal
 export function showModal(title, content, onConfirm = null, onCancel = null) {
+  // Tutup semua modal konfirmasi yang ada dulu sebelum buat baru
+  document
+    .querySelectorAll(".modal-overlay.confirm-modal")
+    .forEach((m) => m.remove());
+
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay confirm-modal";
   modal.innerHTML = `
         <div class="modal-container">
             <div class="modal-header">
@@ -117,90 +122,20 @@ export function showModal(title, content, onConfirm = null, onCancel = null) {
                 ${content}
             </div>
             <div class="modal-footer">
-                ${onCancel ? '<button class="btn-secondary modal-cancel">Batal</button>' : ""}
-                ${onConfirm ? '<button class="btn-primary modal-confirm">Konfirmasi</button>' : ""}
+                ${onCancel !== undefined ? '<button class="btn-secondary modal-cancel">Batal</button>' : ""}
+                ${onConfirm !== null ? '<button class="btn-primary modal-confirm">Konfirmasi</button>' : ""}
             </div>
         </div>
     `;
 
-  // Add styles
-  const style = document.createElement("style");
-  style.textContent = `
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 2000;
-            animation: fadeIn 0.2s ease;
-        }
-        .modal-container {
-            background: var(--bg-secondary);
-            border-radius: 20px;
-            width: 90%;
-            max-width: 400px;
-            max-height: 80vh;
-            overflow: auto;
-            animation: slideUp 0.3s ease;
-        }
-        .modal-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: var(--text-secondary);
-        }
-        .modal-body {
-            padding: 20px;
-        }
-        .modal-footer {
-            padding: 16px 20px;
-            border-top: 1px solid var(--border-color);
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-        }
-        .btn-primary, .btn-secondary {
-            padding: 8px 16px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        .btn-primary {
-            background: var(--info);
-            color: white;
-        }
-        .btn-secondary {
-            background: var(--border-color);
-            color: var(--text-primary);
-        }
-    `;
-
-  document.head.appendChild(style);
   document.body.appendChild(modal);
 
-  const closeModal = () => {
-    modal.remove();
-    style.remove();
-  };
+  const closeModal = () => modal.remove();
 
   modal.querySelector(".modal-close")?.addEventListener("click", closeModal);
   modal.querySelector(".modal-cancel")?.addEventListener("click", () => {
-    if (onCancel) onCancel();
     closeModal();
+    if (onCancel) onCancel(false);
   });
   modal.querySelector(".modal-confirm")?.addEventListener("click", () => {
     closeModal();
@@ -214,7 +149,7 @@ export function showModal(title, content, onConfirm = null, onCancel = null) {
 
 // Show Confirmation Dialog
 export function confirmDialog(message, onConfirm, onCancel) {
-  showModal("Konfirmasi", `<p>${message}</p>`, onConfirm, onCancel);
+  showModal("Konfirmasi", `<p>${message}</p>`, onConfirm, onCancel ?? null);
 }
 
 // Calculate Statistics
@@ -272,18 +207,19 @@ export function normalizeString(str) {
 
 // Setup Global Event Listeners
 export function setupEventListeners() {
-  // Handle ESC key for modals
+  // Handle ESC key untuk tutup SEMUA modal overlay sekaligus
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      const modal = document.querySelector(".modal-overlay");
-      if (modal) modal.remove();
+      document.querySelectorAll(".modal-overlay").forEach((m) => m.remove());
     }
   });
 }
 
-// Add CSS animations
-const animationStyles = document.createElement("style");
-animationStyles.textContent = `
+// Add CSS animations + modal styles (satu kali, tidak inject berulang)
+if (!document.getElementById("utils-global-styles")) {
+  const globalStyles = document.createElement("style");
+  globalStyles.id = "utils-global-styles";
+  globalStyles.textContent = `
     @keyframes slideUp {
         from {
             opacity: 0;
@@ -308,5 +244,71 @@ animationStyles.textContent = `
         from { opacity: 0; }
         to { opacity: 1; }
     }
-`;
-document.head.appendChild(animationStyles);
+
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+        animation: fadeIn 0.2s ease;
+    }
+    .modal-container {
+        background: var(--bg-secondary);
+        border-radius: 20px;
+        width: 90%;
+        max-width: 400px;
+        max-height: 80vh;
+        overflow: auto;
+        animation: slideUp 0.3s ease;
+    }
+    .modal-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .modal-close, .modal-close-x {
+        background: none;
+        border: none;
+        font-size: 24px;
+        cursor: pointer;
+        color: var(--text-secondary);
+    }
+    .modal-body {
+        padding: 20px;
+    }
+    .modal-footer {
+        padding: 16px 20px;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+    .btn-primary {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        background: var(--info);
+        color: white;
+    }
+    .btn-secondary {
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        font-size: 14px;
+        background: var(--border-color);
+        color: var(--text-primary);
+    }
+  `;
+  document.head.appendChild(globalStyles);
+}
