@@ -427,6 +427,15 @@ async function exportToPDF() {
       else totalExpense += t.amount;
     });
 
+    // Ambil data dompet untuk ditampilkan di kolom "Dompet"
+    const wallets = await getAllItems(STORES.WALLETS);
+    const walletNameMap = {};
+    wallets.forEach((w) => {
+      walletNameMap[w.id] = w.name;
+    });
+    const getWalletName = (walletId) =>
+      walletNameMap[walletId] || "Dompet Lain";
+
     // ── HEADER ──────────────────────────────────────
     doc.setFillColor(26, 26, 46);
     doc.rect(0, 0, W, 28, "F");
@@ -532,9 +541,10 @@ async function exportToPDF() {
 
     // Header tabel
     const cols = {
-      date: { x: ML, w: 22 },
-      name: { x: ML + 22, w: 80 },
-      cat: { x: ML + 102, w: 38 },
+      date: { x: ML, w: 20 },
+      name: { x: ML + 20, w: 62 },
+      cat: { x: ML + 82, w: 28 },
+      wallet: { x: ML + 110, w: 30 },
       amount: { x: ML + 140, w: 54 },
     };
 
@@ -546,6 +556,7 @@ async function exportToPDF() {
     doc.text("Tanggal", cols.date.x + 1, y + 4.5);
     doc.text("Keterangan", cols.name.x + 1, y + 4.5);
     doc.text("Kategori", cols.cat.x + 1, y + 4.5);
+    doc.text("Dompet", cols.wallet.x + 1, y + 4.5);
     doc.text("Nominal", cols.amount.x + cols.amount.w - 1, y + 4.5, {
       align: "right",
     });
@@ -566,6 +577,7 @@ async function exportToPDF() {
         doc.text("Tanggal", cols.date.x + 1, y + 4.5);
         doc.text("Keterangan", cols.name.x + 1, y + 4.5);
         doc.text("Kategori", cols.cat.x + 1, y + 4.5);
+        doc.text("Dompet", cols.wallet.x + 1, y + 4.5);
         doc.text("Nominal", cols.amount.x + cols.amount.w - 1, y + 4.5, {
           align: "right",
         });
@@ -600,8 +612,13 @@ async function exportToPDF() {
       doc.text(nameTrunc, cols.name.x + 1, y + 3.5);
 
       // Kategori
-      const catStr = (t.category || "-").substring(0, 18);
+      const catStr = (t.category || "-").substring(0, 14);
       doc.text(catStr, cols.cat.x + 1, y + 3.5);
+
+      // Dompet / sumber uang
+      doc.setTextColor(40, 40, 60);
+      const walletStr = getWalletName(t.walletId).substring(0, 16);
+      doc.text(walletStr, cols.wallet.x + 1, y + 3.5);
 
       // Nominal (rata kanan, warna sesuai tipe)
       if (t.type === "income") doc.setTextColor(16, 185, 129);

@@ -37,6 +37,10 @@ export async function renderDashboard() {
   );
   const allWallets = await getAllItems(STORES.WALLETS);
   const stats = calculateStats(monthlyTransactions);
+  const totalWalletBalance = allWallets.reduce(
+    (sum, w) => sum + (w.balance || 0),
+    0,
+  );
 
   // Get recent transactions
   const recentTransactions = await searchTransactions(
@@ -95,8 +99,17 @@ export async function renderDashboard() {
                         <i class="fas fa-wallet"></i>
                     </div>
                     <div class="stat-info">
-                        <span class="stat-label">Saldo Akhir</span>
+                        <span class="stat-label">Arus kas</span>
                         <span class="stat-value ${stats.balance >= 0 ? "positive" : "negative"}" id="total-balance">${formatCurrency(stats.balance)}</span>
+                    </div>
+                </div>
+                <div class="stat-card total-balance-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-landmark"></i>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-label">Total Saldo</span>
+                        <span class="stat-value" id="total-wallet-balance">${formatCurrency(totalWalletBalance)}</span>
                     </div>
                 </div>
             </div>
@@ -570,7 +583,7 @@ function addDashboardStyles() {
         
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 16px;
             margin-bottom: 20px;
         }
@@ -608,6 +621,11 @@ function addDashboardStyles() {
         .balance-card .stat-icon {
             background: rgba(59, 130, 246, 0.1);
             color: #3b82f6;
+        }
+        
+        .total-balance-card .stat-icon {
+            background: rgba(139, 92, 246, 0.1);
+            color: #8b5cf6;
         }
         
         .stat-info {
@@ -802,12 +820,12 @@ function addDashboardStyles() {
         
         @media (max-width: 768px) {
             .stats-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, 1fr);
                 gap: 12px;
             }
             
             .stat-value {
-                font-size: 1rem;
+                font-size: 0.95rem;
             }
         }
     `;

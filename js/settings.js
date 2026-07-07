@@ -91,6 +91,13 @@ export async function renderSettingsPage() {
                     </div>
                     <i class="fas fa-chevron-right"></i>
                 </div>
+                <div class="settings-item clickable" id="reset-pin-item">
+                    <div class="item-info">
+                        <span class="item-title">Reset PIN</span>
+                        <span class="item-desc">Lupa PIN? Hapus PIN lama dan buat PIN baru (data Anda aman)</span>
+                    </div>
+                    <i class="fas fa-chevron-right"></i>
+                </div>
             </div>
             
             <!-- Data -->
@@ -287,6 +294,12 @@ function setupSettingsEventListeners() {
     togglePinItem.addEventListener("click", () => togglePin());
   }
 
+  // Reset PIN (lupa PIN)
+  const resetPinItem = document.getElementById("reset-pin-item");
+  if (resetPinItem) {
+    resetPinItem.addEventListener("click", () => resetPin());
+  }
+
   // Backup data
   const backupItem = document.getElementById("backup-data-item");
   if (backupItem) {
@@ -337,6 +350,30 @@ function setupSettingsEventListeners() {
       }
     });
   }
+}
+
+// Reset PIN (lupa PIN) - menghapus PIN lama tanpa menyentuh data lain
+function resetPin() {
+  const hasAnyPin =
+    localStorage.getItem("app_pin") || localStorage.getItem("app_pin_value");
+
+  if (!hasAnyPin) {
+    showToast("Belum ada PIN yang diatur", "error");
+    return;
+  }
+
+  confirmDialog(
+    "Reset PIN? PIN lama akan dihapus dan Anda akan membuat PIN baru. Data transaksi dan dompet Anda TIDAK akan terhapus.",
+    async (confirmed) => {
+      if (confirmed) {
+        localStorage.removeItem("app_pin");
+        localStorage.removeItem("app_pin_value");
+        localStorage.removeItem("app_pin_disabled");
+        showToast("PIN lama dihapus. Silakan buat PIN baru.", "success");
+        showSetNewPinModal();
+      }
+    },
+  );
 }
 
 // Apply tema

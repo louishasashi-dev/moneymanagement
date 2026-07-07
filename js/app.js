@@ -10,7 +10,7 @@ import {
   STORES,
   searchTransactions,
 } from "./db.js";
-import { setupEventListeners, showToast } from "./utils.js";
+import { setupEventListeners, showToast, confirmDialog } from "./utils.js";
 import { renderDashboard } from "./dashboard.js";
 import {
   checkAndCreateNotifications,
@@ -222,6 +222,11 @@ async function loadPage(page) {
         await renderDebtsPage();
         break;
       }
+      case "assets": {
+        const { renderAssetsPage } = await import("./assets.js");
+        await renderAssetsPage();
+        break;
+      }
       case "reports":
         try {
           const module = await import("./report.js");
@@ -283,7 +288,63 @@ function checkPINStatus() {
   if (hasPIN) {
     pinScreen.classList.remove("hidden");
     setupPINHandler();
+    setupForgotPinLink();
   }
+}
+
+// Pasang tombol "Lupa PIN?" di layar kunci (dibuat otomatis via JS)
+function setupForgotPinLink() {
+  const pinScreen = document.getElementById("pin-screen");
+  if (!pinScreen) return;
+
+  // Jangan buat dobel kalau sudah pernah dipasang
+  if (document.getElementById("forgot-pin-link")) return;
+
+  const link = document.createElement("button");
+  link.id = "forgot-pin-link";
+  link.type = "button";
+  link.textContent = "Lupa PIN?";
+  link.style.cssText = `
+    display: block;
+    margin: 20px auto 0;
+    background: none;
+    border: none;
+    color: var(--info, #3b82f6);
+    font-size: 0.9rem;
+    text-decoration: underline;
+    cursor: pointer;
+  `;
+
+  link.addEventListener("click", handleForgotPin);
+
+  // Taruh tombol di bagian bawah kotak PIN
+  const pinBox =
+    pinScreen.querySelector(".pin-box") ||
+    pinScreen.firstElementChild ||
+    pinScreen;
+  pinBox.appendChild(link);
+}
+
+// Reset PIN dari layar kunci (untuk kasus lupa PIN)
+// Hanya menghapus data PIN di localStorage, TIDAK menyentuh data transaksi/dompet
+function handleForgotPin() {
+  confirmDialog(
+    "PIN akan direset dan aplikasi akan terbuka tanpa PIN. Anda bisa membuat PIN baru lewat menu Pengaturan. Data transaksi & dompet Anda TIDAK akan terhapus. Lanjutkan?",
+    (confirmed) => {
+      if (!confirmed) return;
+
+      localStorage.removeItem("app_pin");
+      localStorage.removeItem("app_pin_value");
+      localStorage.removeItem("app_pin_disabled");
+
+      const pinScreen = document.getElementById("pin-screen");
+      const pinInput = document.getElementById("pin-input");
+      if (pinInput) pinInput.value = "";
+      if (pinScreen) pinScreen.classList.add("hidden");
+
+      showToast("PIN berhasil direset. Aplikasi kini tanpa PIN.", "success");
+    },
+  );
 }
 
 function setupPINHandler() {
