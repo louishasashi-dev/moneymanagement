@@ -17,7 +17,6 @@ import {
   cleanOldNotifications,
   getUnreadNotifications,
 } from "./notifications.js";
-import { processRecurringTransactions } from "./recurring.js";
 import { checkAndAutoReset, checkPlannedReminder } from "./planned.js";
 
 // App State
@@ -59,9 +58,6 @@ async function initApp() {
     // Setup PWA
     // Setup PWA
     setupPWA();
-
-    // Proses recurring transactions
-    await processRecurringTransactions();
 
     // Cek & buat notifikasi
     await checkAndCreateNotifications();
@@ -242,11 +238,6 @@ async function loadPage(page) {
       case "notifications": {
         const { renderNotificationsPage } = await import("./notifications.js");
         await renderNotificationsPage();
-        break;
-      }
-      case "recurring": {
-        const { renderRecurringPage } = await import("./recurring.js");
-        await renderRecurringPage();
         break;
       }
       case "planned": {

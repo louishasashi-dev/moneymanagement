@@ -552,6 +552,18 @@ body {
   gap: 8px;
 }
 
+.period-filter-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.custom-date-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
 .filter-select {
   width: 100%;
   padding: 8px 10px;
@@ -570,6 +582,10 @@ body {
 
 @media (max-width: 768px) {
   .filter-group {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .custom-date-group {
     grid-template-columns: 1fr 1fr;
   }
 }

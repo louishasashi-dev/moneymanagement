@@ -12,7 +12,6 @@ const STORES = {
   CATEGORIES: "categories",
   SETTINGS: "settings",
   TRASH: "trash",
-  RECURRING: "recurring",
   NOTIFICATIONS: "notifications",
   PLANNED: "planned_transactions",
 };
@@ -187,16 +186,6 @@ export async function initDB() {
         trashStore.createIndex("originalStore", "originalStore", {
           unique: false,
         });
-        // Recurring Transactions Store
-        if (!db.objectStoreNames.contains(STORES.RECURRING)) {
-          const recurringStore = db.createObjectStore(STORES.RECURRING, {
-            keyPath: "id",
-            autoIncrement: true,
-          });
-          recurringStore.createIndex("nextDate", "nextDate", { unique: false });
-          recurringStore.createIndex("isActive", "isActive", { unique: false });
-        }
-
         // Notifications Store
         if (!db.objectStoreNames.contains(STORES.NOTIFICATIONS)) {
           const notifStore = db.createObjectStore(STORES.NOTIFICATIONS, {

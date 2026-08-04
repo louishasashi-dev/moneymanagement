@@ -6,12 +6,32 @@ import { formatCurrency, formatDate, showToast } from "./utils.js";
 
 // State
 let currentReportPeriod = "month";
+let customFilters = {
+  day: "all", // tanggal spesifik dalam minggu ini, "all" = tampilkan seminggu penuh
+};
 let reportData = {
   transactions: [],
   startDate: "",
   endDate: "",
 };
 let charts = {};
+
+// Nama hari singkat & nama bulan lengkap (untuk label filter tanggal custom)
+const DAY_NAMES_SHORT = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+const MONTH_NAMES_FULL = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
 
 // Helper function to format date to YYYY-MM-DD
 function formatDateToYYYYMMDD(date) {
@@ -41,20 +61,44 @@ function getMonthNameFromDate(dateStr) {
   return `${months[parseInt(month) - 1]} ${year}`;
 }
 
+// Dapatkan tanggal awal & akhir minggu ini (Minggu - Sabtu)
+function getWeekBounds(refDate = new Date()) {
+  const startOfWeek = new Date(refDate);
+  startOfWeek.setDate(refDate.getDate() - refDate.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(0, 0, 0, 0);
+  return { startOfWeek, endOfWeek };
+}
+
+// Daftar tanggal dalam minggu ini (Minggu - Sabtu), dipakai untuk opsi filter tanggal custom
+function getCurrentWeekDayOptions() {
+  const { startOfWeek } = getWeekBounds(new Date());
+  const options = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startOfWeek);
+    d.setDate(startOfWeek.getDate() + i);
+    options.push({
+      value: formatDateToYYYYMMDD(d),
+      label: `${DAY_NAMES_SHORT[d.getDay()]}, ${d.getDate()}`,
+    });
+  }
+  return options;
+}
+
 // Get date range based on period
-function getDateRange(period) {
+function getDateRange(period, customDay = "all") {
   const now = new Date();
   let startDate, endDate;
 
   switch (period) {
-    case "week":
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - now.getDay());
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
+    case "week": {
+      const { startOfWeek, endOfWeek } = getWeekBounds(now);
       startDate = formatDateToYYYYMMDD(startOfWeek);
       endDate = formatDateToYYYYMMDD(endOfWeek);
       break;
+    }
     case "month":
       startDate = formatDateToYYYYMMDD(
         new Date(now.getFullYear(), now.getMonth(), 1),
@@ -67,6 +111,19 @@ function getDateRange(period) {
       startDate = formatDateToYYYYMMDD(new Date(now.getFullYear(), 0, 1));
       endDate = formatDateToYYYYMMDD(new Date(now.getFullYear(), 11, 31));
       break;
+    case "custom": {
+      if (customDay && customDay !== "all") {
+        // Tanggal spesifik yang dipilih (hanya bisa dari minggu ini)
+        startDate = customDay;
+        endDate = customDay;
+      } else {
+        // Belum pilih tanggal spesifik -> tampilkan minggu ini secara penuh
+        const { startOfWeek, endOfWeek } = getWeekBounds(now);
+        startDate = formatDateToYYYYMMDD(startOfWeek);
+        endDate = formatDateToYYYYMMDD(endOfWeek);
+      }
+      break;
+    }
     default:
       startDate = formatDateToYYYYMMDD(
         new Date(now.getFullYear(), now.getMonth(), 1),
@@ -107,7 +164,32 @@ export async function renderReportsPage() {
                     <button class="period-btn" data-period="week">Minggu Ini</button>
                     <button class="period-btn active" data-period="month">Bulan Ini</button>
                     <button class="period-btn" data-period="year">Tahun Ini</button>
+                    <button class="period-btn" data-period="custom">🎯 Pilih Tanggal</button>
                 </div>
+                <div class="custom-date-group" id="report-custom-date-group" style="display: none;">
+                    <select id="filter-report-day" class="filter-select">
+                        <option value="all">Tanggal (Semua di Minggu Ini)</option>
+                        ${getCurrentWeekDayOptions()
+                          .map(
+                            (opt) =>
+                              `<option value="${opt.value}">${opt.label}</option>`,
+                          )
+                          .join("")}
+                    </select>
+                    <select id="filter-report-month" class="filter-select" disabled>
+                        <option value="${new Date().getMonth() + 1}" selected>
+                            ${MONTH_NAMES_FULL[new Date().getMonth()]} (Bulan Ini)
+                        </option>
+                    </select>
+                    <select id="filter-report-year" class="filter-select" disabled>
+                        <option value="${new Date().getFullYear()}" selected>
+                            ${new Date().getFullYear()} (Tahun Ini)
+                        </option>
+                    </select>
+                </div>
+                <small id="report-custom-date-help" style="display: none; margin-top: 8px; font-size: 0.7rem; color: var(--text-secondary);">
+                    Laporan hanya bisa ditampilkan untuk periode berjalan (minggu, bulan, dan tahun ini) — bulan/tahun lain tidak bisa dipilih.
+                </small>
             </div>
             
             <div class="summary-cards">
@@ -383,6 +465,10 @@ function renderTransactionTable(transactions) {
 
 // Setup event listeners
 function setupReportEventListeners() {
+  const customDateGroup = document.getElementById("report-custom-date-group");
+  const customDateHelp = document.getElementById("report-custom-date-help");
+  const filterReportDay = document.getElementById("filter-report-day");
+
   document.querySelectorAll(".period-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       document
@@ -391,7 +477,21 @@ function setupReportEventListeners() {
       btn.classList.add("active");
       currentReportPeriod = btn.dataset.period;
 
-      const { startDate, endDate } = getDateRange(currentReportPeriod);
+      // Tampilkan/sembunyikan panel filter tanggal custom
+      const isCustom = currentReportPeriod === "custom";
+      if (customDateGroup)
+        customDateGroup.style.display = isCustom ? "grid" : "none";
+      if (customDateHelp)
+        customDateHelp.style.display = isCustom ? "block" : "none";
+
+      // Reset pilihan tanggal setiap kali pindah/membuka filter custom
+      customFilters.day = "all";
+      if (filterReportDay) filterReportDay.value = "all";
+
+      const { startDate, endDate } = getDateRange(
+        currentReportPeriod,
+        customFilters.day,
+      );
       reportData.startDate = startDate;
       reportData.endDate = endDate;
 
@@ -400,6 +500,26 @@ function setupReportEventListeners() {
       showToast(`Menampilkan laporan ${btn.textContent}`, "success");
     });
   });
+
+  // Filter tanggal spesifik (hanya bisa dari minggu ini)
+  if (filterReportDay) {
+    filterReportDay.addEventListener("change", async (e) => {
+      customFilters.day = e.target.value;
+
+      const { startDate, endDate } = getDateRange("custom", customFilters.day);
+      reportData.startDate = startDate;
+      reportData.endDate = endDate;
+
+      await loadReportData();
+      await renderReportData();
+
+      const label =
+        customFilters.day === "all"
+          ? "Menampilkan laporan minggu ini"
+          : `Menampilkan laporan tanggal ${formatDate(customFilters.day)}`;
+      showToast(label, "success");
+    });
+  }
 
   const exportBtn = document.getElementById("export-pdf-btn");
   if (exportBtn) {
@@ -476,12 +596,11 @@ async function exportToPDF() {
       minute: "2-digit",
     });
     doc.text(`Dicetak: ${printDate}`, W - MR, 12, { align: "right" });
-    doc.text(
-      `Periode: ${formatDate(reportData.startDate)} - ${formatDate(reportData.endDate)}`,
-      W - MR,
-      18,
-      { align: "right" },
-    );
+    const periodeLabel =
+      reportData.startDate === reportData.endDate
+        ? `Tanggal: ${formatDate(reportData.startDate)}`
+        : `Periode: ${formatDate(reportData.startDate)} - ${formatDate(reportData.endDate)}`;
+    doc.text(periodeLabel, W - MR, 18, { align: "right" });
 
     let y = 36;
 

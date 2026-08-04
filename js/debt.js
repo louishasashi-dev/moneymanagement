@@ -20,6 +20,73 @@ import {
 // State
 let allDebts = [];
 
+// ==================== INTEREST (BUNGA) HELPERS ====================
+
+// Label periode bunga
+const INTEREST_PERIOD_LABELS = {
+  none: "Tidak ada bunga",
+  daily: "Harian",
+  weekly: "Mingguan",
+  monthly: "Bulanan",
+  yearly: "Tahunan",
+};
+
+// Cek tahun kabisat
+function isLeapYear(year) {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+// Jumlah hari dalam bulan tertentu (month: 1-12)
+function getDaysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+// Jumlah hari dalam tahun tertentu (365 atau 366 jika kabisat)
+function getDaysInYear(year) {
+  return isLeapYear(year) ? 366 : 365;
+}
+
+// Hitung nominal bunga per hari berdasarkan pokok, persentase, dan periode bunga.
+// Rumus:
+//  - harian   : pokok * persentase / 100
+//  - mingguan : pokok * persentase / 100 / 7 hari
+//  - bulanan  : pokok * persentase / 100 / (30, 31, atau 29 hari, tergantung bulan berjalan)
+//  - tahunan  : pokok * persentase / 100 / (365 atau 366 hari, tergantung tahun berjalan)
+function calculateInterestPerDay(principal, ratePercent, period, refDate = new Date()) {
+  const pokok = Number(principal) || 0;
+  const rate = Number(ratePercent) || 0;
+
+  if (!pokok || !rate || !period || period === "none") {
+    return 0;
+  }
+
+  const interestAmount = (pokok * rate) / 100;
+
+  switch (period) {
+    case "daily":
+      return interestAmount;
+    case "weekly":
+      return interestAmount / 7;
+    case "monthly": {
+      const days = getDaysInMonth(refDate.getFullYear(), refDate.getMonth() + 1);
+      return interestAmount / days;
+    }
+    case "yearly": {
+      const days = getDaysInYear(refDate.getFullYear());
+      return interestAmount / days;
+    }
+    default:
+      return 0;
+  }
+}
+
+// Hitung estimasi bunga per bulan (untuk ditampilkan sebagai info tambahan)
+function calculateInterestPerMonth(principal, ratePercent, period, refDate = new Date()) {
+  const perDay = calculateInterestPerDay(principal, ratePercent, period, refDate);
+  const days = getDaysInMonth(refDate.getFullYear(), refDate.getMonth() + 1);
+  return perDay * days;
+}
+
 // Render halaman piutang utama
 export async function renderDebtsPage() {
   const container = document.getElementById("page-content");
@@ -237,6 +304,17 @@ function renderDebtCard(debt) {
                     }
                 </div>
                 ${
+                  debt.interestPeriod && debt.interestPeriod !== "none" && debt.interestRate > 0
+                    ? `
+                    <div class="interest-badge">
+                        <i class="fas fa-percentage"></i>
+                        Bunga ${debt.interestRate}% / ${INTEREST_PERIOD_LABELS[debt.interestPeriod].toLowerCase()}
+                        <span class="interest-daily">≈ ${formatCurrency(calculateInterestPerDay(debt.amount, debt.interestRate, debt.interestPeriod))} / hari</span>
+                    </div>
+                `
+                    : ""
+                }
+                ${
                   progress > 0 && progress < 100
                     ? `
                     <div class="progress-bar-container">
@@ -378,6 +456,27 @@ async function showDebtModal(debtId = null) {
             </div>
             
             <div class="form-group">
+                <label>Bunga (Opsional)</label>
+                <div class="interest-row">
+                    <input type="number" id="debt-interest-rate" class="form-input" 
+                           value="${isEdit && debt.interestRate ? debt.interestRate : ""}" 
+                           placeholder="Persentase (%)" min="0" step="0.01">
+                    <select id="debt-interest-period" class="form-input">
+                        <option value="none" ${!isEdit || !debt.interestPeriod || debt.interestPeriod === "none" ? "selected" : ""}>Tidak ada bunga</option>
+                        <option value="daily" ${isEdit && debt.interestPeriod === "daily" ? "selected" : ""}>Per Hari</option>
+                        <option value="weekly" ${isEdit && debt.interestPeriod === "weekly" ? "selected" : ""}>Per Minggu</option>
+                        <option value="monthly" ${isEdit && debt.interestPeriod === "monthly" ? "selected" : ""}>Per Bulan</option>
+                        <option value="yearly" ${isEdit && debt.interestPeriod === "yearly" ? "selected" : ""}>Per Tahun</option>
+                    </select>
+                </div>
+                <small class="form-help">Bunga dihitung dari nominal pokok. Untuk mingguan/bulanan/tahunan, sistem otomatis mengonversi ke nilai harian (dibagi 7 hari / jumlah hari di bulan berjalan / jumlah hari di tahun berjalan)</small>
+                <div class="interest-preview" id="debt-interest-preview" style="display: none;">
+                    <i class="fas fa-calculator"></i>
+                    <span id="debt-interest-preview-text"></span>
+                </div>
+            </div>
+            
+            <div class="form-group">
                 <label>Deskripsi (Opsional)</label>
                 <textarea id="debt-description" class="form-input" rows="2" 
                           placeholder="Catatan tentang hutang/piutang ini...">${isEdit ? escapeHtml(debt.description || "") : ""}</textarea>
@@ -424,6 +523,37 @@ async function showDebtModal(debtId = null) {
     });
   });
 
+  // Setup live preview kalkulasi bunga
+  const amountInput = modal.querySelector("#debt-amount");
+  const interestRateInput = modal.querySelector("#debt-interest-rate");
+  const interestPeriodSelect = modal.querySelector("#debt-interest-period");
+  const interestPreview = modal.querySelector("#debt-interest-preview");
+  const interestPreviewText = modal.querySelector("#debt-interest-preview-text");
+
+  const updateInterestPreview = () => {
+    const principal = parseFloat(amountInput.value) || 0;
+    const rate = parseFloat(interestRateInput.value) || 0;
+    const period = interestPeriodSelect.value;
+
+    if (!principal || !rate || period === "none") {
+      interestPreview.style.display = "none";
+      return;
+    }
+
+    const perDay = calculateInterestPerDay(principal, rate, period);
+    const perMonth = calculateInterestPerMonth(principal, rate, period);
+
+    interestPreviewText.textContent =
+      `Estimasi bunga: ${formatCurrency(perDay)} / hari` +
+      ` (± ${formatCurrency(perMonth)} / bulan)`;
+    interestPreview.style.display = "flex";
+  };
+
+  amountInput.addEventListener("input", updateInterestPreview);
+  interestRateInput.addEventListener("input", updateInterestPreview);
+  interestPeriodSelect.addEventListener("change", updateInterestPreview);
+  updateInterestPreview();
+
   // Handle form submission
   const form = modal.querySelector("#debt-form");
   form.addEventListener("submit", async (e) => {
@@ -435,6 +565,8 @@ async function showDebtModal(debtId = null) {
     const type = typeInput.value;
     const description = modal.querySelector("#debt-description").value;
     const dueDate = modal.querySelector("#debt-duedate").value;
+    const interestRate = parseFloat(modal.querySelector("#debt-interest-rate").value) || 0;
+    const interestPeriod = modal.querySelector("#debt-interest-period").value;
 
     if (!partyName) {
       showToast("Nama harus diisi", "error");
@@ -443,6 +575,11 @@ async function showDebtModal(debtId = null) {
 
     if (!amount || amount <= 0) {
       showToast("Nominal harus lebih dari 0", "error");
+      return;
+    }
+
+    if (interestRate < 0) {
+      showToast("Persentase bunga tidak boleh negatif", "error");
       return;
     }
 
@@ -471,6 +608,8 @@ async function showDebtModal(debtId = null) {
       debt.description = description;
       debt.dueDate = dueDate;
       debt.status = status;
+      debt.interestRate = interestRate;
+      debt.interestPeriod = interestPeriod;
       debt.updatedAt = getCurrentDateTime().datetime;
 
       await updateItem(STORES.DEBTS, debt);
@@ -485,6 +624,8 @@ async function showDebtModal(debtId = null) {
         description: description,
         dueDate: dueDate,
         status: status,
+        interestRate: interestRate,
+        interestPeriod: interestPeriod,
         createdAt: getCurrentDateTime().datetime,
         updatedAt: getCurrentDateTime().datetime,
         payments: [],
@@ -876,6 +1017,61 @@ function addDebtStyles() {
             border-radius: 10px;
             margin: 10px 0;
             font-size: 0.85rem;
+        }
+        
+        .interest-row {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .interest-row #debt-interest-rate {
+            flex: 1;
+        }
+        
+        .interest-row #debt-interest-period {
+            flex: 1.4;
+        }
+        
+        .interest-preview {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+            padding: 10px 12px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            margin-top: 8px;
+        }
+        
+        .interest-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            margin-bottom: 12px;
+        }
+        
+        .interest-badge .interest-daily {
+            margin-left: auto;
+            font-weight: 600;
+            opacity: 0.9;
+        }
+        
+        @media (max-width: 480px) {
+            .interest-row {
+                flex-direction: column;
+            }
+            
+            .interest-badge .interest-daily {
+                margin-left: 0;
+                width: 100%;
+            }
         }
         
         @media (max-width: 768px) {

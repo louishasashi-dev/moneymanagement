@@ -42,7 +42,7 @@ export async function renderDashboard() {
     0,
   );
 
-  // Get recent transactions
+  // Get recent transactions (5 transaksi terbaru, urutkan berdasarkan tanggal + waktu + waktu dibuat)
   const recentTransactions = await searchTransactions(
     "",
     null,
@@ -50,7 +50,17 @@ export async function renderDashboard() {
     null,
     null,
   );
-  const top5Recent = recentTransactions.slice(0, 5);
+  const sortedRecent = [...recentTransactions].sort((a, b) => {
+    const dateCompare = new Date(b.date) - new Date(a.date);
+    if (dateCompare !== 0) return dateCompare;
+
+    const timeA = a.time || "00:00";
+    const timeB = b.time || "00:00";
+    if (timeA !== timeB) return timeB.localeCompare(timeA);
+
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+  const top5Recent = sortedRecent.slice(0, 3);
 
   // Get category budgets
   const today = getCurrentDateTime().date;
@@ -187,13 +197,17 @@ export async function renderDashboard() {
   });
 }
 
-// Render wallets list
+// Render wallets list (hanya tampilkan dompet yang saldonya tidak nol)
 function renderWalletsList(wallets) {
-  if (!wallets || wallets.length === 0) {
-    return '<div class="empty-state">Belum ada dompet</div>';
+  const walletsWithBalance = (wallets || []).filter(
+    (w) => (w.balance || 0) !== 0,
+  );
+
+  if (walletsWithBalance.length === 0) {
+    return '<div class="empty-state">Belum ada dompet dengan saldo</div>';
   }
 
-  return wallets
+  return walletsWithBalance
     .map(
       (wallet) => `
         <div class="wallet-item">

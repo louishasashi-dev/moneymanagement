@@ -28,8 +28,28 @@ let currentFilters = {
   type: "all",
   walletId: "all",
   category: "all",
+  period: "today", // today | week | month | all | custom
+  customDay: "all",
+  customMonth: "all",
+  customYear: "all",
 };
 let allTransactions = [];
+
+// Label bulan untuk filter custom
+const MONTH_NAMES = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
 
 // Render halaman transaksi utama
 export async function renderTransactionsPage() {
@@ -70,6 +90,32 @@ export async function renderTransactionsPage() {
                     </select>
                     <select id="filter-category" class="filter-select">
                         <option value="all">📂 Semua Kategori</option>
+                    </select>
+                </div>
+                <div class="period-filter-group">
+                    <select id="filter-period" class="filter-select">
+                        <option value="today">📅 Hari Ini</option>
+                        <option value="week">🗓️ Minggu Ini</option>
+                        <option value="month">🗓️ Bulan Ini</option>
+                        <option value="all">⏳ Semua Waktu</option>
+                        <option value="custom">🎯 Pilih Tanggal</option>
+                    </select>
+                </div>
+                <div class="custom-date-group" id="custom-date-group" style="display: none;">
+                    <select id="filter-custom-day" class="filter-select">
+                        <option value="all">Tanggal</option>
+                        ${Array.from({ length: 31 }, (_, i) => i + 1)
+                          .map((d) => `<option value="${d}">${d}</option>`)
+                          .join("")}
+                    </select>
+                    <select id="filter-custom-month" class="filter-select">
+                        <option value="all">Bulan</option>
+                        ${MONTH_NAMES.map(
+                          (m, i) => `<option value="${i + 1}">${m}</option>`,
+                        ).join("")}
+                    </select>
+                    <select id="filter-custom-year" class="filter-select">
+                        <option value="all">Tahun</option>
                     </select>
                 </div>
                 <button id="reset-filters" class="btn-secondary" style="width: 100%; margin-top: 10px;">
@@ -114,6 +160,9 @@ export async function renderTransactionsPage() {
   // Load categories untuk filter
   await loadCategoriesForFilter();
 
+  // Load tahun untuk filter tanggal custom
+  loadYearsForFilter();
+
   // Render transactions
   renderFilteredTransactions();
 
@@ -156,10 +205,126 @@ async function loadCategoriesForFilter() {
   }
 }
 
+// Isi dropdown tahun untuk filter tanggal custom
+// Range tetap: 2024 s/d tahun berjalan (otomatis nambah tiap tahun baru berdasarkan tanggal perangkat)
+function loadYearsForFilter() {
+  const filterYear = document.getElementById("filter-custom-year");
+  if (!filterYear) return;
+
+  // Reset dulu supaya tidak dobel kalau fungsi ini terpanggil lebih dari sekali
+  filterYear.innerHTML = '<option value="all">Tahun</option>';
+
+  const BASE_START_YEAR = 2024;
+  const currentYear = new Date().getFullYear();
+
+  // Cek kalau ada data transaksi dengan tahun lebih lama dari 2024 (jaga-jaga)
+  let earliestYear = BASE_START_YEAR;
+  allTransactions.forEach((t) => {
+    if (t.date) {
+      const year = parseInt(t.date.split("-")[0], 10);
+      if (!isNaN(year) && year < earliestYear) earliestYear = year;
+    }
+  });
+
+  const endYear = Math.max(currentYear, BASE_START_YEAR);
+
+  for (let year = endYear; year >= earliestYear; year--) {
+    const option = document.createElement("option");
+    option.value = year;
+    option.textContent = year;
+    filterYear.appendChild(option);
+  }
+}
+
+// ==================== DATE FILTER HELPERS ====================
+
+// Parse string tanggal "yyyy-mm-dd" menjadi Date object (local midnight, aman dari isu timezone)
+function parseDateOnly(dateStr) {
+  if (!dateStr) return null;
+  const [y, m, d] = dateStr.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Dapatkan tanggal awal minggu ini (Senin)
+function getStartOfWeek(refDate = new Date()) {
+  const date = new Date(refDate);
+  const day = date.getDay(); // 0 = Minggu, 1 = Senin, ...
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+// Dapatkan tanggal akhir minggu ini (Minggu)
+function getEndOfWeek(refDate = new Date()) {
+  const start = getStartOfWeek(refDate);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+// Cek apakah sebuah transaksi lolos filter periode yang aktif
+function matchesPeriodFilter(transaction) {
+  const { period, customDay, customMonth, customYear } = currentFilters;
+
+  if (period === "all") return true;
+
+  const tDate = parseDateOnly(transaction.date);
+  if (!tDate) return false;
+
+  const now = new Date();
+
+  if (period === "today") {
+    const todayStr = getCurrentDateTime().date;
+    return transaction.date === todayStr;
+  }
+
+  if (period === "week") {
+    const start = getStartOfWeek(now);
+    const end = getEndOfWeek(now);
+    return (
+      tDate.getTime() >= start.getTime() && tDate.getTime() <= end.getTime()
+    );
+  }
+
+  if (period === "month") {
+    return (
+      tDate.getFullYear() === now.getFullYear() &&
+      tDate.getMonth() === now.getMonth()
+    );
+  }
+
+  if (period === "custom") {
+    if (customDay !== "all" && tDate.getDate() !== parseInt(customDay, 10)) {
+      return false;
+    }
+    if (
+      customMonth !== "all" &&
+      tDate.getMonth() + 1 !== parseInt(customMonth, 10)
+    ) {
+      return false;
+    }
+    if (
+      customYear !== "all" &&
+      tDate.getFullYear() !== parseInt(customYear, 10)
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  return true;
+}
+
 // Render transaksi yang sudah difilter
 function renderFilteredTransactions() {
   // Apply filters
   let filtered = [...allTransactions];
+
+  // Filter by period (hari ini / minggu ini / bulan ini / semua / custom)
+  filtered = filtered.filter((t) => matchesPeriodFilter(t));
 
   // Filter by search
   if (currentFilters.search) {
@@ -225,10 +390,20 @@ function renderTransactionsList(transactions) {
   if (!container) return;
 
   if (transactions.length === 0) {
+    const emptyMessages = {
+      today: "Belum ada transaksi hari ini",
+      week: "Belum ada transaksi minggu ini",
+      month: "Belum ada transaksi bulan ini",
+      custom: "Tidak ada transaksi pada tanggal yang dipilih",
+      all: "Belum ada transaksi",
+    };
+    const message =
+      emptyMessages[currentFilters.period] || "Belum ada transaksi";
+
     container.innerHTML = `
             <div class="empty-state">
                 <i class="fas fa-receipt"></i>
-                <p>Belum ada transaksi</p>
+                <p>${message}</p>
                 <button class="btn-primary btn-add-transaction" style="margin-top: 12px;">
                     <i class="fas fa-plus"></i> Tambah Transaksi
                 </button>
@@ -401,6 +576,54 @@ function setupTransactionEventListeners() {
     });
   }
 
+  // Filter periode (hari ini / minggu ini / bulan ini / semua / custom)
+  const filterPeriod = document.getElementById("filter-period");
+  const customDateGroup = document.getElementById("custom-date-group");
+  if (filterPeriod) {
+    filterPeriod.addEventListener("change", (e) => {
+      currentFilters.period = e.target.value;
+      currentPage = 1;
+
+      // Tampilkan/sembunyikan filter tanggal custom
+      if (customDateGroup) {
+        customDateGroup.style.display =
+          currentFilters.period === "custom" ? "grid" : "none";
+      }
+
+      renderFilteredTransactions();
+    });
+  }
+
+  // Filter tanggal custom: tanggal
+  const filterCustomDay = document.getElementById("filter-custom-day");
+  if (filterCustomDay) {
+    filterCustomDay.addEventListener("change", (e) => {
+      currentFilters.customDay = e.target.value;
+      currentPage = 1;
+      renderFilteredTransactions();
+    });
+  }
+
+  // Filter tanggal custom: bulan
+  const filterCustomMonth = document.getElementById("filter-custom-month");
+  if (filterCustomMonth) {
+    filterCustomMonth.addEventListener("change", (e) => {
+      currentFilters.customMonth = e.target.value;
+      currentPage = 1;
+      renderFilteredTransactions();
+    });
+  }
+
+  // Filter tanggal custom: tahun
+  const filterCustomYear = document.getElementById("filter-custom-year");
+  if (filterCustomYear) {
+    filterCustomYear.addEventListener("change", (e) => {
+      currentFilters.customYear = e.target.value;
+      currentPage = 1;
+      renderFilteredTransactions();
+    });
+  }
+
   // Reset filters
   const resetBtn = document.getElementById("reset-filters");
   if (resetBtn) {
@@ -410,11 +633,20 @@ function setupTransactionEventListeners() {
         type: "all",
         walletId: "all",
         category: "all",
+        period: "today",
+        customDay: "all",
+        customMonth: "all",
+        customYear: "all",
       };
       if (searchInput) searchInput.value = "";
       if (filterType) filterType.value = "all";
       if (filterWallet) filterWallet.value = "all";
       if (filterCategory) filterCategory.value = "all";
+      if (filterPeriod) filterPeriod.value = "today";
+      if (filterCustomDay) filterCustomDay.value = "all";
+      if (filterCustomMonth) filterCustomMonth.value = "all";
+      if (filterCustomYear) filterCustomYear.value = "all";
+      if (customDateGroup) customDateGroup.style.display = "none";
       currentPage = 1;
       renderFilteredTransactions();
     });
