@@ -87,6 +87,115 @@ function calculateInterestPerMonth(principal, ratePercent, period, refDate = new
   return perDay * days;
 }
 
+// ==================== INTEREST (BUNGA) AUTO-ACCRUAL ====================
+// Karena aplikasi ini berjalan sepenuhnya di browser (tanpa server yang selalu
+// menyala), bunga tidak bisa "berjalan sendiri" tepat jam 00:00 saat aplikasi
+// tertutup. Solusinya: setiap kali aplikasi/halaman piutang dibuka, sistem
+// menghitung berapa hari yang terlewat sejak terakhir kali bunga dihitung
+// (lastInterestDate) sampai hari ini, lalu menambahkan bunga untuk setiap
+// hari yang terlewat itu ke nominal hutang/piutang. Jadi begitu tanggal
+// berganti dan aplikasi dibuka lagi, bunga otomatis "mengejar" ketinggalan.
+
+// Ubah string yyyy-mm-dd menjadi objek Date (jam 00:00 lokal)
+function parseISODateOnly(str) {
+  if (!str) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Hitung & terapkan bunga berjalan untuk satu data hutang/piutang, dari
+// lastInterestDate sampai todayISO. Fungsi ini MENGUBAH langsung objek debt
+// yang diberikan (mutasi), dan mengembalikan info perubahan.
+function accrueInterestForDebt(debt, todayISO) {
+  const hasInterest =
+    debt.interestPeriod && debt.interestPeriod !== "none" && Number(debt.interestRate) > 0;
+
+  if (!hasInterest) {
+    return { changed: false, accrued: 0 };
+  }
+  if (debt.status === "completed" || debt.status === "cancelled") {
+    return { changed: false, accrued: 0 };
+  }
+  if (!debt.remainingAmount || debt.remainingAmount <= 0) {
+    return { changed: false, accrued: 0 };
+  }
+
+  // Kalau belum pernah dihitung sama sekali, mulai dari HARI INI (bukan mundur
+  // ke tanggal dibuat), supaya tidak tiba-tiba muncul bunga besar untuk data lama.
+  const baseISO = debt.lastInterestDate || todayISO;
+  const baseDate = parseISODateOnly(baseISO);
+  const target = parseISODateOnly(todayISO);
+
+  if (!baseDate || !target || baseDate >= target) {
+    if (debt.lastInterestDate !== todayISO && !debt.lastInterestDate) {
+      debt.lastInterestDate = todayISO;
+      return { changed: true, accrued: 0 };
+    }
+    return { changed: false, accrued: 0 };
+  }
+
+  let totalAccrued = 0;
+  let daysAccrued = 0;
+  const cursor = new Date(baseDate);
+  let safety = 0;
+
+  // Maju hari demi hari supaya perhitungan bulanan/tahunan (jumlah hari
+  // berbeda-beda) tetap akurat, dan bunga baru dihitung dari sisa terbaru
+  // (bunga berbunga / compounding harian atas sisa hutang berjalan).
+  while (cursor < target && safety < 3650) {
+    cursor.setDate(cursor.getDate() + 1);
+    safety++;
+
+    const dayInterest = Math.round(
+      calculateInterestPerDay(
+        debt.remainingAmount,
+        debt.interestRate,
+        debt.interestPeriod,
+        cursor,
+      ),
+    );
+
+    if (dayInterest > 0) {
+      debt.remainingAmount += dayInterest;
+      debt.amount += dayInterest;
+      totalAccrued += dayInterest;
+      daysAccrued++;
+    }
+  }
+
+  debt.lastInterestDate = todayISO;
+
+  if (totalAccrued > 0) {
+    if (!debt.interestLog) debt.interestLog = [];
+    debt.interestLog.push({
+      date: todayISO,
+      amount: totalAccrued,
+      days: daysAccrued,
+    });
+    debt.updatedAt = getCurrentDateTime().datetime;
+    return { changed: true, accrued: totalAccrued };
+  }
+
+  return { changed: true, accrued: 0 };
+}
+
+// Jalankan pengecekan bunga untuk SEMUA data piutang, simpan yang berubah,
+// lalu kembalikan daftar piutang yang sudah up-to-date.
+export async function runDebtInterestAccrual() {
+  const debts = await getAllItems(STORES.DEBTS);
+  const todayISO = getCurrentDateTime().date;
+
+  for (const debt of debts) {
+    const result = accrueInterestForDebt(debt, todayISO);
+    if (result.changed) {
+      await updateItem(STORES.DEBTS, debt);
+    }
+  }
+
+  return debts;
+}
+
 // Render halaman piutang utama
 export async function renderDebtsPage() {
   const container = document.getElementById("page-content");
@@ -172,7 +281,8 @@ export async function renderDebtsPage() {
 
 // Load semua piutang dari database
 async function loadDebts() {
-  allDebts = await getAllItems(STORES.DEBTS);
+  // Jalankan pengecekan & penambahan bunga otomatis dulu sebelum ditampilkan
+  allDebts = await runDebtInterestAccrual();
   // Sort by due date (nearest first)
   allDebts.sort((a, b) => {
     if (a.status === "active" && b.status !== "active") return -1;
@@ -269,6 +379,9 @@ function renderDebtCard(debt) {
                     <button class="icon-btn add-payment" data-id="${debt.id}" title="Tambah Pembayaran">
                         <i class="fas fa-money-bill-wave"></i>
                     </button>
+                    <button class="icon-btn view-debt-history" data-id="${debt.id}" title="Rincian">
+                        <i class="fas fa-list-alt"></i>
+                    </button>
                     <button class="icon-btn edit-debt" data-id="${debt.id}" title="Edit">
                         <i class="fas fa-edit"></i>
                     </button>
@@ -309,8 +422,15 @@ function renderDebtCard(debt) {
                     <div class="interest-badge">
                         <i class="fas fa-percentage"></i>
                         Bunga ${debt.interestRate}% / ${INTEREST_PERIOD_LABELS[debt.interestPeriod].toLowerCase()}
-                        <span class="interest-daily">≈ ${formatCurrency(calculateInterestPerDay(debt.amount, debt.interestRate, debt.interestPeriod))} / hari</span>
+                        <span class="interest-daily">+${formatCurrency(Math.round(calculateInterestPerDay(debt.remainingAmount || debt.amount, debt.interestRate, debt.interestPeriod)))} / hari</span>
                     </div>
+                    ${
+                      debt.lastInterestDate
+                        ? `<div class="progress-text" style="margin-top:-6px;margin-bottom:10px;">
+                            <i class="fas fa-sync-alt"></i> Bunga terhitung otomatis s/d ${formatDate(debt.lastInterestDate, "dd/mm/yyyy")}
+                           </div>`
+                        : ""
+                    }
                 `
                     : ""
                 }
@@ -383,6 +503,15 @@ function attachCardEventListeners() {
       e.stopPropagation();
       const id = parseInt(btn.dataset.id);
       showPaymentModal(id);
+    });
+  });
+
+  // View history / rincian buttons
+  document.querySelectorAll(".view-debt-history").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.id);
+      showDebtHistoryModal(id);
     });
   });
 
@@ -469,7 +598,7 @@ async function showDebtModal(debtId = null) {
                         <option value="yearly" ${isEdit && debt.interestPeriod === "yearly" ? "selected" : ""}>Per Tahun</option>
                     </select>
                 </div>
-                <small class="form-help">Bunga dihitung dari nominal pokok. Untuk mingguan/bulanan/tahunan, sistem otomatis mengonversi ke nilai harian (dibagi 7 hari / jumlah hari di bulan berjalan / jumlah hari di tahun berjalan)</small>
+                <small class="form-help">Bunga akan bertambah OTOMATIS ke sisa hutang setiap kali tanggal berganti (dihitung ulang tiap kali aplikasi dibuka). Untuk mingguan/bulanan/tahunan, sistem otomatis mengonversi ke nilai harian (dibagi 7 hari / jumlah hari di bulan berjalan / jumlah hari di tahun berjalan)</small>
                 <div class="interest-preview" id="debt-interest-preview" style="display: none;">
                     <i class="fas fa-calculator"></i>
                     <span id="debt-interest-preview-text"></span>
@@ -599,7 +728,15 @@ async function showDebtModal(debtId = null) {
           ? "partial"
           : "active";
 
+    const willHaveInterest = interestPeriod !== "none" && interestRate > 0;
+
     if (isEdit) {
+      // Cek apakah bunga baru diaktifkan sekarang (sebelumnya tidak ada bunga)
+      const wasInterestActive =
+        debt.interestPeriod &&
+        debt.interestPeriod !== "none" &&
+        Number(debt.interestRate) > 0;
+
       // Update existing
       debt.partyName = partyName;
       debt.amount = amount;
@@ -611,6 +748,15 @@ async function showDebtModal(debtId = null) {
       debt.interestRate = interestRate;
       debt.interestPeriod = interestPeriod;
       debt.updatedAt = getCurrentDateTime().datetime;
+
+      if (willHaveInterest && !wasInterestActive) {
+        // Baru pertama kali mengaktifkan bunga -> mulai hitung MULAI HARI INI,
+        // bukan mundur ke tanggal data ini dibuat dulu.
+        debt.lastInterestDate = getCurrentDateTime().date;
+      } else if (!willHaveInterest) {
+        // Bunga dimatikan, hapus penanda supaya tidak dihitung lagi
+        debt.lastInterestDate = null;
+      }
 
       await updateItem(STORES.DEBTS, debt);
       showToast("Data berhasil diupdate", "success");
@@ -626,9 +772,11 @@ async function showDebtModal(debtId = null) {
         status: status,
         interestRate: interestRate,
         interestPeriod: interestPeriod,
+        lastInterestDate: willHaveInterest ? getCurrentDateTime().date : null,
         createdAt: getCurrentDateTime().datetime,
         updatedAt: getCurrentDateTime().datetime,
         payments: [],
+        interestLog: [],
       };
 
       await addItem(STORES.DEBTS, newDebt);
@@ -657,6 +805,13 @@ async function showPaymentModal(debtId) {
     return;
   }
 
+  // Pastikan bunga sudah dihitung s/d hari ini sebelum mencatat pembayaran
+  const todayISO = getCurrentDateTime().date;
+  const accrualResult = accrueInterestForDebt(debt, todayISO);
+  if (accrualResult.changed) {
+    await updateItem(STORES.DEBTS, debt);
+  }
+
   const remaining = debt.remainingAmount || debt.amount;
   if (remaining <= 0) {
     showToast("Sudah lunas!", "info");
@@ -680,6 +835,12 @@ async function showPaymentModal(debtId) {
                 <input type="number" id="payment-amount" class="form-input" 
                        placeholder="0" min="1" max="${remaining}" required>
                 <small class="form-help">Maksimal: ${formatCurrency(remaining)}</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Tanggal Pembayaran <span class="required">*</span></label>
+                <input type="date" id="payment-date" class="form-input" 
+                       value="${todayISO}" max="${todayISO}" required>
             </div>
             
             <div class="form-group">
@@ -717,6 +878,7 @@ async function showPaymentModal(debtId) {
 
     const amount = parseInt(modal.querySelector("#payment-amount").value);
     const note = modal.querySelector("#payment-note").value;
+    const paymentDateValue = modal.querySelector("#payment-date").value;
 
     if (!amount || amount <= 0) {
       showToast("Jumlah harus lebih dari 0", "error");
@@ -727,6 +889,17 @@ async function showPaymentModal(debtId) {
       showToast(`Jumlah melebihi sisa (${formatCurrency(remaining)})`, "error");
       return;
     }
+
+    if (!paymentDateValue) {
+      showToast("Tanggal pembayaran harus diisi", "error");
+      return;
+    }
+
+    // Gabungkan tanggal yang dipilih user dengan jam saat ini, format
+    // konsisten dengan data lain di aplikasi: dd/mm/yyyy HH:MM
+    const [py, pm, pd] = paymentDateValue.split("-");
+    const timeNow = getCurrentDateTime().time;
+    const paymentDateStr = `${pd}/${pm}/${py} ${timeNow}`;
 
     // Update remaining amount
     const newRemaining = remaining - amount;
@@ -739,7 +912,7 @@ async function showPaymentModal(debtId) {
     debt.payments.push({
       amount: amount,
       note: note,
-      date: getCurrentDateTime().datetime,
+      date: paymentDateStr,
       remainingAfter: newRemaining,
     });
 
@@ -760,6 +933,150 @@ async function showPaymentModal(debtId) {
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
   });
+}
+
+// Show modal rincian: gabungan riwayat pembayaran & penambahan bunga
+async function showDebtHistoryModal(debtId) {
+  const debt = await getItem(STORES.DEBTS, debtId);
+  if (!debt) {
+    showToast("Data tidak ditemukan", "error");
+    return;
+  }
+
+  const payments = (debt.payments || []).map((p) => ({
+    kind: "payment",
+    date: p.date,
+    amount: p.amount,
+    note: p.note,
+  }));
+  const interests = (debt.interestLog || []).map((i) => ({
+    kind: "interest",
+    date: i.date,
+    amount: i.amount,
+    days: i.days,
+  }));
+
+  // Gabung & urutkan dari yang terbaru
+  const entries = [...payments, ...interests].sort((a, b) => {
+    const da = parseHistoryDate(a.date);
+    const db_ = parseHistoryDate(b.date);
+    return (db_ ? db_.getTime() : 0) - (da ? da.getTime() : 0);
+  });
+
+  const totalDibayar = payments.reduce((sum, p) => sum + p.amount, 0);
+  const totalBunga = interests.reduce((sum, i) => sum + i.amount, 0);
+
+  const rows =
+    entries.length === 0
+      ? `<div style="text-align:center;padding:30px 0;color:var(--text-secondary);">
+           <i class="fas fa-history" style="font-size:2.5rem;display:block;margin-bottom:10px;opacity:0.4;"></i>
+           <p>Belum ada riwayat pembayaran atau bunga</p>
+         </div>`
+      : entries
+          .map((entry) => {
+            const isPayment = entry.kind === "payment";
+            const dateObj = parseHistoryDate(entry.date);
+            const dateStr = dateObj
+              ? dateObj.toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                })
+              : entry.date || "Tanggal tidak tersedia";
+            const timeStr =
+              dateObj && entry.date && entry.date.includes(":")
+                ? dateObj.toLocaleTimeString("id-ID", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })
+                : "";
+
+            return `
+              <div style="
+                display:flex;align-items:center;gap:12px;
+                padding:12px 0;
+                border-bottom:1px solid var(--border-color);
+              ">
+                <div style="
+                  width:36px;height:36px;border-radius:50%;flex-shrink:0;
+                  background:${isPayment ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)"};
+                  display:flex;align-items:center;justify-content:center;
+                ">
+                  <i class="fas ${isPayment ? "fa-money-bill-wave" : "fa-percentage"}"
+                     style="color:${isPayment ? "#10b981" : "#f59e0b"};font-size:.85rem;"></i>
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;font-size:.88rem;">
+                    ${isPayment ? "Pembayaran" : `Bunga berjalan (${entry.days} hari)`}
+                  </div>
+                  <div style="font-size:.75rem;color:var(--text-secondary);margin-top:2px;">
+                    ${dateStr}${timeStr ? " • " + timeStr : ""}
+                    ${isPayment && entry.note ? `<br><span style="font-style:italic;">${escapeHtml(entry.note)}</span>` : ""}
+                  </div>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                  <div style="font-weight:700;color:${isPayment ? "#10b981" : "#f59e0b"};font-size:.95rem;">
+                    ${isPayment ? "-" : "+"}${formatCurrency(entry.amount)}
+                  </div>
+                </div>
+              </div>`;
+          })
+          .join("");
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal-container modal-medium" style="max-height:90vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <h3><i class="fas fa-list-alt"></i> Rincian — ${escapeHtml(debt.partyName)}</h3>
+        <button class="modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);padding:0 8px;">&times;</button>
+      </div>
+      <div style="padding:16px;border-bottom:1px solid var(--border-color);background:var(--bg-primary);">
+        <div style="display:flex;gap:16px;justify-content:space-around;text-align:center;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Dibayar</div>
+            <div style="font-weight:700;color:#10b981;font-size:1rem;">${formatCurrency(totalDibayar)}</div>
+          </div>
+          <div style="width:1px;background:var(--border-color);"></div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Bunga Berjalan</div>
+            <div style="font-weight:700;color:#f59e0b;font-size:1rem;">${formatCurrency(totalBunga)}</div>
+          </div>
+          <div style="width:1px;background:var(--border-color);"></div>
+          <div>
+            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Sisa Sekarang</div>
+            <div style="font-weight:700;font-size:1rem;">${formatCurrency(debt.remainingAmount || debt.amount)}</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        ${rows}
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal
+    .querySelector(".modal-close-x")
+    .addEventListener("click", () => modal.remove());
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
+// Parse tanggal dari format "dd/mm/yyyy HH:MM" atau "yyyy-mm-dd" jadi objek Date
+function parseHistoryDate(dateStr) {
+  if (!dateStr) return null;
+  if (dateStr.includes("/")) {
+    const parts = dateStr.split(" ");
+    const [d, m, y] = parts[0].split("/");
+    const [hr, mn] = (parts[1] || "00:00").split(":");
+    const dt = new Date(y, m - 1, d, hr || 0, mn || 0);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+  const dt = new Date(dateStr);
+  return isNaN(dt.getTime()) ? null : dt;
 }
 
 // Delete debt
@@ -1108,4 +1425,4 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
-}
+}
