@@ -986,7 +986,11 @@ async function showTransactionModal(transactionId = null) {
     renderFilteredTransactions();
 
     // Refresh dashboard if needed
-    if (window.renderDashboard) {
+    if (
+      window.renderDashboard &&
+      window.getCurrentPage &&
+      window.getCurrentPage() === "dashboard"
+    ) {
       await window.renderDashboard();
     }
   });
@@ -1049,7 +1053,11 @@ async function deleteTransactionById(id) {
         renderFilteredTransactions();
 
         // Refresh dashboard
-        if (window.renderDashboard) {
+        if (
+          window.renderDashboard &&
+          window.getCurrentPage &&
+          window.getCurrentPage() === "dashboard"
+        ) {
           await window.renderDashboard();
         }
       }

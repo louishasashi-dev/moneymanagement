@@ -13,8 +13,9 @@ Aplikasi manajemen keuangan harian berbasis web yang bisa digunakan secara **off
 - 📊 **Dashboard** — Ringkasan keuangan harian, pemasukan, pengeluaran, dan saldo
 - 💸 **Transaksi** — Catat pemasukan dan pengeluaran dengan kategori
 - 👛 **Dompet** — Kelola beberapa dompet (Tunai, OVO, GoPay, Dana, BCA, Mandiri, dll)
+- 🔄 **Transfer Saldo** — Pindahkan saldo antar dompet lengkap dengan riwayat transfer, saldo tersinkron otomatis di Dashboard & Total Aset
 - 🐷 **Tabungan** — Tracking target tabungan dan progress
-- 🤝 **Piutang** — Catat piutang dan utang
+- 🤝 **Piutang & Hutang** — Catat piutang dan utang, dengan sistem **bunga berjalan otomatis** (harian, mingguan, bulanan, tahunan)
 - 📈 **Laporan** — Grafik dan statistik keuangan bulanan
 - ⚙️ **Pengaturan** — Dark mode, PIN keamanan, backup & restore data
 
@@ -77,6 +78,21 @@ moneymanagement/
     ├── logo/           # Logo aplikasi
     └── icons/          # Icon berbagai ukuran
 ```
+
+---
+
+## 🆕 Update Terbaru (Changelog)
+
+> Catatan perubahan & fitur baru. Tambahkan entri baru paling atas setiap kali ada update.
+
+### v1.1.0
+- 🔄 **Transfer Saldo Antar Dompet** — Pindahkan saldo dari satu dompet ke dompet lain langsung dari halaman Dompet, lengkap dengan validasi saldo mencukupi dan pengecekan dompet asal ≠ tujuan.
+- 📜 **Riwayat Transfer** — Semua transfer tercatat dan bisa dilihat kembali; menghapus riwayat akan otomatis mengembalikan saldo kedua dompet seperti sebelum transfer (undo).
+- 🔗 **Sinkronisasi Saldo** — Saldo dompet otomatis konsisten di semua halaman yang menampilkannya (Dashboard, Dompet, dan Total Aset) setelah transfer, tambah/edit/hapus dompet, maupun transaksi.
+- 💹 **Bunga Berjalan pada Piutang & Hutang** — Tambah opsi bunga dengan periode Harian, Mingguan, Bulanan, atau Tahunan pada setiap data piutang/hutang. Bunga dihitung otomatis (compounding) setiap kali aplikasi dibuka, mengejar hari-hari yang terlewat sejak terakhir dihitung, sehingga nominal piutang/hutang selalu akurat sesuai tanggal berjalan.
+
+### v1.0.0
+- 🎉 Rilis pertama: Dashboard, Transaksi, Dompet, Tabungan, Piutang, Laporan, dan Pengaturan.
 
 ---
 

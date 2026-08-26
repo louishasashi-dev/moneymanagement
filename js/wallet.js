@@ -11,6 +11,8 @@ import {
 } from "./db.js";
 import {
   formatCurrency,
+  formatDate,
+  getCurrentDateTime,
   showToast,
   confirmDialog,
   capitalize,
@@ -49,6 +51,17 @@ const walletColors = [
   "#6366f1",
 ];
 
+// Refresh dashboard HANYA jika dashboard sedang menjadi halaman aktif.
+async function refreshDashboardIfActive() {
+  if (
+    window.renderDashboard &&
+    window.getCurrentPage &&
+    window.getCurrentPage() === "dashboard"
+  ) {
+    await window.renderDashboard();
+  }
+}
+
 // Render halaman dompet utama
 export async function renderWalletsPage() {
   const container = document.getElementById("page-content");
@@ -66,9 +79,17 @@ export async function renderWalletsPage() {
             <!-- Header -->
             <div class="page-header">
                 <h1><i class="fas fa-wallet"></i> Dompet Saya</h1>
-                <button class="btn-primary btn-add-wallet" id="add-wallet-btn">
-                    <i class="fas fa-plus"></i> Tambah Dompet
-                </button>
+                <div class="wallet-header-actions">
+                    <button class="btn-secondary" id="transfer-history-btn" title="Riwayat Transfer">
+                        <i class="fas fa-clock-rotate-left"></i> Riwayat Transfer
+                    </button>
+                    <button class="btn-secondary" id="transfer-wallet-btn" title="Transfer Saldo">
+                        <i class="fas fa-right-left"></i> Transfer Saldo
+                    </button>
+                    <button class="btn-primary btn-add-wallet" id="add-wallet-btn">
+                        <i class="fas fa-plus"></i> Tambah Dompet
+                    </button>
+                </div>
             </div>
             
             <!-- Total Balance Card -->
@@ -253,6 +274,21 @@ function setupWalletEventListeners() {
   );
   if (emptyStateAddBtn) {
     emptyStateAddBtn.addEventListener("click", () => showWalletModal());
+  }
+  // Transfer saldo button
+  const transferBtn = document.getElementById("transfer-wallet-btn");
+  if (transferBtn) {
+    const newTransferBtn = transferBtn.cloneNode(true);
+    transferBtn.parentNode.replaceChild(newTransferBtn, transferBtn);
+    newTransferBtn.addEventListener("click", () => showTransferModal());
+  }
+
+  // Riwayat transfer button
+  const historyBtn = document.getElementById("transfer-history-btn");
+  if (historyBtn) {
+    const newHistoryBtn = historyBtn.cloneNode(true);
+    historyBtn.parentNode.replaceChild(newHistoryBtn, historyBtn);
+    newHistoryBtn.addEventListener("click", () => showTransferHistoryModal());
   }
 
   // Edit wallet buttons
@@ -472,10 +508,7 @@ async function showWalletModal(walletId = null) {
     modal.remove();
     await renderWalletsPage();
 
-    // Refresh dashboard if needed
-    if (window.renderDashboard) {
-      await window.renderDashboard();
-    }
+    await refreshDashboardIfActive();
   });
 
   // Close modal
@@ -621,9 +654,7 @@ async function deleteWalletById(id) {
           await renderWalletsPage();
 
           // Refresh dashboard
-          if (window.renderDashboard) {
-            await window.renderDashboard();
-          }
+          await refreshDashboardIfActive();
         } catch (error) {
           console.error("Delete error:", error);
           showToast("Gagal menghapus dompet", "error");
@@ -631,6 +662,384 @@ async function deleteWalletById(id) {
       }
     },
   );
+}
+
+// ==================== FITUR TRANSFER SALDO ANTAR DOMPET ====================
+
+// Show modal untuk transfer saldo antar dompet
+async function showTransferModal() {
+  await loadWallets();
+
+  if (allWallets.length < 2) {
+    showToast("Minimal harus ada 2 dompet untuk melakukan transfer", "error");
+    return;
+  }
+
+  const today = getCurrentDateTime().date;
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+        <div class="modal-container modal-medium">
+            <div class="modal-header">
+                <h3><i class="fas fa-right-left"></i> Transfer Saldo</h3>
+                <button class="modal-close-btn modal-close-x">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="transfer-form">
+                    <div class="form-group">
+                        <label>Dari Dompet <span class="required">*</span></label>
+                        <select id="transfer-from" class="form-input" required>
+                            ${allWallets
+                              .map(
+                                (w) =>
+                                  `<option value="${w.id}">${escapeHtml(w.name)} (${formatCurrency(w.balance)})</option>`,
+                              )
+                              .join("")}
+                        </select>
+                        <small class="form-help" id="transfer-balance-hint"></small>
+                    </div>
+
+                    <div class="transfer-arrow">
+                        <i class="fas fa-arrow-down"></i>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Ke Dompet <span class="required">*</span></label>
+                        <select id="transfer-to" class="form-input" required></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Nominal Transfer <span class="required">*</span></label>
+                        <input type="number" id="transfer-amount" class="form-input"
+                               placeholder="0" min="1" step="1" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Catatan (opsional)</label>
+                        <input type="text" id="transfer-note" class="form-input"
+                               placeholder="Contoh: Top up GoPay dari Tunai">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Tanggal</label>
+                        <input type="date" id="transfer-date" class="form-input" value="${today}">
+                    </div>
+
+                    <div class="modal-buttons">
+                        <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+                        <button type="submit" class="btn-primary">Transfer Sekarang</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+
+  document.body.appendChild(modal);
+  addWalletModalStyles();
+  addTransferStyles();
+
+  const fromSelect = modal.querySelector("#transfer-from");
+  const toSelect = modal.querySelector("#transfer-to");
+  const balanceHint = modal.querySelector("#transfer-balance-hint");
+
+  // Isi ulang opsi "Ke Dompet" agar tidak sama dengan "Dari Dompet"
+  function refreshToOptions() {
+    const fromId = fromSelect.value;
+    const options = allWallets.filter((w) => w.id !== fromId);
+    toSelect.innerHTML = options
+      .map(
+        (w) =>
+          `<option value="${w.id}">${escapeHtml(w.name)} (${formatCurrency(w.balance)})</option>`,
+      )
+      .join("");
+  }
+
+  // Update hint saldo dompet asal
+  function updateBalanceHint() {
+    const wallet = allWallets.find((w) => w.id === fromSelect.value);
+    balanceHint.textContent = wallet
+      ? `Saldo tersedia: ${formatCurrency(wallet.balance)}`
+      : "";
+  }
+
+  refreshToOptions();
+  updateBalanceHint();
+
+  fromSelect.addEventListener("change", () => {
+    refreshToOptions();
+    updateBalanceHint();
+  });
+
+  // Handle submit
+  const form = modal.querySelector("#transfer-form");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const fromId = fromSelect.value;
+    const toId = toSelect.value;
+    const amount = parseInt(modal.querySelector("#transfer-amount").value) || 0;
+    const note = modal.querySelector("#transfer-note").value.trim();
+    const date = modal.querySelector("#transfer-date").value || today;
+
+    if (!fromId || !toId) {
+      showToast("Pilih dompet asal dan tujuan", "error");
+      return;
+    }
+
+    if (fromId === toId) {
+      showToast("Dompet asal dan tujuan tidak boleh sama", "error");
+      return;
+    }
+
+    if (!amount || amount <= 0) {
+      showToast("Nominal transfer harus lebih dari 0", "error");
+      return;
+    }
+
+    // Ambil data dompet terbaru dari database (menghindari data basi)
+    const fromWallet = await getItem(STORES.WALLETS, fromId);
+    const toWallet = await getItem(STORES.WALLETS, toId);
+
+    if (!fromWallet || !toWallet) {
+      showToast("Dompet tidak ditemukan", "error");
+      return;
+    }
+
+    if (fromWallet.balance < amount) {
+      showToast(
+        `Saldo ${fromWallet.name} tidak mencukupi! (Saldo: ${formatCurrency(fromWallet.balance)})`,
+        "error",
+      );
+      return;
+    }
+
+    // Update saldo kedua dompet
+    fromWallet.balance -= amount;
+    toWallet.balance += amount;
+    await updateItem(STORES.WALLETS, fromWallet);
+    await updateItem(STORES.WALLETS, toWallet);
+
+    // Simpan riwayat transfer
+    const { time, timestamp } = getCurrentDateTime();
+    const transferRecord = {
+      fromWalletId: fromWallet.id,
+      fromWalletName: fromWallet.name,
+      toWalletId: toWallet.id,
+      toWalletName: toWallet.name,
+      amount: amount,
+      note: note,
+      date: date,
+      time: time,
+      createdAt: timestamp,
+    };
+    await addItem(STORES.TRANSFERS, transferRecord);
+
+    showToast(
+      `Berhasil transfer ${formatCurrency(amount)} dari ${fromWallet.name} ke ${toWallet.name}`,
+      "success",
+    );
+
+    modal.remove();
+    await renderWalletsPage();
+
+    // Sinkronkan saldo di halaman lain (dashboard, total aset, dll)
+    await refreshDashboardIfActive();
+  });
+
+  // Close modal
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+}
+
+// Tampilkan riwayat transfer
+async function showTransferHistoryModal() {
+  const transfers = await getAllItems(STORES.TRANSFERS);
+  transfers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+        <div class="modal-container modal-medium">
+            <div class="modal-header">
+                <h3><i class="fas fa-clock-rotate-left"></i> Riwayat Transfer</h3>
+                <button class="modal-close-btn modal-close-x">&times;</button>
+            </div>
+            <div class="modal-body" style="max-height:65vh; overflow-y:auto;">
+                ${
+                  transfers.length === 0
+                    ? `<p class="empty-note" style="text-align:center;padding:24px 0;color:var(--text-secondary);">Belum ada riwayat transfer</p>`
+                    : transfers
+                        .map((t) => renderTransferHistoryItem(t))
+                        .join("")
+                }
+            </div>
+        </div>
+    `;
+
+  document.body.appendChild(modal);
+  addTransferStyles();
+
+  const closeModal = () => modal.remove();
+  modal.querySelector(".modal-close-x").addEventListener("click", closeModal);
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  modal.querySelectorAll(".delete-transfer-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = parseInt(btn.dataset.id, 10);
+      deleteTransferById(id, modal);
+    });
+  });
+}
+
+// Render satu item riwayat transfer
+function renderTransferHistoryItem(t) {
+  return `
+        <div class="transfer-history-item" data-id="${t.id}">
+            <div class="transfer-history-top">
+                <div class="transfer-history-route">
+                    <span>${escapeHtml(t.fromWalletName)}</span>
+                    <i class="fas fa-arrow-right-long"></i>
+                    <span>${escapeHtml(t.toWalletName)}</span>
+                </div>
+                <button class="icon-btn delete-transfer-btn" data-id="${t.id}" title="Hapus & Kembalikan Saldo">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+            <div class="transfer-history-amount">${formatCurrency(t.amount)}</div>
+            <div class="transfer-history-meta">
+                <span><i class="far fa-calendar"></i> ${formatDate(t.date, "dd/mm/yyyy")}${t.time ? ` • ${t.time}` : ""}</span>
+                ${t.note ? `<span class="transfer-history-note">"${escapeHtml(t.note)}"</span>` : ""}
+            </div>
+        </div>
+    `;
+}
+
+// Hapus riwayat transfer sekaligus kembalikan saldo kedua dompet (undo)
+async function deleteTransferById(id, modal) {
+  confirmDialog(
+    "Menghapus riwayat ini akan mengembalikan saldo kedua dompet seperti sebelum transfer dilakukan. Lanjutkan?",
+    async (confirmed) => {
+      if (!confirmed) return;
+
+      const transfer = await getItem(STORES.TRANSFERS, id);
+      if (!transfer) {
+        showToast("Riwayat transfer tidak ditemukan", "error");
+        return;
+      }
+
+      // Kembalikan saldo dompet asal & tujuan
+      const fromWallet = await getItem(STORES.WALLETS, transfer.fromWalletId);
+      const toWallet = await getItem(STORES.WALLETS, transfer.toWalletId);
+
+      if (fromWallet) {
+        fromWallet.balance += transfer.amount;
+        await updateItem(STORES.WALLETS, fromWallet);
+      }
+      if (toWallet) {
+        toWallet.balance -= transfer.amount;
+        await updateItem(STORES.WALLETS, toWallet);
+      }
+
+      await deleteItem(STORES.TRANSFERS, id);
+      showToast("Transfer dibatalkan, saldo telah dikembalikan", "success");
+
+      modal.remove();
+      await showTransferHistoryModal();
+      await renderWalletsPage();
+
+      await refreshDashboardIfActive();
+    },
+  );
+}
+
+// Styles untuk fitur transfer & riwayat
+function addTransferStyles() {
+  if (document.getElementById("transfer-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "transfer-styles";
+  style.textContent = `
+        .wallet-header-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .transfer-arrow {
+            text-align: center;
+            margin: 4px 0 12px;
+            color: var(--info);
+            font-size: 1.1rem;
+        }
+
+        .transfer-history-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .transfer-history-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .transfer-history-route {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .transfer-history-route i {
+            color: var(--info);
+            font-size: 0.8rem;
+        }
+
+        .transfer-history-amount {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--info);
+            margin: 6px 0;
+        }
+
+        .transfer-history-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .transfer-history-note {
+            font-style: italic;
+        }
+
+        @media (max-width: 768px) {
+            .wallet-header-actions {
+                width: 100%;
+            }
+            .wallet-header-actions button {
+                flex: 1;
+                font-size: 0.8rem;
+                padding: 10px 8px;
+            }
+        }
+    `;
+
+  document.head.appendChild(style);
 }
 
 // Add main wallet page styles

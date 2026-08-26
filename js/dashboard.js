@@ -113,7 +113,7 @@ export async function renderDashboard() {
                         <span class="stat-value ${stats.balance >= 0 ? "positive" : "negative"}" id="total-balance">${formatCurrency(stats.balance)}</span>
                     </div>
                 </div>
-                <div class="stat-card total-balance-card">
+                <div class="stat-card total-saldo-stat-card">
                     <div class="stat-icon">
                         <i class="fas fa-landmark"></i>
                     </div>
@@ -637,7 +637,7 @@ function addDashboardStyles() {
             color: #3b82f6;
         }
         
-        .total-balance-card .stat-icon {
+        .total-saldo-stat-card .stat-icon {
             background: rgba(139, 92, 246, 0.1);
             color: #8b5cf6;
         }

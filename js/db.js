@@ -2,7 +2,7 @@
 // Mengelola koneksi dan operasi dasar IndexedDB
 
 const DB_NAME = "MoneyManagerDB";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 const STORES = {
   TRANSACTIONS: "transactions",
@@ -14,6 +14,7 @@ const STORES = {
   TRASH: "trash",
   NOTIFICATIONS: "notifications",
   PLANNED: "planned_transactions",
+  TRANSFERS: "transfers",
 };
 
 // Default Categories
@@ -208,6 +209,22 @@ export async function initDB() {
         plannedStore.createIndex("status", "status", { unique: false });
         plannedStore.createIndex("date", "date", { unique: false });
         plannedStore.createIndex("createdAt", "createdAt", { unique: false });
+      }
+      // Transfers Store (v4) - riwayat transfer saldo antar dompet
+      if (!db.objectStoreNames.contains(STORES.TRANSFERS)) {
+        const transferStore = db.createObjectStore(STORES.TRANSFERS, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+        transferStore.createIndex("date", "date", { unique: false });
+        transferStore.createIndex("fromWalletId", "fromWalletId", {
+          unique: false,
+        });
+        transferStore.createIndex("toWalletId", "toWalletId", {
+          unique: false,
+        });
+        transferStore.createIndex("createdAt", "createdAt", { unique: false });
+        console.log("Transfers store created");
       }
     };
   });
