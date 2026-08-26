@@ -54,33 +54,6 @@ Untuk restore, buka **Pengaturan → Restore Data** dan pilih file backup.
 
 ---
 
-## 📂 Struktur Project
-
-```
-moneymanagement/
-├── index.html          # Entry point
-├── manifest.json       # PWA manifest
-├── css/
-│   └── style.css       # Styling utama
-├── js/
-│   ├── app.js          # Inisialisasi & navigasi
-│   ├── db.js           # IndexedDB operations
-│   ├── utils.js        # Helper functions
-│   ├── dashboard.js    # Halaman beranda
-│   ├── transaction.js  # Halaman transaksi
-│   ├── wallet.js       # Halaman dompet
-│   ├── savings.js      # Halaman tabungan
-│   ├── debt.js         # Halaman piutang
-│   ├── report.js       # Halaman laporan
-│   ├── settings.js     # Halaman pengaturan
-│   └── service-worker.js # PWA service worker
-└── images/
-    ├── logo/           # Logo aplikasi
-    └── icons/          # Icon berbagai ukuran
-```
-
----
-
 ## 🆕 Update Terbaru (Changelog)
 
 > Catatan perubahan & fitur baru. Tambahkan entri baru paling atas setiap kali ada update.
