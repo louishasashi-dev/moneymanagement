@@ -91,27 +91,27 @@ async function plannedClearAll() {
 }
 
 // ───────────────────────────────────────────────
-// Auto-reset logic: hapus data di tgl 5 dan 20
+// Auto-reset logic: setiap tanggal 1 atau ganti bulan
 // ───────────────────────────────────────────────
 export async function checkAndAutoReset() {
   const today = new Date();
   const day = today.getDate();
-  const resetKey = `planned_reset_${today.getFullYear()}_${today.getMonth()}_${day}`;
+  const resetKey = `planned_reset_${today.getFullYear()}_${today.getMonth()}`;
 
   const alreadyReset = localStorage.getItem(resetKey);
   if (alreadyReset) return;
 
-  if (day === 5 || day === 20) {
+  if (day === 1) {
     const items = await plannedGetAll();
     if (items.length > 0) {
       await plannedClearAll();
       localStorage.setItem(resetKey, "1");
 
-      // Buat notifikasi
       await addItem(STORES.NOTIFICATIONS, {
         refKey: `planned_auto_reset_${resetKey}`,
         title: "🔄 Rencana Transaksi Direset",
-        message: `Semua rencana transaksi telah dihapus otomatis pada tanggal ${day} bulan ini.`,
+        message:
+          "Semua rencana transaksi (menunggu & yang sudah dikonfirmasi) telah direset otomatis di awal bulan ini.",
         type: "info",
         page: "planned",
         isRead: false,
@@ -129,19 +129,20 @@ export async function checkAndAutoReset() {
 export async function checkPlannedReminder() {
   const today = new Date();
   const day = today.getDate();
+  const year = today.getFullYear();
+  const month = today.getMonth();
 
-  // Reset di tgl 5 dan 20
-  // Reminder 2-3 hari sebelum = tgl 2,3 (sebelum reset 5) dan 17,18 (sebelum reset 20)
-  const reminderDays = [2, 3, 17, 18];
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const reminderDays = [daysInMonth - 2, daysInMonth - 1, daysInMonth];
   if (!reminderDays.includes(day)) return;
 
   const items = await plannedGetAll();
   const pending = items.filter((i) => i.status === "pending");
   if (pending.length === 0) return;
 
-  const resetDate = day <= 5 ? 5 : 20;
-  const daysLeft = resetDate - day;
-  const refKey = `planned_reminder_${today.getFullYear()}_${today.getMonth()}_${day}`;
+  const nextMonthFirst = new Date(year, month + 1, 1);
+  const daysLeft = Math.ceil((nextMonthFirst - today) / (1000 * 60 * 60 * 24));
+  const refKey = `planned_reminder_${year}_${month}_${day}`;
 
   const all = await getAllItems(STORES.NOTIFICATIONS);
   const exists = all.find((n) => n.refKey === refKey);
@@ -158,6 +159,30 @@ export async function checkPlannedReminder() {
   });
 
   if (window.updateNotificationBadge) window.updateNotificationBadge();
+}
+
+async function manualResetPlanned() {
+  const items = await plannedGetAll();
+
+  if (items.length === 0) {
+    showToast("Tidak ada rencana transaksi untuk direset", "info");
+    return;
+  }
+
+  const confirmMsg = `Reset SEMUA rencana transaksi sekarang? (${items.length} data, termasuk yang sudah dikonfirmasi). Tindakan ini tidak bisa dibatalkan.`;
+  if (!confirm(confirmMsg)) return;
+
+  await plannedClearAll();
+
+  // Tandai bulan berjalan sudah direset, agar auto-reset tanggal 1
+  // tidak dobel-notifikasi kalau reset manual ini kebetulan dilakukan
+  // di tanggal 1 juga
+  const today = new Date();
+  const resetKey = `planned_reset_${today.getFullYear()}_${today.getMonth()}`;
+  localStorage.setItem(resetKey, "1");
+
+  showToast("Rencana transaksi berhasil direset", "success");
+  await renderPlannedPage();
 }
 
 // ───────────────────────────────────────────────
@@ -178,7 +203,7 @@ async function confirmPlanned(id) {
   if (item.type === "expense" && wallet.balance < item.amount) {
     showToast(
       `Saldo ${wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(wallet.balance)})`,
-      "error"
+      "error",
     );
     return;
   }
@@ -231,28 +256,25 @@ export async function renderPlannedPage() {
   // Hitung info reset berikutnya
   const today = new Date();
   const day = today.getDate();
-  let nextReset, daysToReset;
-  if (day < 5) {
-    nextReset = 5;
-    daysToReset = 5 - day;
-  } else if (day < 20) {
-    nextReset = 20;
-    daysToReset = 20 - day;
-  } else {
-    nextReset = 5;
-    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, 5);
-    daysToReset = Math.ceil((nextMonth - today) / (1000 * 60 * 60 * 24));
-  }
+  const nextMonthFirst = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+  const daysToReset = Math.ceil(
+    (nextMonthFirst - today) / (1000 * 60 * 60 * 24),
+  );
 
   const urgentClass = daysToReset <= 3 ? "urgent" : "";
 
   container.innerHTML = `
     <div class="transactions-container">
       <div class="page-header">
-        <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
-        <button class="btn-primary" id="add-planned-btn">
-          <i class="fas fa-plus"></i> Rencana Baru
-        </button>
+          <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn-secondary" id="reset-planned-btn" title="Reset semua rencana transaksi sekarang">
+              <i class="fas fa-rotate-left"></i> Reset Manual
+            </button>
+            <button class="btn-primary" id="add-planned-btn">
+              <i class="fas fa-plus"></i> Rencana Baru
+            </button>
+          </div>
       </div>
 
       <!-- Info reset -->
@@ -271,14 +293,15 @@ export async function renderPlannedPage() {
         "></i>
         <div>
           <div style="font-weight:600;font-size:.9rem;">
-            Reset otomatis pada tanggal ${nextReset} setiap bulan
+              Reset otomatis setiap tanggal 1 awal bulan
           </div>
           <div style="font-size:.8rem;color:var(--text-secondary);">
-            ${daysToReset <= 3
-              ? `⚠️ Hanya ${daysToReset} hari lagi! Konfirmasi rencana transaksimu sebelum terhapus.`
-              : `${daysToReset} hari lagi hingga reset berikutnya.`
-            }
-            Rencana yang belum dikonfirmasi akan terhapus otomatis di tgl 5 & 20.
+              ${
+                daysToReset <= 3
+                  ? `⚠️ Hanya ${daysToReset} hari lagi! Konfirmasi rencana transaksimu sebelum direset.`
+                  : `${daysToReset} hari lagi hingga reset berikutnya.`
+              }
+              Seluruh rencana transaksi (menunggu maupun yang sudah dikonfirmasi) akan direset otomatis setiap tanggal 1.
           </div>
         </div>
       </div>
@@ -302,10 +325,18 @@ export async function renderPlannedPage() {
       <!-- Statistik rencana transaksi -->
       ${(() => {
         const allItems = [...pending, ...confirmed];
-        const totalPemasukan = allItems.filter(i => i.type === "income").reduce((s, i) => s + i.amount, 0);
-        const totalPengeluaran = allItems.filter(i => i.type === "expense").reduce((s, i) => s + i.amount, 0);
-        const pendingPemasukan = pending.filter(i => i.type === "income").reduce((s, i) => s + i.amount, 0);
-        const pendingPengeluaran = pending.filter(i => i.type === "expense").reduce((s, i) => s + i.amount, 0);
+        const totalPemasukan = allItems
+          .filter((i) => i.type === "income")
+          .reduce((s, i) => s + i.amount, 0);
+        const totalPengeluaran = allItems
+          .filter((i) => i.type === "expense")
+          .reduce((s, i) => s + i.amount, 0);
+        const pendingPemasukan = pending
+          .filter((i) => i.type === "income")
+          .reduce((s, i) => s + i.amount, 0);
+        const pendingPengeluaran = pending
+          .filter((i) => i.type === "expense")
+          .reduce((s, i) => s + i.amount, 0);
         const selisih = totalPemasukan - totalPengeluaran;
         return `
       <div class="card" style="margin-bottom:16px;padding:16px;">
@@ -363,18 +394,21 @@ export async function renderPlannedPage() {
           </h3>
         </div>
         <div id="planned-pending-list">
-          ${pending.length === 0
-            ? `<div class="empty-state" style="padding:30px 0;text-align:center;">
+          ${
+            pending.length === 0
+              ? `<div class="empty-state" style="padding:30px 0;text-align:center;">
                 <i class="fas fa-check-circle" style="font-size:2.5rem;color:var(--text-secondary);display:block;margin-bottom:10px;"></i>
                 <p style="color:var(--text-secondary);">Tidak ada rencana yang menunggu konfirmasi</p>
               </div>`
-            : pending.map((item) => renderPlannedItem(item)).join("")
+              : pending.map((item) => renderPlannedItem(item)).join("")
           }
         </div>
       </div>
 
       <!-- List confirmed -->
-      ${confirmed.length > 0 ? `
+      ${
+        confirmed.length > 0
+          ? `
       <div class="card">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
           <h3 style="margin:0;font-size:1rem;">
@@ -385,7 +419,9 @@ export async function renderPlannedPage() {
         <div id="planned-confirmed-list">
           ${confirmed.map((item) => renderPlannedItem(item, true)).join("")}
         </div>
-      </div>` : ""}
+      </div>`
+          : ""
+      }
     </div>
   `;
 
@@ -394,12 +430,20 @@ export async function renderPlannedPage() {
     showPlannedModal();
   });
 
+  document
+    .getElementById("reset-planned-btn")
+    ?.addEventListener("click", () => {
+      manualResetPlanned();
+    });
+
   setupPlannedItemListeners();
 }
 
 function renderPlannedItem(item, isConfirmed = false) {
   const isIncome = item.type === "income";
-  const amountColor = isIncome ? "var(--success,#10b981)" : "var(--danger,#ef4444)";
+  const amountColor = isIncome
+    ? "var(--success,#10b981)"
+    : "var(--danger,#ef4444)";
   const amountSign = isIncome ? "+" : "-";
 
   return `
@@ -430,9 +474,10 @@ function renderPlannedItem(item, isConfirmed = false) {
         <div style="font-weight:700;color:${amountColor};font-size:.95rem;">
           ${amountSign}${formatCurrency(item.amount)}
         </div>
-        ${isConfirmed
-          ? `<span style="font-size:.7rem;background:rgba(16,185,129,.2);color:#10b981;padding:2px 6px;border-radius:10px;">✓ Masuk</span>`
-          : `<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end;">
+        ${
+          isConfirmed
+            ? `<span style="font-size:.7rem;background:rgba(16,185,129,.2);color:#10b981;padding:2px 6px;border-radius:10px;">✓ Masuk</span>`
+            : `<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end;">
               <button class="planned-confirm-btn" data-id="${item.id}" title="Konfirmasi & masukkan ke transaksi" style="
                 width:30px;height:30px;border-radius:50%;border:none;cursor:pointer;
                 background:rgba(16,185,129,.15);color:#10b981;font-size:.85rem;
@@ -499,7 +544,10 @@ async function showPlannedModal(plannedId = null) {
   if (isEdit) {
     const items = await plannedGetAll();
     item = items.find((i) => i.id === plannedId);
-    if (!item) { showToast("Data tidak ditemukan", "error"); return; }
+    if (!item) {
+      showToast("Data tidak ditemukan", "error");
+      return;
+    }
   }
 
   const wallets = await getAllItems(STORES.WALLETS);
@@ -594,7 +642,6 @@ async function showPlannedModal(plannedId = null) {
           <div class="modal-buttons">
             <button type="button" class="btn-secondary modal-close-btn">Batal</button>
             <button type="submit" class="btn-primary">
-              <i class="fas fa-save"></i>
               ${isEdit ? "Simpan Perubahan" : "Simpan Rencana"}
             </button>
           </div>
@@ -637,9 +684,18 @@ async function showPlannedModal(plannedId = null) {
     const date = modal.querySelector("#planned-date").value;
     const time = modal.querySelector("#planned-time").value;
 
-    if (!name) { showToast("Nama transaksi harus diisi", "error"); return; }
-    if (isNaN(amount) || amount <= 0) { showToast("Nominal harus lebih dari 0", "error"); return; }
-    if (!walletId) { showToast("Pilih dompet", "error"); return; }
+    if (!name) {
+      showToast("Nama transaksi harus diisi", "error");
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      showToast("Nominal harus lebih dari 0", "error");
+      return;
+    }
+    if (!walletId) {
+      showToast("Pilih dompet", "error");
+      return;
+    }
     if (!category) category = type === "income" ? "Lainnya" : "Lainnya";
 
     const data = {
