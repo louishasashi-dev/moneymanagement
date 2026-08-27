@@ -73,8 +73,19 @@ export async function renderTransactionsPage() {
                 </button>
             </div>
             
+                        <!-- Filter Toggle (mobile only) -->
+            <button id="filter-toggle-btn" class="filter-toggle-btn">
+                <i class="fas fa-filter"></i> Filter
+            </button>
+
             <!-- Filter Bar -->
-            <div class="filter-bar">
+            <div class="filter-bar" id="filter-bar">
+                <div class="filter-bar-header">
+                    <span>Filter Transaksi</span>
+                    <button id="filter-close-btn" class="filter-close-btn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
                 <div class="search-box">
                     <i class="fas fa-search"></i>
                     <input type="text" id="search-transaction" placeholder="Cari transaksi..." class="search-input">
@@ -88,11 +99,12 @@ export async function renderTransactionsPage() {
                     <select id="filter-wallet" class="filter-select">
                         <option value="all">💳 Semua Dompet</option>
                     </select>
-                    <select id="filter-category" class="filter-select">
-                        <option value="all">📂 Semua Kategori</option>
-                    </select>
                 </div>
                 <div class="period-filter-group">
+                    <select id="filter-category" class="filter-select">
+                      <option value="all">📂 Semua Kategori</option>
+                    </select>    
+                
                     <select id="filter-period" class="filter-select">
                         <option value="today">📅 Hari Ini</option>
                         <option value="week">🗓️ Minggu Ini</option>
@@ -118,9 +130,14 @@ export async function renderTransactionsPage() {
                         <option value="all">Tahun</option>
                     </select>
                 </div>
-                <button id="reset-filters" class="btn-secondary" style="width: 100%; margin-top: 10px;">
-                    <i class="fas fa-undo"></i> Reset Filter
-                </button>
+                  <div class="filter-bar-buttons">
+                    <button id="reset-filters" class="btn-secondary">
+                        </i> Reset Filter
+                    </button>
+                    <button id="apply-filters" class="btn-primary" style="width: 100%; margin-top: 10px;">
+                        Terapkan
+                    </button>
+                </div>
             </div>
             
             <!-- Summary -->
@@ -422,28 +439,37 @@ function renderTransactionsList(transactions) {
     .map(
       (t) => `
         <div class="transaction-card" data-id="${t.id}">
-            <div class="transaction-card-icon ${t.type}">
-                <i class="fas ${t.type === "income" ? "fa-arrow-down" : "fa-arrow-up"}"></i>
-            </div>
-            <div class="transaction-card-details">
-                <div class="transaction-card-name">${escapeHtml(t.itemName)}</div>
-                <div class="transaction-card-meta">
-                    <span class="category-badge">📌 ${t.category || "Umum"}</span>
-                    <span class="date-badge">📅 ${formatDate(t.date)}</span>
-                    ${t.time ? `<span class="time-badge">⏰ ${t.time}</span>` : ""}
+            <div class="transaction-card-left">
+                <div class="transaction-card-icon ${t.type}">
+                    <i class="fas ${t.type === "income" ? "fa-arrow-down" : "fa-arrow-up"}"></i>
                 </div>
-                ${t.note ? `<div class="transaction-card-note">📝 ${escapeHtml(t.note)}</div>` : ""}
+                <div class="transaction-card-details">
+                    <div class="transaction-card-name">${escapeHtml(t.itemName)}</div>
+                    <div class="transaction-card-meta">
+                        <span class="category-badge">📌 ${t.category || "Umum"}</span>
+                        <span class="date-badge">📅 ${formatDate(t.date)}</span>
+                        ${t.time ? `<span class="time-badge">⏰ ${t.time}</span>` : ""}
+                    </div>
+                    ${t.note ? `<div class="transaction-card-note">📝 ${escapeHtml(t.note)}</div>` : ""}
+                </div>
             </div>
-            <div class="transaction-card-amount ${t.type}">
-                ${t.type === "income" ? "+" : "-"} ${formatCurrency(t.amount)}
-            </div>
-            <div class="transaction-card-actions">
-                <button class="icon-btn edit-transaction" data-id="${t.id}" title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="icon-btn delete-transaction" data-id="${t.id}" title="Hapus">
-                    <i class="fas fa-trash"></i>
-                </button>
+            <div class="transaction-card-right">
+                <div class="transaction-card-amount-wrap">
+                    <div class="transaction-card-amount ${t.type}">
+                        ${t.type === "income" ? "+" : "-"} ${formatCurrency(t.amount)}
+                    </div>
+                    <span class="transaction-card-type-label ${t.type}">
+                        ${t.type === "income" ? "Pemasukan" : "Pengeluaran"}
+                    </span>
+                </div>
+                <div class="transaction-card-actions">
+                    <button class="icon-btn edit-transaction" data-id="${t.id}" title="Edit">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="icon-btn delete-transaction" data-id="${t.id}" title="Hapus">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
             </div>
         </div>
     `,
@@ -532,6 +558,33 @@ function renderPagination(totalPages) {
 
 // Setup event listeners untuk filter
 function setupTransactionEventListeners() {
+  // Filter toggle (mobile modal behavior)
+  const filterToggleBtn = document.getElementById("filter-toggle-btn");
+  const filterBar = document.getElementById("filter-bar");
+  const filterCloseBtn = document.getElementById("filter-close-btn");
+
+  function openFilterBar() {
+    if (filterBar) filterBar.classList.add("filter-bar-open");
+    document.body.classList.add("filter-modal-active");
+  }
+
+  function closeFilterBar() {
+    if (filterBar) filterBar.classList.remove("filter-bar-open");
+    document.body.classList.remove("filter-modal-active");
+  }
+
+  if (filterToggleBtn) {
+    filterToggleBtn.addEventListener("click", openFilterBar);
+  }
+  if (filterCloseBtn) {
+    filterCloseBtn.addEventListener("click", closeFilterBar);
+  }
+
+  const applyFiltersBtn = document.getElementById("apply-filters");
+  if (applyFiltersBtn) {
+    applyFiltersBtn.addEventListener("click", closeFilterBar);
+  }
+
   // Search input with debounce
   const searchInput = document.getElementById("search-transaction");
   if (searchInput) {
