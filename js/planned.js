@@ -1,6 +1,6 @@
 // Planned Transactions Module
 // Rencana transaksi yang belum dikonfirmasi masuk ke transaksi aktual
-// Reset otomatis tanggal 5 dan 20 setiap bulan
+// Reset otomatis SELURUH data (pending + confirmed) setiap tanggal 1 awal bulan
 
 import {
   addItem,
@@ -91,7 +91,8 @@ async function plannedClearAll() {
 }
 
 // ───────────────────────────────────────────────
-// Auto-reset logic: setiap tanggal 1 atau ganti bulan
+// Auto-reset logic: hapus SELURUH data (pending + confirmed)
+// setiap tanggal 1 awal bulan
 // ───────────────────────────────────────────────
 export async function checkAndAutoReset() {
   const today = new Date();
@@ -107,6 +108,7 @@ export async function checkAndAutoReset() {
       await plannedClearAll();
       localStorage.setItem(resetKey, "1");
 
+      // Buat notifikasi
       await addItem(STORES.NOTIFICATIONS, {
         refKey: `planned_auto_reset_${resetKey}`,
         title: "🔄 Rencana Transaksi Direset",
@@ -124,7 +126,7 @@ export async function checkAndAutoReset() {
 }
 
 // ───────────────────────────────────────────────
-// Cek apakah 2-3 hari sebelum reset, kirim notif
+// Cek apakah 2-3 hari sebelum reset (akhir bulan), kirim notif
 // ───────────────────────────────────────────────
 export async function checkPlannedReminder() {
   const today = new Date();
@@ -151,7 +153,7 @@ export async function checkPlannedReminder() {
   await addItem(STORES.NOTIFICATIONS, {
     refKey,
     title: "⚠️ Rencana Transaksi Belum Dikonfirmasi",
-    message: `Anda mempunyai ${pending.length} rencana transaksi yang belum dikonfirmasi. Mohon dicek! Reset otomatis dalam ${daysLeft} hari.`,
+    message: `Anda mempunyai ${pending.length} rencana transaksi yang belum dikonfirmasi. Mohon dicek! Reset otomatis awal bulan dalam ${daysLeft} hari.`,
     type: "warning",
     page: "planned",
     isRead: false,
@@ -161,6 +163,10 @@ export async function checkPlannedReminder() {
   if (window.updateNotificationBadge) window.updateNotificationBadge();
 }
 
+// ───────────────────────────────────────────────
+// Reset manual: user bisa reset kapan saja tanpa
+// menunggu tanggal 1 awal bulan
+// ───────────────────────────────────────────────
 async function manualResetPlanned() {
   const items = await plannedGetAll();
 
@@ -252,6 +258,8 @@ export async function renderPlannedPage() {
 
   const pending = items.filter((i) => i.status === "pending");
   const confirmed = items.filter((i) => i.status === "confirmed");
+  const allItems = [...pending, ...confirmed];
+  const wallets = await getAllItems(STORES.WALLETS);
 
   // Hitung info reset berikutnya
   const today = new Date();
@@ -266,15 +274,15 @@ export async function renderPlannedPage() {
   container.innerHTML = `
     <div class="transactions-container">
       <div class="page-header">
-          <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button class="btn-secondary" id="reset-planned-btn" title="Reset semua rencana transaksi sekarang">
-              <i class="fas fa-rotate-left"></i> Reset Manual
-            </button>
-            <button class="btn-primary" id="add-planned-btn">
-              <i class="fas fa-plus"></i> Rencana Baru
-            </button>
-          </div>
+        <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn-secondary" id="reset-planned-btn" title="Reset semua rencana transaksi sekarang">
+            <i class="fas fa-rotate-left"></i> Reset Manual
+          </button>
+          <button class="btn-primary" id="add-planned-btn">
+            <i class="fas fa-plus"></i> Rencana Baru
+          </button>
+        </div>
       </div>
 
       <!-- Info reset -->
@@ -293,15 +301,15 @@ export async function renderPlannedPage() {
         "></i>
         <div>
           <div style="font-weight:600;font-size:.9rem;">
-              Reset otomatis setiap tanggal 1 awal bulan
+            Reset otomatis setiap tanggal 1 awal bulan
           </div>
           <div style="font-size:.8rem;color:var(--text-secondary);">
-              ${
-                daysToReset <= 3
-                  ? `⚠️ Hanya ${daysToReset} hari lagi! Konfirmasi rencana transaksimu sebelum direset.`
-                  : `${daysToReset} hari lagi hingga reset berikutnya.`
-              }
-              Seluruh rencana transaksi (menunggu maupun yang sudah dikonfirmasi) akan direset otomatis setiap tanggal 1.
+            ${
+              daysToReset <= 3
+                ? `⚠️ Hanya ${daysToReset} hari lagi! Konfirmasi rencana transaksimu sebelum direset.`
+                : `${daysToReset} hari lagi hingga reset berikutnya.`
+            }
+            Seluruh rencana transaksi (menunggu maupun yang sudah dikonfirmasi) akan direset otomatis setiap tanggal 1.
           </div>
         </div>
       </div>
@@ -324,7 +332,6 @@ export async function renderPlannedPage() {
 
       <!-- Statistik rencana transaksi -->
       ${(() => {
-        const allItems = [...pending, ...confirmed];
         const totalPemasukan = allItems
           .filter((i) => i.type === "income")
           .reduce((s, i) => s + i.amount, 0);
@@ -385,6 +392,9 @@ export async function renderPlannedPage() {
       </div>`;
       })()}
 
+      <!-- Statistik dompet yang digunakan -->
+      ${renderWalletUsageStats(allItems, wallets)}
+
       <!-- List pending -->
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -437,6 +447,86 @@ export async function renderPlannedPage() {
     });
 
   setupPlannedItemListeners();
+}
+
+// ───────────────────────────────────────────────
+// Statistik dompet yang digunakan dalam rencana transaksi
+// ───────────────────────────────────────────────
+function renderWalletUsageStats(allItems, wallets) {
+  if (allItems.length === 0) return "";
+
+  // Kelompokkan rencana transaksi per dompet
+  const map = new Map(); // walletId -> { count, income, expense }
+  allItems.forEach((item) => {
+    const key = item.walletId || "unknown";
+    if (!map.has(key)) {
+      map.set(key, { count: 0, income: 0, expense: 0 });
+    }
+    const entry = map.get(key);
+    entry.count += 1;
+    if (item.type === "income") {
+      entry.income += item.amount;
+    } else {
+      entry.expense += item.amount;
+    }
+  });
+
+  // Gabungkan dengan info dompet (nama, ikon, warna)
+  const rows = Array.from(map.entries())
+    .map(([walletId, stat]) => {
+      const wallet = wallets.find((w) => w.id === walletId);
+      return {
+        walletId,
+        name: wallet ? wallet.name : "Dompet (sudah dihapus)",
+        icon: wallet?.icon || "fa-wallet",
+        color: wallet?.color || "#6366f1",
+        count: stat.count,
+        income: stat.income,
+        expense: stat.expense,
+        total: stat.income + stat.expense,
+      };
+    })
+    // Urutkan dari dompet yang paling banyak dipakai (nominalnya paling besar)
+    .sort((a, b) => b.total - a.total);
+
+  const grandTotal = rows.reduce((s, r) => s + r.total, 0) || 1;
+
+  return `
+    <div class="card" style="margin-bottom:16px;padding:16px;">
+      <div style="font-weight:600;font-size:.9rem;margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+        <i class="fas fa-wallet" style="color:var(--primary,#6366f1);"></i>
+        Dompet yang Digunakan (${rows.length} dompet)
+      </div>
+      ${rows
+        .map((r) => {
+          const pct = Math.round((r.total / grandTotal) * 100);
+          return `
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;">
+            <div style="display:flex;align-items:center;gap:8px;font-size:.85rem;font-weight:600;min-width:0;">
+              <span style="
+                width:28px;height:28px;border-radius:8px;flex-shrink:0;
+                background:${r.color}22;color:${r.color};
+                display:flex;align-items:center;justify-content:center;font-size:.8rem;
+              "><i class="fas ${r.icon}"></i></span>
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</span>
+              <span style="font-weight:400;color:var(--text-secondary);font-size:.72rem;white-space:nowrap;">(${r.count} rencana)</span>
+            </div>
+            <span style="font-size:.8rem;font-weight:700;flex-shrink:0;">${pct}%</span>
+          </div>
+          <div style="height:8px;border-radius:20px;background:var(--border-color);overflow:hidden;margin-bottom:6px;">
+            <div style="height:100%;width:${pct}%;background:${r.color};"></div>
+          </div>
+          <div style="display:flex;gap:14px;font-size:.72rem;color:var(--text-secondary);flex-wrap:wrap;">
+            ${r.income > 0 ? `<span><i class="fas fa-arrow-down" style="color:#10b981;"></i> ${formatCurrency(r.income)}</span>` : ""}
+            ${r.expense > 0 ? `<span><i class="fas fa-arrow-up" style="color:#ef4444;"></i> ${formatCurrency(r.expense)}</span>` : ""}
+          </div>
+        </div>
+      `;
+        })
+        .join("")}
+    </div>
+  `;
 }
 
 function renderPlannedItem(item, isConfirmed = false) {
@@ -642,6 +732,7 @@ async function showPlannedModal(plannedId = null) {
           <div class="modal-buttons">
             <button type="button" class="btn-secondary modal-close-btn">Batal</button>
             <button type="submit" class="btn-primary">
+              <i class="fas fa-save"></i>
               ${isEdit ? "Simpan Perubahan" : "Simpan Rencana"}
             </button>
           </div>

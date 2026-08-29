@@ -141,7 +141,7 @@ export async function renderDashboard() {
             </div>
             
             <!-- Chart Section -->
-            <div class="card chart-card">
+            <div class="card chart-card" id="chart-card">
                 <div class="card-header">
                     <h3><i class="fas fa-chart-line"></i> Statistik Bulan Ini</h3>
                     <select id="chart-type">
@@ -149,7 +149,12 @@ export async function renderDashboard() {
                         <option value="line">Line Chart</option>
                     </select>
                 </div>
-                <canvas id="monthly-chart" width="400" height="200"></canvas>
+                <div class="chart-canvas-wrapper" id="chart-canvas-wrapper">
+                    <canvas id="monthly-chart"></canvas>
+                </div>
+                <div class="chart-resize-handle" id="chart-resize-handle" title="Seret untuk mengubah ukuran grafik">
+                    <i class="fas fa-up-right-and-down-left-from-center"></i>
+                </div>
             </div>
             
             <!-- Wallet Summary -->
@@ -179,8 +184,14 @@ export async function renderDashboard() {
   // Add styles for dashboard
   addDashboardStyles();
 
+  // Terapkan tinggi grafik tersimpan (kalau user pernah resize sebelumnya)
+  applyStoredChartHeight();
+
   // Initialize chart
   await initMonthlyChart(monthlyTransactions);
+
+  // Aktifkan fitur seret untuk mengubah ukuran grafik (desktop & mobile)
+  setupChartResize();
 
   // Setup event listeners
   setupDashboardEvents();
@@ -340,6 +351,100 @@ async function initMonthlyChart(transactions) {
       }
     });
   }
+}
+
+// ───────────────────────────────────────────────
+// Resize grafik oleh user (desktop mouse & mobile touch)
+// menggunakan Pointer Events supaya satu kode jalan di semua device
+// ───────────────────────────────────────────────
+const CHART_HEIGHT_KEY = "dashboard_chart_height";
+const CHART_MIN_HEIGHT = 180;
+const CHART_MAX_HEIGHT = 700;
+
+// Terapkan tinggi grafik yang tersimpan (dipanggil sebelum chart di-render)
+function applyStoredChartHeight() {
+  const wrapper = document.getElementById("chart-canvas-wrapper");
+  if (!wrapper) return;
+
+  const saved = parseInt(localStorage.getItem(CHART_HEIGHT_KEY), 10);
+  if (!isNaN(saved) && saved >= CHART_MIN_HEIGHT && saved <= CHART_MAX_HEIGHT) {
+    wrapper.style.height = `${saved}px`;
+  }
+}
+
+function setupChartResize() {
+  const wrapper = document.getElementById("chart-canvas-wrapper");
+  const handle = document.getElementById("chart-resize-handle");
+  if (!wrapper || !handle) return;
+
+  let startY = 0;
+  let startHeight = 0;
+  let dragging = false;
+
+  const onPointerMove = (e) => {
+    if (!dragging) return;
+    const delta = e.clientY - startY;
+    let newHeight = startHeight + delta;
+    newHeight = Math.max(
+      CHART_MIN_HEIGHT,
+      Math.min(CHART_MAX_HEIGHT, newHeight),
+    );
+    wrapper.style.height = `${newHeight}px`;
+
+    // Chart.js v4 sudah auto-observe resize container, tapi kita panggil
+    // resize() manual juga supaya update terasa instan saat di-drag
+    if (charts.monthly) {
+      charts.monthly.resize();
+    }
+  };
+
+  const onPointerUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("resizing");
+    document.body.classList.remove("chart-resizing-active");
+
+    try {
+      handle.releasePointerCapture(e.pointerId);
+    } catch (err) {
+      // ignore
+    }
+
+    // Simpan tinggi terakhir supaya tetap kepakai walau pindah halaman/refresh
+    const finalHeight = wrapper.getBoundingClientRect().height;
+    localStorage.setItem(CHART_HEIGHT_KEY, Math.round(finalHeight));
+
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+  };
+
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    dragging = true;
+    startY = e.clientY;
+    startHeight = wrapper.getBoundingClientRect().height;
+
+    handle.classList.add("resizing");
+    // Cegah scroll halaman ikut ke-drag saat resize di mobile
+    document.body.classList.add("chart-resizing-active");
+
+    try {
+      handle.setPointerCapture(e.pointerId);
+    } catch (err) {
+      // ignore, beberapa browser lama mungkin tidak support
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  });
+
+  // Double click/tap pada handle -> reset ke tinggi default
+  handle.addEventListener("dblclick", () => {
+    wrapper.style.height = "";
+    localStorage.removeItem(CHART_HEIGHT_KEY);
+    if (charts.monthly) charts.monthly.resize();
+    showToast("Ukuran grafik dikembalikan ke default", "info");
+  });
 }
 
 function setupDashboardEvents() {
@@ -678,6 +783,65 @@ function addDashboardStyles() {
             display: flex;
             align-items: center;
             gap: 8px;
+        }
+
+        /* Grafik yang bisa di-resize manual oleh user (desktop & mobile) */
+        .chart-card {
+            position: relative;
+            padding-bottom: 30px;
+        }
+
+        .chart-canvas-wrapper {
+            position: relative;
+            width: 100%;
+            height: 260px;
+            min-height: 180px;
+        }
+
+        .chart-canvas-wrapper canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .chart-resize-handle {
+            position: absolute;
+            right: 6px;
+            bottom: 4px;
+            width: 34px;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: ns-resize;
+            touch-action: none;
+            user-select: none;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+
+        .chart-resize-handle:hover {
+            background: rgba(99, 102, 241, 0.1);
+            color: var(--info);
+        }
+
+        .chart-resize-handle.resizing {
+            background: rgba(99, 102, 241, 0.18);
+            color: var(--info);
+        }
+
+        /* Cegah body ikut ke-scroll saat drag resize di layar sentuh */
+        body.chart-resizing-active {
+            overscroll-behavior: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        @media (max-width: 768px) {
+            .chart-canvas-wrapper {
+                height: 220px;
+            }
         }
         
         .view-all-link {

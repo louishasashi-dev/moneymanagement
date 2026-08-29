@@ -962,13 +962,38 @@ async function showTransactionModal(transactionId = null) {
     if (isEdit) {
       const oldWallet = await getItem(STORES.WALLETS, transaction.walletId);
 
-      // Kembalikan saldo lama
-      if (transaction.type === "income") {
-        oldWallet.balance -= transaction.amount;
-      } else {
-        oldWallet.balance += transaction.amount;
+      // Kembalikan saldo lama sesuai transaksi SEBELUM diedit
+      if (oldWallet) {
+        if (transaction.type === "income") {
+          oldWallet.balance -= transaction.amount;
+        } else {
+          oldWallet.balance += transaction.amount;
+        }
+        await updateItem(STORES.WALLETS, oldWallet);
       }
-      await updateItem(STORES.WALLETS, oldWallet);
+      // Ambil dompet TUJUAN secara fresh dari database.
+      // Kalau dompet tujuan sama dengan dompet lama, pakai `oldWallet` yang
+      // sudah dikembalikan saldonya di atas (BUKAN variabel `wallet` di awal
+      // fungsi, karena itu snapshot lama sebelum saldo dikembalikan -
+      // memakainya akan menyebabkan saldo terpotong dobel).
+      const targetWallet =
+        walletId === transaction.walletId
+          ? oldWallet
+          : await getItem(STORES.WALLETS, walletId);
+
+      if (!targetWallet) {
+        showToast("Dompet tidak ditemukan", "error");
+        return;
+      }
+
+      // Cek saldo cukup untuk versi baru transaksi (kalau expense)
+      if (type === "expense" && targetWallet.balance < amount) {
+        showToast(
+          `Saldo ${targetWallet.name} tidak mencukupi! (Saldo: ${formatCurrency(targetWallet.balance)})`,
+          "error",
+        );
+        return;
+      }
 
       // Update transaksi
       transaction.itemName = capitalize(name);
@@ -982,17 +1007,13 @@ async function showTransactionModal(transactionId = null) {
 
       await updateItem(STORES.TRANSACTIONS, transaction);
 
-      // Update saldo baru
+      // Terapkan efek transaksi baru ke dompet tujuan (data sudah fresh)
       if (type === "income") {
-        wallet.balance += amount;
+        targetWallet.balance += amount;
       } else {
-        if (wallet.balance < amount) {
-          showToast(`Saldo ${wallet.name} tidak mencukupi!`, "error");
-          return;
-        }
-        wallet.balance -= amount;
+        targetWallet.balance -= amount;
       }
-      await updateItem(STORES.WALLETS, wallet);
+      await updateItem(STORES.WALLETS, targetWallet);
 
       showToast("Transaksi berhasil diupdate", "success");
     } else {
