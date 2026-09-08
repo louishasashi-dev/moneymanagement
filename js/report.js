@@ -684,7 +684,25 @@ async function exportToPDF() {
     // Baris transaksi
     doc.setFont("helvetica", "normal");
     transactions.forEach((t, idx) => {
-      if (y > 275) {
+      // Hitung dulu apakah baris ini punya catatan, supaya tinggi baris
+      // (dan cek page-break) memperhitungkan baris catatan tambahan.
+      const noteText = (t.note || "").trim();
+      const noteFontSize = 6.3;
+      const noteLineHeight = 3;
+      let noteLines = [];
+      if (noteText) {
+        doc.setFontSize(noteFontSize);
+        doc.setFont("helvetica", "italic");
+        noteLines = doc.splitTextToSize(`Catatan: ${noteText}`, CW - 10);
+        doc.setFont("helvetica", "normal");
+      }
+      const mainRowHeight = 6.5;
+      const noteBlockHeight = noteLines.length
+        ? noteLines.length * noteLineHeight + 2
+        : 0;
+      const totalRowHeight = mainRowHeight + noteBlockHeight;
+
+      if (y + totalRowHeight > 280) {
         doc.addPage();
         y = 15;
         // Repeat header
@@ -704,10 +722,10 @@ async function exportToPDF() {
         doc.setFont("helvetica", "normal");
       }
 
-      // Zebra stripe
+      // Zebra stripe (mencakup baris utama + baris catatan kalau ada)
       if (idx % 2 === 0) {
         doc.setFillColor(248, 249, 252);
-        doc.rect(ML, y - 1, CW, 6.5, "F");
+        doc.rect(ML, y - 1, CW, mainRowHeight + noteBlockHeight, "F");
       }
 
       doc.setFontSize(7);
@@ -747,7 +765,28 @@ async function exportToPDF() {
         align: "right",
       });
 
-      y += 6.5;
+      y += mainRowHeight;
+
+      // Catatan transaksi: ditampilkan sebagai baris tambahan di bawah baris
+      // utama, teks panjang otomatis di-split ke beberapa baris & rata
+      // kiri-kanan (justify), supaya tetap rapi walau catatannya panjang.
+      if (noteLines.length) {
+        doc.setFontSize(noteFontSize);
+        doc.setFont("helvetica", "italic");
+        doc.setTextColor(120, 120, 140);
+        doc.text(noteLines[0], ML + 3, y + 2, {
+          maxWidth: CW - 10,
+          align: noteLines.length > 1 ? "justify" : "left",
+        });
+        for (let li = 1; li < noteLines.length; li++) {
+          doc.text(noteLines[li], ML + 6, y + 2 + li * noteLineHeight, {
+            maxWidth: CW - 12,
+            align: li < noteLines.length - 1 ? "justify" : "left",
+          });
+        }
+        doc.setFont("helvetica", "normal");
+        y += noteBlockHeight;
+      }
     });
 
     // ── FOOTER ───────────────────────────────────────

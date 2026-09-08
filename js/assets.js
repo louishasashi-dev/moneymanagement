@@ -53,8 +53,8 @@ export async function renderAssetsPage() {
     <div class="assets-container">
       <div class="page-header">
         <h1><i class="fas fa-chart-pie"></i> Total Aset</h1>
-        <button class="btn-primary" id="export-assets-pdf-btn">
-          <i class="fas fa-file-pdf"></i> Export PDF
+        <button class="btn-primary" id="export-assets-image-btn">
+          <i class="fas fa-image"></i> Export Gambar
         </button>
       </div>
 
@@ -171,14 +171,10 @@ export async function renderAssetsPage() {
 
   addAssetsStyles();
 
-  const exportBtn = document.getElementById("export-assets-pdf-btn");
+  const exportBtn = document.getElementById("export-assets-image-btn");
   if (exportBtn) {
     exportBtn.addEventListener("click", () =>
-      exportAssetsToPDF({
-        wallets,
-        savings,
-        activeReceivables,
-        activePayables,
+      exportAssetsToImage({
         totalWalletBalance,
         totalSavings,
         totalReceivables,
@@ -209,90 +205,68 @@ function renderBreakdownBar(wallet, savings, receivables, total) {
   `;
 }
 
-async function exportAssetsToPDF(data) {
-  showToast("Membuat PDF...", "info");
+async function exportAssetsToImage(data) {
+  showToast("Membuat gambar...", "info");
 
-  let reportEl = null;
+  let el = null;
 
   try {
-    if (!window.html2canvas || !window.jspdf) {
+    if (!window.html2canvas) {
       showToast(
-        "Gagal memuat library PDF. Pastikan koneksi internet aktif.",
+        "Gagal memuat library gambar. Pastikan koneksi internet aktif.",
         "error",
       );
       return;
     }
 
-    reportEl = buildAssetsReportElement(data);
-    document.body.appendChild(reportEl);
+    el = buildSimpleAssetsImageElement(data);
+    document.body.appendChild(el);
 
     // Beri waktu sebentar agar font & layout selesai sebelum di-capture
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    const canvas = await window.html2canvas(reportEl, {
+    const canvas = await window.html2canvas(el, {
       scale: 2,
       backgroundColor: "#f4f6fb",
       useCORS: true,
-      windowWidth: reportEl.scrollWidth,
+      windowWidth: el.scrollWidth,
     });
 
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF("p", "mm", "a4");
-    const pageWidthMM = 210;
-    const pageHeightMM = 297;
-    const imgWidthMM = pageWidthMM;
-    const imgHeightMM = (canvas.height * imgWidthMM) / canvas.width;
-    const imgData = canvas.toDataURL("image/png");
+    // Simpan sebagai PNG (kualitas terbaik untuk teks/angka & warna tegas).
+    // Kalau ingin JPG, ganti "image/png" -> "image/jpeg" dan tambahkan
+    // argumen kualitas kedua, mis. canvas.toDataURL("image/jpeg", 0.92)
+    const dataUrl = canvas.toDataURL("image/png");
 
-    let heightLeft = imgHeightMM;
-    let position = 0;
-    let page = 0;
-    const MAX_PAGES = 30;
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `total_aset_${new Date().toISOString().slice(0, 10)}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
 
-    while (heightLeft > 0 && page < MAX_PAGES) {
-      if (page > 0) pdf.addPage();
-      pdf.addImage(imgData, "PNG", 0, position, imgWidthMM, imgHeightMM);
-      heightLeft -= pageHeightMM;
-      position -= pageHeightMM;
-      page++;
-    }
-
-    // Footer nomor halaman (ditumpuk di atas gambar)
-    const pageCount = pdf.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      pdf.setPage(i);
-      pdf.setFontSize(7);
-      pdf.setTextColor(140, 140, 160);
-      pdf.text(
-        `Halaman ${i} dari ${pageCount}`,
-        pageWidthMM - 8,
-        pageHeightMM - 5,
-        { align: "right" },
-      );
-    }
-
-    pdf.save(`total_aset_${new Date().toISOString().slice(0, 10)}.pdf`);
-    showToast("PDF berhasil diunduh!", "success");
+    showToast("Gambar berhasil diunduh!", "success");
   } catch (error) {
-    console.error("PDF error:", error);
-    showToast("Gagal membuat PDF. Pastikan koneksi internet aktif.", "error");
+    console.error("Export gambar error:", error);
+    showToast(
+      "Gagal membuat gambar. Pastikan koneksi internet aktif.",
+      "error",
+    );
   } finally {
-    if (reportEl && reportEl.parentNode) {
-      reportEl.parentNode.removeChild(reportEl);
+    if (el && el.parentNode) {
+      el.parentNode.removeChild(el);
     }
   }
 }
 
 // ───────────────────────────────────────────────
-// Bangun elemen HTML laporan bergaya kartu modern
-// (dirender offscreen lalu di-screenshot via html2canvas)
+// Bangun elemen ringkasan aset sederhana untuk di-screenshot jadi PNG.
+// Hanya menampilkan: kekayaan bersih, kekayaan kotor, total piutang,
+// total hutang, total saldo dompet, dan total tabungan — tanpa rincian
+// per-item, supaya hasilnya ringkas, satu gambar utuh, tidak ada yang
+// terpotong (karena tidak perlu pagination sama sekali).
 // ───────────────────────────────────────────────
-function buildAssetsReportElement(data) {
+function buildSimpleAssetsImageElement(data) {
   const {
-    wallets,
-    savings,
-    activeReceivables,
-    activePayables,
     totalWalletBalance,
     totalSavings,
     totalReceivables,
@@ -301,14 +275,10 @@ function buildAssetsReportElement(data) {
     netWorth,
   } = data;
 
-  const pct = (value, total) => (total > 0 ? (value / total) * 100 : 0);
-  const wPct = pct(totalWalletBalance, totalAssets);
-  const sPct = pct(totalSavings, totalAssets);
-  const rPct = pct(totalReceivables, totalAssets);
-  const healthPct = Math.max(
-    0,
-    Math.min(100, pct(Math.max(netWorth, 0), totalAssets || 1)),
-  );
+  const healthPct =
+    totalAssets > 0
+      ? Math.max(0, Math.min(100, (Math.max(netWorth, 0) / totalAssets) * 100))
+      : 0;
 
   const printDate = new Date().toLocaleDateString("id-ID", {
     day: "numeric",
@@ -318,263 +288,121 @@ function buildAssetsReportElement(data) {
     minute: "2-digit",
   });
 
-  const donutSvg = makeDonutSvg([
-    { pct: wPct, color: "#3b82f6" },
-    { pct: sPct, color: "#8b5cf6" },
-    { pct: rPct, color: "#10b981" },
-  ]);
-
   const ringSvg = makeRingSvg(healthPct, "#ffffff", "rgba(255,255,255,.28)");
-
-  const renderListGroup = (title, items, getLabel, getValue, emptyText) => `
-    <div class="pdfx-list-group">
-      <div class="pdfx-list-group-title">
-        <span>${title}</span>
-      </div>
-      ${
-        items.length === 0
-          ? `<div class="pdfx-empty">${emptyText}</div>`
-          : items
-              .map(
-                (item, idx) => `
-            <div class="pdfx-list-item ${idx % 2 === 0 ? "pdfx-list-item-alt" : ""}">
-              <span>${escapeHtml(getLabel(item))}</span>
-              <span class="pdfx-list-value">${getValue(item)}</span>
-            </div>`,
-              )
-              .join("")
-      }
-    </div>
-  `;
 
   const wrapper = document.createElement("div");
   wrapper.style.position = "fixed";
   wrapper.style.top = "0";
   wrapper.style.left = "-99999px";
-  wrapper.style.width = "800px";
+  wrapper.style.width = "600px";
   wrapper.style.zIndex = "-1";
 
   wrapper.innerHTML = `
     <style>
-      .pdfx-root * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
-      .pdfx-root {
-        width: 800px;
+      .simg-root * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+      .simg-root {
+        width: 600px;
         background: #f4f6fb;
-        padding: 28px;
+        padding: 24px;
         color: #1e1e32;
       }
-      .pdfx-header {
+      .simg-header {
         display: flex; align-items: center; justify-content: space-between;
-        background: #1a1a2e; border-radius: 18px; padding: 18px 22px;
-        margin-bottom: 20px;
+        background: #1a1a2e; border-radius: 16px; padding: 16px 20px;
+        margin-bottom: 18px;
       }
-      .pdfx-header-left { display: flex; align-items: center; gap: 14px; }
-      .pdfx-logo {
-        width: 44px; height: 44px; border-radius: 12px;
+      .simg-header-left { display: flex; align-items: center; gap: 12px; }
+      .simg-logo {
+        width: 40px; height: 40px; border-radius: 11px;
         background: linear-gradient(135deg,#3b82f6,#8b5cf6);
-        color: #fff; font-weight: 700; font-size: 15px;
+        color: #fff; font-weight: 700; font-size: 14px;
         display: flex; align-items: center; justify-content: center;
       }
-      .pdfx-app-name { color: #fff; font-size: 18px; font-weight: 700; }
-      .pdfx-app-sub { color: #b4bed2; font-size: 12px; margin-top: 2px; }
-      .pdfx-header-right { color: #b4bed2; font-size: 11px; text-align: right; }
+      .simg-app-name { color: #fff; font-size: 16px; font-weight: 700; }
+      .simg-app-sub { color: #b4bed2; font-size: 11px; margin-top: 2px; }
+      .simg-header-right { color: #b4bed2; font-size: 10px; text-align: right; }
 
-      .pdfx-greeting { margin-bottom: 18px; }
-      .pdfx-greeting-title { font-size: 22px; font-weight: 700; }
-      .pdfx-greeting-sub { font-size: 13px; color: #6b7280; margin-top: 4px; }
-
-      .pdfx-row-hero { display: flex; gap: 16px; margin-bottom: 16px; }
-      .pdfx-hero-card {
-        flex: 1.15; border-radius: 22px; padding: 22px;
+      .simg-hero {
+        border-radius: 20px; padding: 24px;
         background: linear-gradient(135deg,#6366f1,#8b5cf6);
-        color: #fff; display: flex; flex-direction: column; align-items: center;
-        text-align: center; justify-content: center;
+        color: #fff; text-align: center; margin-bottom: 16px;
       }
-      .pdfx-hero-label { font-size: 13px; opacity: .9; margin-bottom: 10px; font-weight: 600; }
-      .pdfx-hero-ring { position: relative; width: 170px; height: 170px; margin: 0 auto; }
-      .pdfx-hero-ring svg { width: 170px; height: 170px; }
-      .pdfx-hero-ring-value {
-        position: absolute; top: 0; left: 0; width: 170px; height: 170px;
+      .simg-hero-label { font-size: 12px; opacity: .9; margin-bottom: 10px; font-weight: 600; }
+      .simg-hero-ring { position: relative; width: 160px; height: 160px; margin: 0 auto; }
+      .simg-hero-ring svg { width: 160px; height: 160px; }
+      .simg-hero-ring-value {
+        position: absolute; top: 0; left: 0; width: 160px; height: 160px;
         display: flex; align-items: center; justify-content: center;
-        font-size: 19px; font-weight: 700; padding: 0 18px; text-align: center;
+        font-size: 17px; font-weight: 700; padding: 0 16px; text-align: center;
       }
-      .pdfx-hero-footnote { font-size: 11px; opacity: .85; margin-top: 12px; }
+      .simg-hero-footnote { font-size: 10px; opacity: .85; margin-top: 10px; }
 
-      .pdfx-hero-stack { flex: 1; display: flex; flex-direction: column; gap: 16px; }
-      .pdfx-mini-card {
-        flex: 1; border-radius: 18px; padding: 16px 18px;
-        background: #fff; box-shadow: 0 2px 10px rgba(20,20,50,.05);
-        display: flex; flex-direction: column; justify-content: center;
+      .simg-gross {
+        display: flex; justify-content: space-between; align-items: center;
+        background: #fff; border-radius: 16px; padding: 14px 18px;
+        margin-bottom: 16px; box-shadow: 0 2px 10px rgba(20,20,50,.05);
       }
-      .pdfx-mini-top { display: flex; justify-content: space-between; align-items: center;
-        font-size: 13px; font-weight: 600; color: #6b7280; margin-bottom: 8px; }
-      .pdfx-mini-icon { font-size: 18px; }
-      .pdfx-mini-value { font-size: 20px; font-weight: 700; }
-      .pdfx-mini-blue .pdfx-mini-value { color: #3b82f6; }
-      .pdfx-mini-red .pdfx-mini-value { color: #ef4444; }
+      .simg-gross-label { font-size: 12px; color: #6b7280; font-weight: 600; }
+      .simg-gross-value { font-size: 16px; font-weight: 700; color: #3b82f6; }
 
-      .pdfx-row-cat { display: flex; gap: 14px; margin-bottom: 16px; }
-      .pdfx-cat-card {
-        flex: 1; border-radius: 18px; padding: 16px; background: #fff;
+      .simg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .simg-stat {
+        background: #fff; border-radius: 14px; padding: 14px 16px;
         box-shadow: 0 2px 10px rgba(20,20,50,.05);
       }
-      .pdfx-cat-top { display: flex; justify-content: space-between; align-items: center;
-        font-size: 13px; font-weight: 600; color: #6b7280; margin-bottom: 10px; }
-      .pdfx-cat-value { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
-      .pdfx-cat-count { font-size: 11px; color: #9ca3af; }
-      .pdfx-cat-blue .pdfx-cat-value { color: #3b82f6; }
-      .pdfx-cat-purple .pdfx-cat-value { color: #8b5cf6; }
-      .pdfx-cat-green .pdfx-cat-value { color: #10b981; }
+      .simg-stat-top { display: flex; justify-content: space-between; align-items: center;
+        font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
+      .simg-stat-value { font-size: 15px; font-weight: 700; }
 
-      .pdfx-donut-card {
-        background: #fff; border-radius: 18px; padding: 20px;
-        box-shadow: 0 2px 10px rgba(20,20,50,.05); margin-bottom: 20px;
-      }
-      .pdfx-donut-title { font-size: 14px; font-weight: 700; margin-bottom: 14px; }
-      .pdfx-donut-body { display: flex; align-items: center; gap: 26px; }
-      .pdfx-donut-body svg { width: 150px; height: 150px; flex-shrink: 0; }
-      .pdfx-donut-legend { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
-      .pdfx-donut-legend div { display: flex; align-items: center; gap: 8px; }
-      .pdfx-donut-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-
-      .pdfx-section { margin-bottom: 18px; }
-      .pdfx-section-title { font-size: 15px; font-weight: 700; margin-bottom: 10px; }
-      .pdfx-list-card {
-        background: #fff; border-radius: 18px; padding: 18px 20px;
-        box-shadow: 0 2px 10px rgba(20,20,50,.05);
-      }
-      .pdfx-list-group { margin-bottom: 14px; }
-      .pdfx-list-group:last-child { margin-bottom: 0; }
-      .pdfx-list-group-title {
-        font-size: 12.5px; font-weight: 700; color: #4b5563;
-        padding-bottom: 6px; border-bottom: 1px solid #eef0f5; margin-bottom: 4px;
-      }
-      .pdfx-list-item {
-        display: flex; justify-content: space-between; padding: 6px 4px;
-        font-size: 12.5px; border-radius: 8px;
-      }
-      .pdfx-list-item-alt { background: #f8f9fc; }
-      .pdfx-list-value { font-weight: 600; }
-      .pdfx-empty { font-size: 12px; color: #9ca3af; font-style: italic; padding: 6px 4px; }
-
-      .pdfx-footer { text-align: center; font-size: 11px; color: #9ca3af; padding: 10px 0 0; }
+      .simg-footer { text-align: center; font-size: 10px; color: #9ca3af; padding: 14px 0 0; }
     </style>
 
-    <div class="pdfx-root">
-      <div class="pdfx-header">
-        <div class="pdfx-header-left">
-          <div class="pdfx-logo">MM</div>
+    <div class="simg-root">
+      <div class="simg-header">
+        <div class="simg-header-left">
+          <div class="simg-logo">MM</div>
           <div>
-            <div class="pdfx-app-name">Money Manager</div>
-            <div class="pdfx-app-sub">Laporan Total Aset</div>
+            <div class="simg-app-name">Money Manager</div>
+            <div class="simg-app-sub">Ringkasan Total Aset</div>
           </div>
         </div>
-        <div class="pdfx-header-right">Dicetak: ${printDate}</div>
+        <div class="simg-header-right">Dicetak: ${printDate}</div>
       </div>
 
-      <div class="pdfx-greeting">
-        <div class="pdfx-greeting-title">👋 Ringkasan Aset Kamu</div>
-        <div class="pdfx-greeting-sub">Begini kondisi keuanganmu saat ini</div>
+      <div class="simg-hero">
+        <div class="simg-hero-label">Kekayaan Bersih (Net Worth)</div>
+        <div class="simg-hero-ring">
+          ${ringSvg}
+          <div class="simg-hero-ring-value">${formatCurrency(netWorth)}</div>
+        </div>
+        <div class="simg-hero-footnote">Rasio bebas hutang: ${Math.round(healthPct)}%</div>
       </div>
 
-      <div class="pdfx-row-hero">
-        <div class="pdfx-hero-card">
-          <div class="pdfx-hero-label">Kekayaan Bersih</div>
-          <div class="pdfx-hero-ring">
-            ${ringSvg}
-            <div class="pdfx-hero-ring-value">${formatCurrency(netWorth)}</div>
-          </div>
-          <div class="pdfx-hero-footnote">Rasio bebas hutang: ${Math.round(healthPct)}%</div>
-        </div>
-        <div class="pdfx-hero-stack">
-          <div class="pdfx-mini-card pdfx-mini-blue">
-            <div class="pdfx-mini-top"><span>Total Aset</span><span class="pdfx-mini-icon">📈</span></div>
-            <div class="pdfx-mini-value">${formatCurrency(totalAssets)}</div>
-          </div>
-          <div class="pdfx-mini-card pdfx-mini-red">
-            <div class="pdfx-mini-top"><span>Total Hutang</span><span class="pdfx-mini-icon">📉</span></div>
-            <div class="pdfx-mini-value">${formatCurrency(totalPayables)}</div>
-          </div>
-        </div>
+      <div class="simg-gross">
+        <span class="simg-gross-label">Kekayaan Kotor (sebelum dikurangi hutang)</span>
+        <span class="simg-gross-value">${formatCurrency(totalAssets)}</span>
       </div>
 
-      <div class="pdfx-row-cat">
-        <div class="pdfx-cat-card pdfx-cat-blue">
-          <div class="pdfx-cat-top"><span>Dompet</span><span>👛</span></div>
-          <div class="pdfx-cat-value">${formatCurrency(totalWalletBalance)}</div>
-          <div class="pdfx-cat-count">${wallets.length} dompet</div>
+      <div class="simg-grid">
+        <div class="simg-stat">
+          <div class="simg-stat-top"><span>Total Piutang</span><span>🤝</span></div>
+          <div class="simg-stat-value" style="color:#10b981;">${formatCurrency(totalReceivables)}</div>
         </div>
-        <div class="pdfx-cat-card pdfx-cat-purple">
-          <div class="pdfx-cat-top"><span>Tabungan</span><span>🐷</span></div>
-          <div class="pdfx-cat-value">${formatCurrency(totalSavings)}</div>
-          <div class="pdfx-cat-count">${savings.length} tabungan</div>
+        <div class="simg-stat">
+          <div class="simg-stat-top"><span>Total Hutang</span><span>📉</span></div>
+          <div class="simg-stat-value" style="color:#ef4444;">${formatCurrency(totalPayables)}</div>
         </div>
-        <div class="pdfx-cat-card pdfx-cat-green">
-          <div class="pdfx-cat-top"><span>Piutang</span><span>🤝</span></div>
-          <div class="pdfx-cat-value">${formatCurrency(totalReceivables)}</div>
-          <div class="pdfx-cat-count">${activeReceivables.length} piutang aktif</div>
+        <div class="simg-stat">
+          <div class="simg-stat-top"><span>Saldo Dompet</span><span>👛</span></div>
+          <div class="simg-stat-value" style="color:#3b82f6;">${formatCurrency(totalWalletBalance)}</div>
+        </div>
+        <div class="simg-stat">
+          <div class="simg-stat-top"><span>Total Tabungan</span><span>🐷</span></div>
+          <div class="simg-stat-value" style="color:#8b5cf6;">${formatCurrency(totalSavings)}</div>
         </div>
       </div>
 
-      <div class="pdfx-donut-card">
-        <div class="pdfx-donut-title">Komposisi Aset</div>
-        <div class="pdfx-donut-body">
-          ${donutSvg}
-          <div class="pdfx-donut-legend">
-            <div><i style="background:#3b82f6;"></i> Dompet — ${Math.round(wPct)}%</div>
-            <div><i style="background:#8b5cf6;"></i> Tabungan — ${Math.round(sPct)}%</div>
-            <div><i style="background:#10b981;"></i> Piutang — ${Math.round(rPct)}%</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="pdfx-section">
-        <div class="pdfx-section-title">💼 Rincian Aset</div>
-        <div class="pdfx-list-card">
-          ${renderListGroup(
-            `Saldo Dompet — ${formatCurrency(totalWalletBalance)}`,
-            wallets,
-            (w) => w.name,
-            (w) => formatCurrency(w.balance || 0),
-            "Belum ada dompet",
-          )}
-          ${renderListGroup(
-            `Tabungan — ${formatCurrency(totalSavings)}`,
-            savings,
-            (s) => s.name,
-            (s) => formatCurrency(s.currentAmount || 0),
-            "Belum ada tabungan",
-          )}
-          ${renderListGroup(
-            `Piutang (Orang berhutang ke saya) — ${formatCurrency(totalReceivables)}`,
-            activeReceivables,
-            (d) =>
-              d.dueDate
-                ? `${d.partyName} (jatuh tempo ${formatDate(d.dueDate)})`
-                : d.partyName,
-            (d) => formatCurrency(d.remainingAmount ?? d.amount ?? 0),
-            "Tidak ada piutang aktif",
-          )}
-        </div>
-      </div>
-
-      <div class="pdfx-section">
-        <div class="pdfx-section-title" style="color:#ef4444;">📑 Rincian Hutang</div>
-        <div class="pdfx-list-card">
-          ${renderListGroup(
-            `Saya Berhutang — ${formatCurrency(totalPayables)}`,
-            activePayables,
-            (d) =>
-              d.dueDate
-                ? `${d.partyName} (jatuh tempo ${formatDate(d.dueDate)})`
-                : d.partyName,
-            (d) => formatCurrency(d.remainingAmount ?? d.amount ?? 0),
-            "Tidak ada hutang aktif",
-          )}
-        </div>
-      </div>
-
-      <div class="pdfx-footer">Money Manager — Laporan Total Aset</div>
+      <div class="simg-footer">Money Manager — Ringkasan Total Aset</div>
     </div>
   `;
 
@@ -583,8 +411,8 @@ function buildAssetsReportElement(data) {
 
 // Ring progress tunggal (dipakai untuk kartu Kekayaan Bersih)
 function makeRingSvg(percent, activeColor, trackColor) {
-  const size = 170;
-  const strokeWidth = 16;
+  const size = 160;
+  const strokeWidth = 15;
   const r = (size - strokeWidth) / 2;
   const cx = size / 2;
   const cy = size / 2;
@@ -601,40 +429,6 @@ function makeRingSvg(percent, activeColor, trackColor) {
         transform="rotate(-90 ${cx} ${cy})" />
     </svg>
   `;
-}
-
-// Donut multi-warna (dipakai untuk kartu Komposisi Aset)
-function makeDonutSvg(segments) {
-  const size = 150;
-  const strokeWidth = 22;
-  const r = (size - strokeWidth) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circumference = 2 * Math.PI * r;
-
-  const total = segments.reduce((s, seg) => s + seg.pct, 0);
-  let circles = "";
-
-  if (total <= 0) {
-    circles = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#eef0f5" stroke-width="${strokeWidth}" />`;
-  } else {
-    let cumulative = 0;
-    segments.forEach((seg) => {
-      if (seg.pct <= 0) return;
-      const fraction = seg.pct / 100;
-      const dash = circumference * fraction;
-      const offset = circumference * (cumulative / 100);
-      circles += `
-        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${strokeWidth}"
-          stroke-dasharray="${dash} ${circumference - dash}"
-          stroke-dashoffset="${-offset}"
-          transform="rotate(-90 ${cx} ${cy})" />
-      `;
-      cumulative += seg.pct;
-    });
-  }
-
-  return `<svg viewBox="0 0 ${size} ${size}">${circles}</svg>`;
 }
 
 function addAssetsStyles() {

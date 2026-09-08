@@ -46,21 +46,31 @@ function getDaysInYear(year) {
   return isLeapYear(year) ? 366 : 365;
 }
 
-// Hitung nominal bunga per hari berdasarkan pokok, persentase, dan periode bunga.
-// Rumus:
-//  - harian   : pokok * persentase / 100
-//  - mingguan : pokok * persentase / 100 / 7 hari
-//  - bulanan  : pokok * persentase / 100 / (30, 31, atau 29 hari, tergantung bulan berjalan)
-//  - tahunan  : pokok * persentase / 100 / (365 atau 366 hari, tergantung tahun berjalan)
-function calculateInterestPerDay(principal, ratePercent, period, refDate = new Date()) {
+// Hitung nominal bunga per hari berdasarkan pokok, nilai bunga (persentase ATAU
+// nominal tetap tergantung interestType), dan periode bunga.
+// interestType: "percent" (default) -> value dianggap persentase dari pokok
+//               "fixed"             -> value dianggap nominal Rupiah tetap per periode
+// Rumus dasar (interestAmount = nilai bunga per PERIODE penuh):
+//  - harian   : interestAmount
+//  - mingguan : interestAmount / 7 hari
+//  - bulanan  : interestAmount / (30, 31, atau 29 hari, tergantung bulan berjalan)
+//  - tahunan  : interestAmount / (365 atau 366 hari, tergantung tahun berjalan)
+function calculateInterestPerDay(
+  principal,
+  rateOrAmount,
+  period,
+  refDate = new Date(),
+  interestType = "percent",
+) {
   const pokok = Number(principal) || 0;
-  const rate = Number(ratePercent) || 0;
+  const value = Number(rateOrAmount) || 0;
 
-  if (!pokok || !rate || !period || period === "none") {
+  if (!pokok || !value || !period || period === "none") {
     return 0;
   }
 
-  const interestAmount = (pokok * rate) / 100;
+  const interestAmount =
+    interestType === "fixed" ? value : (pokok * value) / 100;
 
   switch (period) {
     case "daily":
@@ -81,8 +91,20 @@ function calculateInterestPerDay(principal, ratePercent, period, refDate = new D
 }
 
 // Hitung estimasi bunga per bulan (untuk ditampilkan sebagai info tambahan)
-function calculateInterestPerMonth(principal, ratePercent, period, refDate = new Date()) {
-  const perDay = calculateInterestPerDay(principal, ratePercent, period, refDate);
+function calculateInterestPerMonth(
+  principal,
+  rateOrAmount,
+  period,
+  refDate = new Date(),
+  interestType = "percent",
+) {
+  const perDay = calculateInterestPerDay(
+    principal,
+    rateOrAmount,
+    period,
+    refDate,
+    interestType,
+  );
   const days = getDaysInMonth(refDate.getFullYear(), refDate.getMonth() + 1);
   return perDay * days;
 }
@@ -153,6 +175,7 @@ function accrueInterestForDebt(debt, todayISO) {
         debt.interestRate,
         debt.interestPeriod,
         cursor,
+        debt.interestType || "percent",
       ),
     );
 
@@ -379,6 +402,9 @@ function renderDebtCard(debt) {
                     <button class="icon-btn add-payment" data-id="${debt.id}" title="Tambah Pembayaran">
                         <i class="fas fa-money-bill-wave"></i>
                     </button>
+                    <button class="icon-btn add-debt-amount" data-id="${debt.id}" title="Tambah Nominal Hutang">
+                        <i class="fas fa-plus-circle"></i>
+                    </button>
                     <button class="icon-btn view-debt-history" data-id="${debt.id}" title="Rincian">
                         <i class="fas fa-list-alt"></i>
                     </button>
@@ -420,9 +446,9 @@ function renderDebtCard(debt) {
                   debt.interestPeriod && debt.interestPeriod !== "none" && debt.interestRate > 0
                     ? `
                     <div class="interest-badge">
-                        <i class="fas fa-percentage"></i>
-                        Bunga ${debt.interestRate}% / ${INTEREST_PERIOD_LABELS[debt.interestPeriod].toLowerCase()}
-                        <span class="interest-daily">+${formatCurrency(Math.round(calculateInterestPerDay(debt.remainingAmount || debt.amount, debt.interestRate, debt.interestPeriod)))} / hari</span>
+                        <i class="fas ${debt.interestType === "fixed" ? "fa-money-bill-wave" : "fa-percentage"}"></i>
+                        Bunga ${debt.interestType === "fixed" ? formatCurrency(debt.interestRate) : debt.interestRate + "%"} / ${INTEREST_PERIOD_LABELS[debt.interestPeriod].toLowerCase()}
+                        <span class="interest-daily">+${formatCurrency(Math.round(calculateInterestPerDay(debt.remainingAmount || debt.amount, debt.interestRate, debt.interestPeriod, new Date(), debt.interestType || "percent")))} / hari</span>
                     </div>
                     ${
                       debt.lastInterestDate
@@ -506,6 +532,15 @@ function attachCardEventListeners() {
     });
   });
 
+  // Add debt amount buttons (tambah nominal hutang yang sudah ada)
+  document.querySelectorAll(".add-debt-amount").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const id = parseInt(btn.dataset.id);
+      showAddAmountModal(id);
+    });
+  });
+
   // View history / rincian buttons
   document.querySelectorAll(".view-debt-history").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -586,10 +621,19 @@ async function showDebtModal(debtId = null) {
             
             <div class="form-group">
                 <label>Bunga (Opsional)</label>
-                <div class="interest-row">
+                <div class="interest-type-selector">
+                    <button type="button" class="interest-type-btn ${!isEdit || (debt.interestType || "percent") === "percent" ? "active" : ""}" data-interest-type="percent">
+                        <i class="fas fa-percentage"></i> Persentase (%)
+                    </button>
+                    <button type="button" class="interest-type-btn ${isEdit && debt.interestType === "fixed" ? "active" : ""}" data-interest-type="fixed">
+                        <i class="fas fa-money-bill-wave"></i> Nominal Tetap (Rp)
+                    </button>
+                </div>
+                <input type="hidden" id="debt-interest-type" value="${isEdit && debt.interestType === "fixed" ? "fixed" : "percent"}">
+                <div class="interest-row" style="margin-top:8px;">
                     <input type="number" id="debt-interest-rate" class="form-input" 
                            value="${isEdit && debt.interestRate ? debt.interestRate : ""}" 
-                           placeholder="Persentase (%)" min="0" step="0.01">
+                           placeholder="${isEdit && debt.interestType === "fixed" ? "Nominal (Rp)" : "Persentase (%)"}" min="0" step="0.01">
                     <select id="debt-interest-period" class="form-input">
                         <option value="none" ${!isEdit || !debt.interestPeriod || debt.interestPeriod === "none" ? "selected" : ""}>Tidak ada bunga</option>
                         <option value="daily" ${isEdit && debt.interestPeriod === "daily" ? "selected" : ""}>Per Hari</option>
@@ -598,7 +642,7 @@ async function showDebtModal(debtId = null) {
                         <option value="yearly" ${isEdit && debt.interestPeriod === "yearly" ? "selected" : ""}>Per Tahun</option>
                     </select>
                 </div>
-                <small class="form-help">Bunga akan bertambah OTOMATIS ke sisa hutang setiap kali tanggal berganti (dihitung ulang tiap kali aplikasi dibuka). Untuk mingguan/bulanan/tahunan, sistem otomatis mengonversi ke nilai harian (dibagi 7 hari / jumlah hari di bulan berjalan / jumlah hari di tahun berjalan)</small>
+                <small class="form-help" id="debt-interest-help">Bunga akan bertambah OTOMATIS ke sisa hutang setiap kali tanggal berganti (dihitung ulang tiap kali aplikasi dibuka). Pilih <strong>Persentase</strong> untuk bunga % dari pokok, atau <strong>Nominal Tetap</strong> untuk bunga flat dalam Rupiah per periode. Untuk mingguan/bulanan/tahunan, sistem otomatis mengonversi ke nilai harian.</small>
                 <div class="interest-preview" id="debt-interest-preview" style="display: none;">
                     <i class="fas fa-calculator"></i>
                     <span id="debt-interest-preview-text"></span>
@@ -658,25 +702,41 @@ async function showDebtModal(debtId = null) {
   const interestPeriodSelect = modal.querySelector("#debt-interest-period");
   const interestPreview = modal.querySelector("#debt-interest-preview");
   const interestPreviewText = modal.querySelector("#debt-interest-preview-text");
+  const interestTypeInput = modal.querySelector("#debt-interest-type");
+  const interestTypeBtns = modal.querySelectorAll(".interest-type-btn");
 
   const updateInterestPreview = () => {
     const principal = parseFloat(amountInput.value) || 0;
     const rate = parseFloat(interestRateInput.value) || 0;
     const period = interestPeriodSelect.value;
+    const interestType = interestTypeInput.value;
 
     if (!principal || !rate || period === "none") {
       interestPreview.style.display = "none";
       return;
     }
 
-    const perDay = calculateInterestPerDay(principal, rate, period);
-    const perMonth = calculateInterestPerMonth(principal, rate, period);
+    const perDay = calculateInterestPerDay(principal, rate, period, new Date(), interestType);
+    const perMonth = calculateInterestPerMonth(principal, rate, period, new Date(), interestType);
+    const rateLabel = interestType === "fixed" ? formatCurrency(rate) : `${rate}%`;
 
     interestPreviewText.textContent =
-      `Estimasi bunga: ${formatCurrency(perDay)} / hari` +
+      `Bunga ${rateLabel} / ${INTEREST_PERIOD_LABELS[period].toLowerCase()} → estimasi ${formatCurrency(perDay)} / hari` +
       ` (± ${formatCurrency(perMonth)} / bulan)`;
     interestPreview.style.display = "flex";
   };
+
+  // Toggle Persentase <-> Nominal Tetap
+  interestTypeBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      interestTypeBtns.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      interestTypeInput.value = btn.dataset.interestType;
+      interestRateInput.placeholder =
+        btn.dataset.interestType === "fixed" ? "Nominal (Rp)" : "Persentase (%)";
+      updateInterestPreview();
+    });
+  });
 
   amountInput.addEventListener("input", updateInterestPreview);
   interestRateInput.addEventListener("input", updateInterestPreview);
@@ -696,6 +756,7 @@ async function showDebtModal(debtId = null) {
     const dueDate = modal.querySelector("#debt-duedate").value;
     const interestRate = parseFloat(modal.querySelector("#debt-interest-rate").value) || 0;
     const interestPeriod = modal.querySelector("#debt-interest-period").value;
+    const interestType = interestTypeInput.value === "fixed" ? "fixed" : "percent";
 
     if (!partyName) {
       showToast("Nama harus diisi", "error");
@@ -741,12 +802,16 @@ async function showDebtModal(debtId = null) {
       debt.partyName = partyName;
       debt.amount = amount;
       debt.remainingAmount = remainingAmount;
+      // Kalau user mengedit "Sisa Hutang" secara manual, anggap itu koreksi
+      // pokok terbaru juga (supaya "sisa hutang tanpa bunga" tetap konsisten)
+      debt.principalRemaining = remainingAmount;
       debt.type = type;
       debt.description = description;
       debt.dueDate = dueDate;
       debt.status = status;
       debt.interestRate = interestRate;
       debt.interestPeriod = interestPeriod;
+      debt.interestType = interestType;
       debt.updatedAt = getCurrentDateTime().datetime;
 
       if (willHaveInterest && !wasInterestActive) {
@@ -766,16 +831,19 @@ async function showDebtModal(debtId = null) {
         partyName: partyName,
         amount: amount,
         remainingAmount: remainingAmount,
+        principalRemaining: remainingAmount,
         type: type,
         description: description,
         dueDate: dueDate,
         status: status,
         interestRate: interestRate,
         interestPeriod: interestPeriod,
+        interestType: interestType,
         lastInterestDate: willHaveInterest ? getCurrentDateTime().date : null,
         createdAt: getCurrentDateTime().datetime,
         updatedAt: getCurrentDateTime().datetime,
         payments: [],
+        additions: [],
         interestLog: [],
       };
 
@@ -907,6 +975,10 @@ async function showPaymentModal(debtId) {
     debt.status = newRemaining === 0 ? "completed" : "partial";
     debt.updatedAt = getCurrentDateTime().datetime;
 
+    // Pembayaran mengurangi sisa pokok (tanpa bunga) juga
+    const prevPrincipalRemaining = debt.principalRemaining ?? remaining;
+    debt.principalRemaining = Math.max(0, prevPrincipalRemaining - amount);
+
     // Add payment record
     if (!debt.payments) debt.payments = [];
     debt.payments.push({
@@ -935,7 +1007,139 @@ async function showPaymentModal(debtId) {
   });
 }
 
-// Show modal rincian: gabungan riwayat pembayaran & penambahan bunga
+// Show modal untuk tambah nominal hutang yang sudah ada
+async function showAddAmountModal(debtId) {
+  const debt = await getItem(STORES.DEBTS, debtId);
+  if (!debt) {
+    showToast("Data tidak ditemukan", "error");
+    return;
+  }
+
+  // Pastikan bunga sudah dihitung s/d hari ini dulu sebelum menambah nominal
+  const todayISO = getCurrentDateTime().date;
+  const accrualResult = accrueInterestForDebt(debt, todayISO);
+  if (accrualResult.changed) {
+    await updateItem(STORES.DEBTS, debt);
+  }
+
+  const isOwe = debt.type === "owe";
+  const currentRemaining = debt.remainingAmount || debt.amount;
+
+  const modalContent = `
+        <form id="add-amount-form">
+            <div class="form-group">
+                <label>${isOwe ? "Tambah hutang ke" : "Tambah piutang dari"}: ${escapeHtml(debt.partyName)}</label>
+                <div class="info-box">
+                    <div>Sisa saat ini: ${formatCurrency(currentRemaining)}</div>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label>Nominal Tambahan <span class="required">*</span></label>
+                <input type="number" id="add-amount-value" class="form-input" 
+                       placeholder="0" min="1" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Tanggal <span class="required">*</span></label>
+                <input type="date" id="add-amount-date" class="form-input" 
+                       value="${todayISO}" max="${todayISO}" required>
+            </div>
+            
+            <div class="form-group">
+                <label>Catatan (Opsional)</label>
+                <textarea id="add-amount-note" class="form-input" rows="2" 
+                          placeholder="Contoh: Pinjam tambahan untuk beli bahan..."></textarea>
+            </div>
+            
+            <div class="modal-buttons">
+                <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+                <button type="submit" class="btn-primary">Tambahkan</button>
+            </div>
+        </form>
+    `;
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+        <div class="modal-container modal-small">
+            <div class="modal-header">
+                <h3><i class="fas fa-plus-circle"></i> Tambah Nominal Hutang</h3>
+                <button class="modal-close-btn modal-close-x">&times;</button>
+            </div>
+            <div class="modal-body">
+                ${modalContent}
+            </div>
+        </div>
+    `;
+
+  document.body.appendChild(modal);
+
+  const form = modal.querySelector("#add-amount-form");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const addAmount = parseInt(modal.querySelector("#add-amount-value").value);
+    const note = modal.querySelector("#add-amount-note").value;
+    const dateValue = modal.querySelector("#add-amount-date").value;
+
+    if (!addAmount || addAmount <= 0) {
+      showToast("Nominal harus lebih dari 0", "error");
+      return;
+    }
+    if (!dateValue) {
+      showToast("Tanggal harus diisi", "error");
+      return;
+    }
+
+    // Gabungkan tanggal yang dipilih user dengan jam saat ini
+    const [ay, am, ad] = dateValue.split("-");
+    const timeNow = getCurrentDateTime().time;
+    const dateStr = `${ad}/${am}/${ay} ${timeNow}`;
+
+    // Ambil nilai SEBELUM dimutasi supaya perhitungan akurat
+    const remainingBefore = debt.remainingAmount ?? debt.amount;
+    const prevPrincipalRemaining = debt.principalRemaining ?? remainingBefore;
+
+    debt.amount = (debt.amount || 0) + addAmount;
+    debt.remainingAmount = remainingBefore + addAmount;
+    debt.principalRemaining = prevPrincipalRemaining + addAmount;
+    debt.status =
+      debt.remainingAmount <= 0
+        ? "completed"
+        : debt.remainingAmount < debt.amount
+          ? "partial"
+          : "active";
+    debt.updatedAt = getCurrentDateTime().datetime;
+
+    // Simpan riwayat penambahan
+    if (!debt.additions) debt.additions = [];
+    debt.additions.push({
+      amount: addAmount,
+      note: note,
+      date: dateStr,
+    });
+
+    await updateItem(STORES.DEBTS, debt);
+
+    showToast(
+      `Berhasil menambah ${formatCurrency(addAmount)} ke hutang ${debt.partyName}`,
+      "success",
+    );
+    modal.remove();
+    await renderDebtsPage();
+  });
+
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+}
+
+// Show modal rincian: gabungan riwayat pembayaran, penambahan, & bunga
 async function showDebtHistoryModal(debtId) {
   const debt = await getItem(STORES.DEBTS, debtId);
   if (!debt) {
@@ -949,6 +1153,12 @@ async function showDebtHistoryModal(debtId) {
     amount: p.amount,
     note: p.note,
   }));
+  const additions = (debt.additions || []).map((a) => ({
+    kind: "addition",
+    date: a.date,
+    amount: a.amount,
+    note: a.note,
+  }));
   const interests = (debt.interestLog || []).map((i) => ({
     kind: "interest",
     date: i.date,
@@ -957,7 +1167,7 @@ async function showDebtHistoryModal(debtId) {
   }));
 
   // Gabung & urutkan dari yang terbaru
-  const entries = [...payments, ...interests].sort((a, b) => {
+  const entries = [...payments, ...additions, ...interests].sort((a, b) => {
     const da = parseHistoryDate(a.date);
     const db_ = parseHistoryDate(b.date);
     return (db_ ? db_.getTime() : 0) - (da ? da.getTime() : 0);
@@ -965,16 +1175,27 @@ async function showDebtHistoryModal(debtId) {
 
   const totalDibayar = payments.reduce((sum, p) => sum + p.amount, 0);
   const totalBunga = interests.reduce((sum, i) => sum + i.amount, 0);
+  const totalPenambahan = additions.reduce((sum, a) => sum + a.amount, 0);
+  const totalHutang = debt.remainingAmount || debt.amount || 0;
+  // Sisa pokok tanpa bunga: fallback ke totalHutang untuk data lama yang
+  // belum punya field principalRemaining (dibuat sebelum fitur ini ada)
+  const sisaPokok = debt.principalRemaining ?? totalHutang;
+
+  const kindMeta = {
+    payment: { icon: "fa-money-bill-wave", color: "#10b981", bg: "rgba(16,185,129,.15)", label: "Pembayaran", sign: "-" },
+    addition: { icon: "fa-plus-circle", color: "#8b5cf6", bg: "rgba(139,92,246,.15)", label: "Penambahan Hutang", sign: "+" },
+    interest: { icon: "fa-percentage", color: "#f59e0b", bg: "rgba(245,158,11,.15)", label: "Bunga berjalan", sign: "+" },
+  };
 
   const rows =
     entries.length === 0
       ? `<div style="text-align:center;padding:30px 0;color:var(--text-secondary);">
            <i class="fas fa-history" style="font-size:2.5rem;display:block;margin-bottom:10px;opacity:0.4;"></i>
-           <p>Belum ada riwayat pembayaran atau bunga</p>
+           <p>Belum ada riwayat pembayaran, penambahan, atau bunga</p>
          </div>`
       : entries
           .map((entry) => {
-            const isPayment = entry.kind === "payment";
+            const meta = kindMeta[entry.kind];
             const dateObj = parseHistoryDate(entry.date);
             const dateStr = dateObj
               ? dateObj.toLocaleDateString("id-ID", {
@@ -990,6 +1211,10 @@ async function showDebtHistoryModal(debtId) {
                     minute: "2-digit",
                   })
                 : "";
+            const label =
+              entry.kind === "interest"
+                ? `${meta.label} (${entry.days} hari)`
+                : meta.label;
 
             return `
               <div style="
@@ -999,24 +1224,23 @@ async function showDebtHistoryModal(debtId) {
               ">
                 <div style="
                   width:36px;height:36px;border-radius:50%;flex-shrink:0;
-                  background:${isPayment ? "rgba(16,185,129,.15)" : "rgba(245,158,11,.15)"};
+                  background:${meta.bg};
                   display:flex;align-items:center;justify-content:center;
                 ">
-                  <i class="fas ${isPayment ? "fa-money-bill-wave" : "fa-percentage"}"
-                     style="color:${isPayment ? "#10b981" : "#f59e0b"};font-size:.85rem;"></i>
+                  <i class="fas ${meta.icon}" style="color:${meta.color};font-size:.85rem;"></i>
                 </div>
                 <div style="flex:1;min-width:0;">
                   <div style="font-weight:600;font-size:.88rem;">
-                    ${isPayment ? "Pembayaran" : `Bunga berjalan (${entry.days} hari)`}
+                    ${label}
                   </div>
                   <div style="font-size:.75rem;color:var(--text-secondary);margin-top:2px;">
                     ${dateStr}${timeStr ? " • " + timeStr : ""}
-                    ${isPayment && entry.note ? `<br><span style="font-style:italic;">${escapeHtml(entry.note)}</span>` : ""}
+                    ${entry.kind !== "interest" && entry.note ? `<br><span style="font-style:italic;">${escapeHtml(entry.note)}</span>` : ""}
                   </div>
                 </div>
                 <div style="text-align:right;flex-shrink:0;">
-                  <div style="font-weight:700;color:${isPayment ? "#10b981" : "#f59e0b"};font-size:.95rem;">
-                    ${isPayment ? "-" : "+"}${formatCurrency(entry.amount)}
+                  <div style="font-weight:700;color:${meta.color};font-size:.95rem;">
+                    ${meta.sign}${formatCurrency(entry.amount)}
                   </div>
                 </div>
               </div>`;
@@ -1031,24 +1255,47 @@ async function showDebtHistoryModal(debtId) {
         <h3><i class="fas fa-list-alt"></i> Rincian — ${escapeHtml(debt.partyName)}</h3>
         <button class="modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);padding:0 8px;">&times;</button>
       </div>
+
+      ${
+        debt.description
+          ? `<div style="padding:12px 16px;background:var(--bg-secondary);border-bottom:1px solid var(--border-color);">
+               <div style="font-weight:600;margin-bottom:4px;color:var(--text-secondary);font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;">
+                 <i class="fas fa-sticky-note"></i> Catatan
+               </div>
+               <div style="font-size:.85rem;">${escapeHtml(debt.description)}</div>
+             </div>`
+          : ""
+      }
+
       <div style="padding:16px;border-bottom:1px solid var(--border-color);background:var(--bg-primary);">
-        <div style="display:flex;gap:16px;justify-content:space-around;text-align:center;flex-wrap:wrap;">
-          <div>
-            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Dibayar</div>
-            <div style="font-weight:700;color:#10b981;font-size:1rem;">${formatCurrency(totalDibayar)}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div style="text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:10px;">
+            <div style="font-size:.66rem;color:var(--text-secondary);margin-bottom:4px;">Total Pembayaran</div>
+            <div style="font-weight:700;color:#10b981;font-size:.88rem;">${formatCurrency(totalDibayar)}</div>
           </div>
-          <div style="width:1px;background:var(--border-color);"></div>
-          <div>
-            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Bunga Berjalan</div>
-            <div style="font-weight:700;color:#f59e0b;font-size:1rem;">${formatCurrency(totalBunga)}</div>
+          <div style="text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:10px;">
+            <div style="font-size:.66rem;color:var(--text-secondary);margin-bottom:4px;">Total Bunga Masuk</div>
+            <div style="font-weight:700;color:#f59e0b;font-size:.88rem;">${formatCurrency(totalBunga)}</div>
           </div>
-          <div style="width:1px;background:var(--border-color);"></div>
-          <div>
-            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Sisa Sekarang</div>
-            <div style="font-weight:700;font-size:1rem;">${formatCurrency(debt.remainingAmount || debt.amount)}</div>
+          <div style="text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:10px;">
+            <div style="font-size:.66rem;color:var(--text-secondary);margin-bottom:4px;">Penambahan Hutang</div>
+            <div style="font-weight:700;color:#8b5cf6;font-size:.88rem;">${formatCurrency(totalPenambahan)}</div>
+          </div>
+          <div style="text-align:center;padding:10px 6px;background:var(--bg-secondary);border-radius:10px;">
+            <div style="font-size:.66rem;color:var(--text-secondary);margin-bottom:4px;">Sisa Hutang (Tanpa Bunga)</div>
+            <div style="font-weight:700;font-size:.88rem;">${formatCurrency(sisaPokok)}</div>
           </div>
         </div>
+        <div style="
+          margin-top:10px;padding:12px 14px;border-radius:10px;
+          background:linear-gradient(135deg, var(--info,#6366f1), #8b5cf6);
+          color:#fff;display:flex;justify-content:space-between;align-items:center;
+        ">
+          <span style="font-size:.78rem;">Total Hutang (Pokok + Bunga)</span>
+          <span style="font-weight:700;font-size:1.05rem;">${formatCurrency(totalHutang)}</span>
+        </div>
       </div>
+
       <div class="modal-body" style="overflow-y:auto;flex:1;">
         ${rows}
       </div>
@@ -1341,6 +1588,35 @@ function addDebtStyles() {
             gap: 8px;
         }
         
+        .interest-type-selector {
+            display: flex;
+            gap: 8px;
+            background: var(--bg-primary);
+            padding: 4px;
+            border-radius: 10px;
+        }
+        
+        .interest-type-btn {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            background: none;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        
+        .interest-type-btn.active {
+            background: var(--info);
+            color: white;
+        }
+        
         .interest-row #debt-interest-rate {
             flex: 1;
         }
@@ -1425,4 +1701,4 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
-}
+}
