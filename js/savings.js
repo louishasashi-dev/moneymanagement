@@ -113,8 +113,12 @@ function renderSavingsList() {
       return `
             <div class="saving-card" data-id="${saving.id}">
                 <div class="saving-card-header">
-                    <div class="saving-icon">
-                        <i class="fas ${saving.icon || "fa-piggy-bank"}"></i>
+                    <div class="saving-icon ${saving.photo ? "has-photo" : ""}">
+                        ${
+                          saving.photo
+                            ? `<img src="${saving.photo}" alt="${escapeHtml(saving.name)}" class="saving-photo-thumb">`
+                            : `<i class="fas ${saving.icon || "fa-piggy-bank"}"></i>`
+                        }
                     </div>
                     <div class="saving-info">
                         <h3>${escapeHtml(saving.name)}</h3>
@@ -248,6 +252,17 @@ function setupSavingsEventListeners() {
       deleteSavingById(id);
     });
   });
+
+  // Klik foto target -> tampilkan ukuran penuh
+  document.querySelectorAll(".saving-photo-thumb").forEach((img) => {
+    img.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const card = img.closest(".saving-card");
+      const id = parseInt(card?.dataset.id);
+      const saving = allSavings.find((s) => s.id === id);
+      showPhotoLightbox(img.src, saving?.name || "");
+    });
+  });
 }
 
 // Show modal untuk tambah/edit tabungan
@@ -270,6 +285,24 @@ async function showSavingModal(savingId = null) {
                 <input type="text" id="saving-name" class="form-input" 
                        value="${isEdit ? escapeHtml(saving.name) : ""}" 
                        placeholder="Contoh: Liburan ke Bali, Beli HP Baru..." required>
+            </div>
+
+            <div class="form-group">
+                <label>Foto Target (Opsional)</label>
+                <div class="saving-photo-upload">
+                    <div class="saving-photo-preview-wrap" id="saving-photo-preview-wrap" style="${isEdit && saving.photo ? "" : "display:none;"}">
+                        <img id="saving-photo-preview" src="${isEdit && saving.photo ? saving.photo : ""}" alt="Preview foto target">
+                        <button type="button" class="saving-photo-remove-btn" id="saving-photo-remove-btn" title="Hapus Foto">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <label for="saving-photo-input" class="saving-photo-picker" id="saving-photo-picker" style="${isEdit && saving.photo ? "display:none;" : ""}">
+                        <i class="fas fa-camera"></i>
+                        <span>Pasang foto barang/tujuan tabungan</span>
+                    </label>
+                    <input type="file" id="saving-photo-input" accept="image/*" style="display:none;">
+                </div>
+                <small class="form-help">Contoh: pasang foto HP yang ingin dibeli biar makin semangat menabung!</small>
             </div>
             
             <div class="form-group">
@@ -324,6 +357,53 @@ async function showSavingModal(savingId = null) {
 
   document.body.appendChild(modal);
 
+  // ── Handle upload foto target ──
+  const photoInput = modal.querySelector("#saving-photo-input");
+  const photoPreviewWrap = modal.querySelector("#saving-photo-preview-wrap");
+  const photoPreviewImg = modal.querySelector("#saving-photo-preview");
+  const photoPicker = modal.querySelector("#saving-photo-picker");
+  const photoRemoveBtn = modal.querySelector("#saving-photo-remove-btn");
+
+  // Simpan data foto di variabel JS (bukan di DOM), supaya base64 yang
+  // ukurannya bisa lumayan besar tidak perlu nyangkut di HTML attribute
+  let photoDataUrl = isEdit && saving.photo ? saving.photo : null;
+
+  photoPicker.addEventListener("click", () => photoInput.click());
+
+  photoInput.addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showToast("File harus berupa gambar", "error");
+      photoInput.value = "";
+      return;
+    }
+
+    try {
+      showToast("Memproses gambar...", "info");
+      // Dikompres dulu (max lebar 500px, kualitas 75%) supaya tidak
+      // membengkakkan database - foto HP dari kamera bisa 3-5MB kalau
+      // disimpan mentah, setelah dikompres biasanya jadi puluhan KB saja
+      const compressed = await compressImageFile(file, 500, 0.75);
+      photoDataUrl = compressed;
+      photoPreviewImg.src = compressed;
+      photoPreviewWrap.style.display = "block";
+      photoPicker.style.display = "none";
+    } catch (err) {
+      console.error("Gagal memproses gambar:", err);
+      showToast("Gagal memproses gambar, coba foto lain", "error");
+    }
+  });
+
+  photoRemoveBtn.addEventListener("click", () => {
+    photoDataUrl = null;
+    photoInput.value = "";
+    photoPreviewImg.src = "";
+    photoPreviewWrap.style.display = "none";
+    photoPicker.style.display = "flex";
+  });
+
   // Handle form submission
   const form = modal.querySelector("#saving-form");
   form.addEventListener("submit", async (e) => {
@@ -357,6 +437,7 @@ async function showSavingModal(savingId = null) {
       saving.currentAmount = currentAmount;
       saving.description = description;
       saving.deadline = deadline;
+      saving.photo = photoDataUrl;
       saving.updatedAt = getCurrentDateTime().datetime;
 
       await updateItem(STORES.SAVINGS, saving);
@@ -369,6 +450,7 @@ async function showSavingModal(savingId = null) {
         currentAmount: currentAmount,
         description: description,
         deadline: deadline,
+        photo: photoDataUrl,
         status: currentAmount >= targetAmount ? "completed" : "active",
         icon: "fa-piggy-bank",
         createdAt: getCurrentDateTime().datetime,
@@ -867,6 +949,129 @@ function addSavingsStyles() {
             justify-content: center;
             font-size: 1.5rem;
             color: #8b5cf6;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        
+        .saving-icon.has-photo {
+            background: var(--bg-secondary);
+        }
+        
+        .saving-photo-thumb {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        
+        .saving-photo-thumb:hover {
+            transform: scale(1.08);
+        }
+        
+        .saving-photo-upload {
+            margin-top: 4px;
+        }
+        
+        .saving-photo-picker {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 24px 16px;
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+        
+        .saving-photo-picker:hover {
+            border-color: #8b5cf6;
+            color: #8b5cf6;
+            background: rgba(139, 92, 246, 0.05);
+        }
+        
+        .saving-photo-picker i {
+            font-size: 1.6rem;
+        }
+        
+        .saving-photo-preview-wrap {
+            position: relative;
+            width: 100%;
+            max-width: 240px;
+            margin: 0 auto;
+        }
+        
+        .saving-photo-preview-wrap img {
+            width: 100%;
+            max-height: 220px;
+            object-fit: cover;
+            border-radius: 12px;
+            display: block;
+        }
+        
+        .saving-photo-remove-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+        }
+        
+        .saving-photo-lightbox {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .saving-photo-lightbox-content {
+            position: relative;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .saving-photo-lightbox-content img {
+            width: 100%;
+            border-radius: 16px;
+            display: block;
+        }
+        
+        .saving-photo-lightbox-title {
+            text-align: center;
+            color: #fff;
+            margin-top: 12px;
+            font-weight: 600;
+        }
+        
+        .saving-photo-lightbox-close {
+            position: absolute;
+            top: -14px;
+            right: -14px;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #fff;
+            color: #1e1e32;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(0,0,0,.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
         .saving-info {
@@ -986,6 +1191,58 @@ function addSavingsStyles() {
     `;
 
   document.head.appendChild(style);
+}
+
+// Kompres file gambar sebelum disimpan ke IndexedDB (resize + turunkan kualitas)
+// supaya foto dari kamera HP (bisa 3-5MB) tidak membengkakkan database.
+function compressImageFile(file, maxWidth = 500, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("Gagal memuat gambar"));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Gagal membaca file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Lightbox sederhana untuk lihat foto target ukuran penuh
+function showPhotoLightbox(photoUrl, title = "") {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay saving-photo-lightbox";
+  overlay.innerHTML = `
+    <div class="saving-photo-lightbox-content">
+      <button class="saving-photo-lightbox-close" title="Tutup">
+        <i class="fas fa-times"></i>
+      </button>
+      <img src="${photoUrl}" alt="${escapeHtml(title)}">
+      ${title ? `<div class="saving-photo-lightbox-title">${escapeHtml(title)}</div>` : ""}
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay
+    .querySelector(".saving-photo-lightbox-close")
+    .addEventListener("click", close);
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
 }
 
 function escapeHtml(text) {
