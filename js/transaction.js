@@ -73,19 +73,8 @@ export async function renderTransactionsPage() {
                 </button>
             </div>
             
-                        <!-- Filter Toggle (mobile only) -->
-            <button id="filter-toggle-btn" class="filter-toggle-btn">
-                <i class="fas fa-filter"></i> Filter
-            </button>
-
             <!-- Filter Bar -->
-            <div class="filter-bar" id="filter-bar">
-                <div class="filter-bar-header">
-                    <span>Filter Transaksi</span>
-                    <button id="filter-close-btn" class="filter-close-btn">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
+            <div class="filter-bar">
                 <div class="search-box">
                     <i class="fas fa-search"></i>
                     <input type="text" id="search-transaction" placeholder="Cari transaksi..." class="search-input">
@@ -95,16 +84,16 @@ export async function renderTransactionsPage() {
                         <option value="all">Semua Tipe</option>
                         <option value="income">📥 Pemasukan</option>
                         <option value="expense">📤 Pengeluaran</option>
+                        <option value="saving">🐷 Tabungan</option>
                     </select>
                     <select id="filter-wallet" class="filter-select">
                         <option value="all">💳 Semua Dompet</option>
                     </select>
+                    <select id="filter-category" class="filter-select">
+                        <option value="all">📂 Semua Kategori</option>
+                    </select>
                 </div>
                 <div class="period-filter-group">
-                    <select id="filter-category" class="filter-select">
-                      <option value="all">📂 Semua Kategori</option>
-                    </select>    
-                
                     <select id="filter-period" class="filter-select">
                         <option value="today">📅 Hari Ini</option>
                         <option value="week">🗓️ Minggu Ini</option>
@@ -130,14 +119,9 @@ export async function renderTransactionsPage() {
                         <option value="all">Tahun</option>
                     </select>
                 </div>
-                  <div class="filter-bar-buttons">
-                    <button id="reset-filters" class="btn-secondary">
-                        </i> Reset Filter
-                    </button>
-                    <button id="apply-filters" class="btn-primary" style="width: 100%; margin-top: 10px;">
-                        Terapkan
-                    </button>
-                </div>
+                <button id="reset-filters" class="btn-secondary" style="width: 100%; margin-top: 10px;">
+                    <i class="fas fa-undo"></i> Reset Filter
+                </button>
             </div>
             
             <!-- Summary -->
@@ -153,6 +137,10 @@ export async function renderTransactionsPage() {
                 <div class="summary-item">
                     <span>💸 Total Pengeluaran:</span>
                     <strong class="expense-text" id="total-expense-summary">Rp 0</strong>
+                </div>
+                <div class="summary-item">
+                    <span>🐷 Total Ditabung:</span>
+                    <strong class="saving-text" id="total-saving-summary">Rp 0</strong>
                 </div>
             </div>
             
@@ -179,6 +167,9 @@ export async function renderTransactionsPage() {
 
   // Load tahun untuk filter tanggal custom
   loadYearsForFilter();
+
+  // Tambahkan style halaman transaksi (warna ikon/nominal per tipe, dll)
+  addTransactionStyles();
 
   // Render transactions
   renderFilteredTransactions();
@@ -391,14 +382,19 @@ function updateSummary(transactions) {
   const totalExpense = transactions
     .filter((t) => t.type === "expense")
     .reduce((sum, t) => sum + t.amount, 0);
+  const totalSaving = transactions
+    .filter((t) => t.type === "saving")
+    .reduce((sum, t) => sum + t.amount, 0);
 
   const totalCount = document.getElementById("total-count");
   const totalIncomeEl = document.getElementById("total-income-summary");
   const totalExpenseEl = document.getElementById("total-expense-summary");
+  const totalSavingEl = document.getElementById("total-saving-summary");
 
   if (totalCount) totalCount.textContent = transactions.length;
   if (totalIncomeEl) totalIncomeEl.textContent = formatCurrency(totalIncome);
   if (totalExpenseEl) totalExpenseEl.textContent = formatCurrency(totalExpense);
+  if (totalSavingEl) totalSavingEl.textContent = formatCurrency(totalSaving);
 }
 
 // Render daftar transaksi
@@ -439,37 +435,28 @@ function renderTransactionsList(transactions) {
     .map(
       (t) => `
         <div class="transaction-card" data-id="${t.id}">
-            <div class="transaction-card-left">
-                <div class="transaction-card-icon ${t.type}">
-                    <i class="fas ${t.type === "income" ? "fa-arrow-down" : "fa-arrow-up"}"></i>
-                </div>
-                <div class="transaction-card-details">
-                    <div class="transaction-card-name">${escapeHtml(t.itemName)}</div>
-                    <div class="transaction-card-meta">
-                        <span class="category-badge">📌 ${t.category || "Umum"}</span>
-                        <span class="date-badge">📅 ${formatDate(t.date)}</span>
-                        ${t.time ? `<span class="time-badge">⏰ ${t.time}</span>` : ""}
-                    </div>
-                    ${t.note ? `<div class="transaction-card-note">📝 ${escapeHtml(t.note)}</div>` : ""}
-                </div>
+            <div class="transaction-card-icon ${t.type}">
+                <i class="fas ${t.type === "income" ? "fa-arrow-down" : t.type === "saving" ? "fa-piggy-bank" : "fa-arrow-up"}"></i>
             </div>
-            <div class="transaction-card-right">
-                <div class="transaction-card-amount-wrap">
-                    <div class="transaction-card-amount ${t.type}">
-                        ${t.type === "income" ? "+" : "-"} ${formatCurrency(t.amount)}
-                    </div>
-                    <span class="transaction-card-type-label ${t.type}">
-                        ${t.type === "income" ? "Pemasukan" : "Pengeluaran"}
-                    </span>
+            <div class="transaction-card-details">
+                <div class="transaction-card-name">${escapeHtml(t.itemName)}</div>
+                <div class="transaction-card-meta">
+                    <span class="category-badge">📌 ${t.category || "Umum"}</span>
+                    <span class="date-badge">📅 ${formatDate(t.date)}</span>
+                    ${t.time ? `<span class="time-badge">⏰ ${t.time}</span>` : ""}
                 </div>
-                <div class="transaction-card-actions">
-                    <button class="icon-btn edit-transaction" data-id="${t.id}" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="icon-btn delete-transaction" data-id="${t.id}" title="Hapus">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                </div>
+                ${t.note ? `<div class="transaction-card-note">📝 ${escapeHtml(t.note)}</div>` : ""}
+            </div>
+            <div class="transaction-card-amount ${t.type}">
+                ${t.type === "income" ? "+" : t.type === "saving" ? "🐷" : "-"} ${formatCurrency(t.amount)}
+            </div>
+            <div class="transaction-card-actions">
+                <button class="icon-btn edit-transaction" data-id="${t.id}" title="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="icon-btn delete-transaction" data-id="${t.id}" title="Hapus">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     `,
@@ -558,33 +545,6 @@ function renderPagination(totalPages) {
 
 // Setup event listeners untuk filter
 function setupTransactionEventListeners() {
-  // Filter toggle (mobile modal behavior)
-  const filterToggleBtn = document.getElementById("filter-toggle-btn");
-  const filterBar = document.getElementById("filter-bar");
-  const filterCloseBtn = document.getElementById("filter-close-btn");
-
-  function openFilterBar() {
-    if (filterBar) filterBar.classList.add("filter-bar-open");
-    document.body.classList.add("filter-modal-active");
-  }
-
-  function closeFilterBar() {
-    if (filterBar) filterBar.classList.remove("filter-bar-open");
-    document.body.classList.remove("filter-modal-active");
-  }
-
-  if (filterToggleBtn) {
-    filterToggleBtn.addEventListener("click", openFilterBar);
-  }
-  if (filterCloseBtn) {
-    filterCloseBtn.addEventListener("click", closeFilterBar);
-  }
-
-  const applyFiltersBtn = document.getElementById("apply-filters");
-  if (applyFiltersBtn) {
-    applyFiltersBtn.addEventListener("click", closeFilterBar);
-  }
-
   // Search input with debounce
   const searchInput = document.getElementById("search-transaction");
   if (searchInput) {
@@ -746,6 +706,9 @@ async function showTransactionModal(transactionId = null) {
                     <button type="button" class="type-btn ${isEdit && transaction.type === "income" ? "active" : ""}" data-type="income">
                         <i class="fas fa-arrow-down"></i> Pemasukan
                     </button>
+                    <button type="button" class="type-btn ${isEdit && transaction.type === "saving" ? "active" : ""}" data-type="saving">
+                        <i class="fas fa-piggy-bank"></i> Tabungan
+                    </button>
                 </div>
                 <input type="hidden" id="transaction-type" value="${isEdit ? transaction.type : "expense"}">
             </div>
@@ -764,7 +727,7 @@ async function showTransactionModal(transactionId = null) {
                        placeholder="0" min="1" required>
             </div>
             
-            <div class="form-group">
+            <div class="form-group" id="transaction-category-group">
                 <label>Kategori</label>
                 <select id="transaction-category" class="form-input">
                     <option value="">Pilih Kategori</option>
@@ -886,9 +849,18 @@ async function showTransactionModal(transactionId = null) {
   const typeBtns = modal.querySelectorAll(".type-btn");
   const typeInput = modal.querySelector("#transaction-type");
   const categorySelect = modal.querySelector("#transaction-category");
+  const categoryGroup = modal.querySelector("#transaction-category-group");
 
   function updateCategoryOptions() {
     const currentType = typeInput.value;
+
+    // Tipe "Tabungan" tidak butuh kategori (otomatis "Tabungan")
+    if (currentType === "saving") {
+      categoryGroup.style.display = "none";
+      return;
+    }
+    categoryGroup.style.display = "";
+
     const filtered =
       currentType === "expense" ? expenseCategories : incomeCategories;
     categorySelect.innerHTML =
@@ -946,104 +918,103 @@ async function showTransactionModal(transactionId = null) {
       return;
     }
 
-    // Set default category if not selected
-    if (!category) {
+    // Tipe "Tabungan" otomatis pakai kategori "Tabungan", tidak perlu dipilih user
+    if (type === "saving") {
+      category = "Tabungan";
+    } else if (!category) {
       category = type === "income" ? "Gaji" : "Makanan";
     }
 
-    // Get wallet untuk update balance
-    const wallet = await getItem(STORES.WALLETS, walletId);
-    if (!wallet) {
-      showToast("Dompet tidak ditemukan", "error");
-      return;
-    }
-
-    // Untuk edit, cek perubahan saldo
-    if (isEdit) {
-      const oldWallet = await getItem(STORES.WALLETS, transaction.walletId);
-
-      // Kembalikan saldo lama sesuai transaksi SEBELUM diedit
-      if (oldWallet) {
-        if (transaction.type === "income") {
-          oldWallet.balance -= transaction.amount;
-        } else {
-          oldWallet.balance += transaction.amount;
+    // ─────────────────────────────────────────────────────────
+    // commitTransaction(): benar-benar menulis ke database.
+    // Dipanggil langsung untuk tipe pengeluaran/pemasukan, atau
+    // setelah user memilih tabungan tujuan untuk tipe "saving".
+    //
+    // Strategi: SELALU balikin dulu efek transaksi versi LAMA
+    // (kalau sedang edit), baru terapkan efek versi BARU. Ini
+    // berlaku seragam untuk semua kombinasi perubahan tipe,
+    // termasuk saat pindah dari/ke tipe "saving".
+    // ─────────────────────────────────────────────────────────
+    const commitTransaction = async (savingId = null) => {
+      // 1. EDIT: balikin efek transaksi lama dulu
+      if (isEdit) {
+        const oldWallet = await getItem(STORES.WALLETS, transaction.walletId);
+        if (oldWallet) {
+          if (transaction.type === "income") {
+            oldWallet.balance -= transaction.amount;
+          } else {
+            // expense DAN saving sama-sama mengurangi saldo dompet,
+            // jadi cara membalikkannya pun sama: ditambah lagi
+            oldWallet.balance += transaction.amount;
+          }
+          await updateItem(STORES.WALLETS, oldWallet);
         }
-        await updateItem(STORES.WALLETS, oldWallet);
-      }
-      // Ambil dompet TUJUAN secara fresh dari database.
-      // Kalau dompet tujuan sama dengan dompet lama, pakai `oldWallet` yang
-      // sudah dikembalikan saldonya di atas (BUKAN variabel `wallet` di awal
-      // fungsi, karena itu snapshot lama sebelum saldo dikembalikan -
-      // memakainya akan menyebabkan saldo terpotong dobel).
-      const targetWallet =
-        walletId === transaction.walletId
-          ? oldWallet
-          : await getItem(STORES.WALLETS, walletId);
 
-      if (!targetWallet) {
+        // Kalau transaksi lama bertipe tabungan, balikin juga efeknya
+        // ke target tabungan yang lama
+        if (transaction.type === "saving" && transaction.savingId) {
+          const oldSaving = await getItem(STORES.SAVINGS, transaction.savingId);
+          if (oldSaving) {
+            oldSaving.currentAmount = Math.max(
+              0,
+              oldSaving.currentAmount - transaction.amount,
+            );
+            oldSaving.status =
+              oldSaving.currentAmount >= oldSaving.targetAmount
+                ? "completed"
+                : "active";
+            oldSaving.updatedAt = getCurrentDateTime().datetime;
+            if (Array.isArray(oldSaving.history)) {
+              oldSaving.history = oldSaving.history.filter(
+                (h) => h.transactionId !== transaction.id,
+              );
+            }
+            await updateItem(STORES.SAVINGS, oldSaving);
+          }
+        }
+      }
+
+      // 2. Ambil dompet TUJUAN secara fresh (setelah efek lama dibalikin)
+      const wallet = await getItem(STORES.WALLETS, walletId);
+      if (!wallet) {
         showToast("Dompet tidak ditemukan", "error");
         return;
       }
 
-      // Cek saldo cukup untuk versi baru transaksi (kalau expense)
-      if (type === "expense" && targetWallet.balance < amount) {
-        showToast(
-          `Saldo ${targetWallet.name} tidak mencukupi! (Saldo: ${formatCurrency(targetWallet.balance)})`,
-          "error",
-        );
-        return;
-      }
-
-      // Update transaksi
-      transaction.itemName = capitalize(name);
-      transaction.amount = amount;
-      transaction.type = type;
-      transaction.category = category;
-      transaction.walletId = walletId;
-      transaction.note = note;
-      transaction.date = date;
-      transaction.time = time;
-
-      await updateItem(STORES.TRANSACTIONS, transaction);
-
-      // Terapkan efek transaksi baru ke dompet tujuan (data sudah fresh)
-      if (type === "income") {
-        targetWallet.balance += amount;
-      } else {
-        targetWallet.balance -= amount;
-      }
-      await updateItem(STORES.WALLETS, targetWallet);
-
-      showToast("Transaksi berhasil diupdate", "success");
-    } else {
-      // Cek saldo untuk pengeluaran
-      if (type === "expense" && wallet.balance < amount) {
+      // 3. Cek saldo cukup — expense DAN saving sama-sama ambil dari saldo dompet
+      if ((type === "expense" || type === "saving") && wallet.balance < amount) {
         showToast(
           `Saldo ${wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(wallet.balance)})`,
           "error",
         );
-        modal.remove();
-        style.remove();
         return;
       }
 
-      // Transaksi baru
-      const newTransaction = {
+      // 4. Simpan / update data transaksi
+      const payload = {
         itemName: capitalize(name),
-        amount: amount,
-        type: type,
-        category: category,
-        walletId: walletId,
-        note: note,
-        date: date,
-        time: time,
-        createdAt: getCurrentDateTime().timestamp,
+        amount,
+        type,
+        category,
+        walletId,
+        note,
+        date,
+        time,
+        savingId: type === "saving" ? savingId : null,
       };
 
-      await addItem(STORES.TRANSACTIONS, newTransaction);
+      let txId;
+      if (isEdit) {
+        Object.assign(transaction, payload);
+        transaction.updatedAt = getCurrentDateTime().datetime;
+        await updateItem(STORES.TRANSACTIONS, transaction);
+        txId = transaction.id;
+      } else {
+        payload.createdAt = getCurrentDateTime().timestamp;
+        txId = await addItem(STORES.TRANSACTIONS, payload);
+      }
 
-      // Update wallet balance
+      // 5. Terapkan efek baru ke saldo dompet
       if (type === "income") {
         wallet.balance += amount;
       } else {
@@ -1051,21 +1022,57 @@ async function showTransactionModal(transactionId = null) {
       }
       await updateItem(STORES.WALLETS, wallet);
 
-      showToast("Transaksi berhasil ditambahkan", "success");
-    }
+      // 6. Tipe "Tabungan": tambahkan ke tabungan tujuan + catat riwayatnya
+      if (type === "saving" && savingId) {
+        const saving = await getItem(STORES.SAVINGS, savingId);
+        if (saving) {
+          saving.currentAmount += amount;
+          saving.status =
+            saving.currentAmount >= saving.targetAmount ? "completed" : "active";
+          saving.updatedAt = getCurrentDateTime().datetime;
+          if (!Array.isArray(saving.history)) saving.history = [];
+          saving.history.push({
+            type: "deposit",
+            amount,
+            note: note || `Dari transaksi: ${capitalize(name)}`,
+            date: new Date().toISOString(),
+            previousAmount: saving.currentAmount - amount,
+            newAmount: saving.currentAmount,
+            source: "transaction",
+            transactionId: txId,
+          });
+          await updateItem(STORES.SAVINGS, saving);
+        }
+      }
 
-    modal.remove();
-    style.remove();
-    await loadTransactions();
-    renderFilteredTransactions();
+      showToast(
+        isEdit ? "Transaksi berhasil diupdate" : "Transaksi berhasil ditambahkan",
+        "success",
+      );
 
-    // Refresh dashboard if needed
-    if (
-      window.renderDashboard &&
-      window.getCurrentPage &&
-      window.getCurrentPage() === "dashboard"
-    ) {
-      await window.renderDashboard();
+      modal.remove();
+      style.remove();
+      await loadTransactions();
+      renderFilteredTransactions();
+
+      // Refresh dashboard if needed
+      if (window.renderDashboard) {
+        await window.renderDashboard();
+      }
+    };
+
+    // Tipe "Tabungan": minta user pilih tabungan tujuan dulu sebelum disimpan
+    if (type === "saving") {
+      await showSelectSavingGoalModal(
+        amount,
+        capitalize(name),
+        isEdit ? transaction.savingId : null,
+        async (savingId) => {
+          await commitTransaction(savingId);
+        },
+      );
+    } else {
+      await commitTransaction(null);
     }
   });
 
@@ -1080,6 +1087,79 @@ async function showTransactionModal(transactionId = null) {
   });
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
+  });
+}
+
+// Modal untuk memilih tabungan tujuan (dipakai saat transaksi bertipe "saving")
+async function showSelectSavingGoalModal(amount, itemName, preselectedId, onConfirm) {
+  const savings = await getAllItems(STORES.SAVINGS);
+
+  if (savings.length === 0) {
+    showToast(
+      "Belum ada target tabungan. Buat dulu target tabungan di halaman Tabungan.",
+      "error",
+    );
+    return;
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3><i class="fas fa-piggy-bank"></i> Pilih Tabungan Tujuan</h3>
+        <button class="modal-close-btn modal-close-x">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box">
+          <div>${escapeHtml(itemName)}</div>
+          <div style="font-weight:700;font-size:1.05rem;">${formatCurrency(amount)}</div>
+        </div>
+        <div class="form-group">
+          <label>Masukkan ke tabungan mana? <span class="required">*</span></label>
+          <select id="select-saving-goal" class="form-input" required>
+            <option value="">Pilih Tabungan</option>
+            ${savings
+              .map(
+                (s) => `
+              <option value="${s.id}" ${preselectedId === s.id ? "selected" : ""}>
+                ${escapeHtml(s.name)} (${formatCurrency(s.currentAmount)} / ${formatCurrency(s.targetAmount)})
+              </option>`,
+              )
+              .join("")}
+          </select>
+          <small class="form-help">Nominal transaksi ini akan langsung ditambahkan ke tabungan yang dipilih.</small>
+        </div>
+        <div class="modal-buttons">
+          <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+          <button type="button" class="btn-primary" id="confirm-select-saving">Konfirmasi</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  modal.querySelector("#confirm-select-saving").addEventListener("click", async () => {
+    const savingIdRaw = modal.querySelector("#select-saving-goal").value;
+    if (!savingIdRaw) {
+      showToast("Pilih tabungan tujuan dulu", "error");
+      return;
+    }
+    // STORES.SAVINGS pakai autoIncrement (id berupa number), sedangkan
+    // <select>.value selalu string - wajib dikonversi supaya getItem() nanti
+    // tidak gagal karena mismatch tipe data (IndexedDB key matching strict)
+    const savingId = parseInt(savingIdRaw, 10);
+    closeModal();
+    await onConfirm(savingId);
   });
 }
 
@@ -1106,9 +1186,32 @@ async function deleteTransactionById(id) {
           if (transaction.type === "income") {
             wallet.balance -= transaction.amount;
           } else {
+            // expense DAN saving sama-sama mengurangi saldo, jadi dibalikin dgn nambah lagi
             wallet.balance += transaction.amount;
           }
           await updateItem(STORES.WALLETS, wallet);
+        }
+
+        // Kalau transaksi bertipe tabungan, kembalikan juga efeknya ke tabungan terkait
+        if (transaction.type === "saving" && transaction.savingId) {
+          const saving = await getItem(STORES.SAVINGS, transaction.savingId);
+          if (saving) {
+            saving.currentAmount = Math.max(
+              0,
+              saving.currentAmount - transaction.amount,
+            );
+            saving.status =
+              saving.currentAmount >= saving.targetAmount
+                ? "completed"
+                : "active";
+            saving.updatedAt = getCurrentDateTime().datetime;
+            if (Array.isArray(saving.history)) {
+              saving.history = saving.history.filter(
+                (h) => h.transactionId !== transaction.id,
+              );
+            }
+            await updateItem(STORES.SAVINGS, saving);
+          }
         }
 
         // Pindahkan ke trash
@@ -1127,11 +1230,7 @@ async function deleteTransactionById(id) {
         renderFilteredTransactions();
 
         // Refresh dashboard
-        if (
-          window.renderDashboard &&
-          window.getCurrentPage &&
-          window.getCurrentPage() === "dashboard"
-        ) {
+        if (window.renderDashboard) {
           await window.renderDashboard();
         }
       }
@@ -1140,6 +1239,65 @@ async function deleteTransactionById(id) {
 }
 
 // Helper functions
+// Style untuk halaman transaksi: warna ikon & nominal per tipe
+// (income/expense/saving) - sebelumnya class ini belum ada CSS-nya sama sekali
+function addTransactionStyles() {
+  if (document.getElementById("transaction-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "transaction-styles";
+  style.textContent = `
+    .transaction-card-icon {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.05rem;
+      flex-shrink: 0;
+    }
+
+    .transaction-card-icon.income {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10b981;
+    }
+
+    .transaction-card-icon.expense {
+      background: rgba(239, 68, 68, 0.12);
+      color: #ef4444;
+    }
+
+    .transaction-card-icon.saving {
+      background: rgba(139, 92, 246, 0.12);
+      color: #8b5cf6;
+    }
+
+    .transaction-card-amount {
+      font-weight: 700;
+      font-size: 0.95rem;
+      white-space: nowrap;
+    }
+
+    .transaction-card-amount.income {
+      color: #10b981;
+    }
+
+    .transaction-card-amount.expense {
+      color: #ef4444;
+    }
+
+    .transaction-card-amount.saving {
+      color: #8b5cf6;
+    }
+
+    .saving-text {
+      color: #8b5cf6;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function escapeHtml(text) {
   if (!text) return "";
   const div = document.createElement("div");

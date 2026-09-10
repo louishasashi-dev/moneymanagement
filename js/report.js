@@ -207,6 +207,13 @@ export async function renderReportsPage() {
                         <span class="summary-value" id="total-expense">Rp 0</span>
                     </div>
                 </div>
+                <div class="summary-card saving">
+                    <div class="summary-icon"><i class="fas fa-piggy-bank"></i></div>
+                    <div class="summary-info">
+                        <span class="summary-label">Total Ditabung</span>
+                        <span class="summary-value" id="total-saving">Rp 0</span>
+                    </div>
+                </div>
                 <div class="summary-card balance">
                     <div class="summary-icon"><i class="fas fa-wallet"></i></div>
                     <div class="summary-info">
@@ -267,9 +274,11 @@ async function renderReportData() {
   // Calculate stats
   let totalIncome = 0;
   let totalExpense = 0;
+  let totalSaving = 0;
 
   transactions.forEach((t) => {
     if (t.type === "income") totalIncome += t.amount;
+    else if (t.type === "saving") totalSaving += t.amount;
     else totalExpense += t.amount;
   });
   const balance = totalIncome - totalExpense;
@@ -279,6 +288,8 @@ async function renderReportData() {
     formatCurrency(totalIncome);
   document.getElementById("total-expense").textContent =
     formatCurrency(totalExpense);
+  document.getElementById("total-saving").textContent =
+    formatCurrency(totalSaving);
   document.getElementById("total-balance").textContent =
     formatCurrency(balance);
 
@@ -366,9 +377,11 @@ async function renderTrendChart(transactions) {
 
   const ctx = canvas.getContext("2d");
 
-  // Group by month
+  // Group by month (grafik tren cuma bandingkan income vs expense;
+  // transaksi tipe "saving" sengaja tidak diikutkan di sini)
   const monthlyData = {};
   transactions.forEach((t) => {
+    if (t.type !== "income" && t.type !== "expense") return;
     const month = t.date.substring(0, 7);
     if (!monthlyData[month]) monthlyData[month] = { income: 0, expense: 0 };
     monthlyData[month][t.type] += t.amount;
@@ -450,12 +463,12 @@ function renderTransactionTable(transactions) {
     .slice(0, 50)
     .map(
       (t) => `
-        <tr class="${t.type === "income" ? "income-row" : "expense-row"}">
+        <tr class="${t.type === "income" ? "income-row" : t.type === "saving" ? "saving-row" : "expense-row"}">
             <td>${formatDate(t.date)}</td>
             <td>${escapeHtml(t.itemName)}</td>
             <td>${escapeHtml(t.category || "-")}</td>
-            <td class="${t.type === "income" ? "income-text" : "expense-text"}">
-                ${t.type === "income" ? "+" : "-"} ${formatCurrency(t.amount)}
+            <td class="${t.type === "income" ? "income-text" : t.type === "saving" ? "saving-text" : "expense-text"}">
+                ${t.type === "income" ? "+" : t.type === "saving" ? "🐷" : "-"} ${formatCurrency(t.amount)}
             </td>
         </tr>
     `,
@@ -541,9 +554,11 @@ async function exportToPDF() {
 
     const transactions = reportData.transactions;
     let totalIncome = 0,
-      totalExpense = 0;
+      totalExpense = 0,
+      totalSaving = 0;
     transactions.forEach((t) => {
       if (t.type === "income") totalIncome += t.amount;
+      else if (t.type === "saving") totalSaving += t.amount;
       else totalExpense += t.amount;
     });
 
@@ -611,7 +626,7 @@ async function exportToPDF() {
     doc.text("RINGKASAN", ML, y);
     y += 5;
 
-    const boxW = (CW - 6) / 3;
+    const boxW = (CW - 9) / 4;
     const boxes = [
       {
         label: "Total Pemasukan",
@@ -626,6 +641,13 @@ async function exportToPDF() {
         r: 239,
         g: 68,
         b: 68,
+      },
+      {
+        label: "Total Ditabung",
+        value: formatCurrency(totalSaving),
+        r: 139,
+        g: 92,
+        b: 246,
       },
       {
         label: "Saldo Akhir",
@@ -759,6 +781,7 @@ async function exportToPDF() {
 
       // Nominal (rata kanan, warna sesuai tipe)
       if (t.type === "income") doc.setTextColor(16, 185, 129);
+      else if (t.type === "saving") doc.setTextColor(139, 92, 246);
       else doc.setTextColor(239, 68, 68);
       const amountStr = `${t.type === "income" ? "+" : "-"} ${formatCurrency(t.amount)}`;
       doc.text(amountStr, cols.amount.x + cols.amount.w - 1, y + 3.5, {
@@ -821,11 +844,12 @@ function addReportStyles() {
         .period-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
         .period-btn { padding: 8px 16px; border: 1px solid var(--border-color); background: var(--bg-primary); border-radius: 8px; cursor: pointer; }
         .period-btn.active { background: var(--info); color: white; border-color: var(--info); }
-        .summary-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+        .summary-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
         .summary-card { background: var(--bg-secondary); border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 15px; }
         .summary-icon { width: 50px; height: 50px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; }
         .summary-card.income .summary-icon { background: rgba(16,185,129,0.1); color: #10b981; }
         .summary-card.expense .summary-icon { background: rgba(239,68,68,0.1); color: #ef4444; }
+        .summary-card.saving .summary-icon { background: rgba(139,92,246,0.1); color: #8b5cf6; }
         .summary-card.balance .summary-icon { background: rgba(59,130,246,0.1); color: #3b82f6; }
         .summary-info { flex: 1; }
         .summary-label { display: block; font-size: 0.75rem; color: var(--text-secondary); }
@@ -840,9 +864,14 @@ function addReportStyles() {
         .transaction-table th, .transaction-table td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border-color); }
         .income-row { background: rgba(16,185,129,0.02); }
         .expense-row { background: rgba(239,68,68,0.02); }
+        .saving-row { background: rgba(139,92,246,0.02); }
         .income-text { color: #10b981; font-weight: 600; }
         .expense-text { color: #ef4444; font-weight: 600; }
+        .saving-text { color: #8b5cf6; font-weight: 600; }
         .empty-table { text-align: center; padding: 40px; color: var(--text-secondary); }
+        @media (max-width: 1024px) {
+            .summary-cards { grid-template-columns: repeat(2, 1fr); }
+        }
         @media (max-width: 768px) {
             .summary-cards { grid-template-columns: 1fr; }
             .charts-row { grid-template-columns: 1fr; }
