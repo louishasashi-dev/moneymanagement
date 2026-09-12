@@ -73,8 +73,19 @@ export async function renderTransactionsPage() {
                 </button>
             </div>
             
-            <!-- Filter Bar -->
-            <div class="filter-bar">
+            <!-- Tombol Filter (khusus tampil di mobile, buka filter sebagai modal) -->
+            <button class="filter-toggle-btn" id="filter-toggle-btn">
+                <i class="fas fa-filter"></i> Filter & Cari
+            </button>
+
+            <!-- Filter Bar (jadi modal fullscreen di mobile) -->
+            <div class="filter-bar" id="filter-bar">
+                <div class="filter-bar-header">
+                    <span>Filter Transaksi</span>
+                    <button type="button" class="filter-close-btn" id="filter-close-btn">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
                 <div class="search-box">
                     <i class="fas fa-search"></i>
                     <input type="text" id="search-transaction" placeholder="Cari transaksi..." class="search-input">
@@ -121,6 +132,9 @@ export async function renderTransactionsPage() {
                 </div>
                 <button id="reset-filters" class="btn-secondary" style="width: 100%; margin-top: 10px;">
                     <i class="fas fa-undo"></i> Reset Filter
+                </button>
+                <button type="button" id="apply-filters" class="btn-primary" style="width: 100%; margin-top: 10px;">
+                    <i class="fas fa-check"></i> Terapkan Filter
                 </button>
             </div>
             
@@ -545,6 +559,42 @@ function renderPagination(totalPages) {
 
 // Setup event listeners untuk filter
 function setupTransactionEventListeners() {
+  // ── Modal filter khusus mobile ──
+  // Di desktop, .filter-bar selalu tampil normal (CSS tidak menyembunyikannya).
+  // Di mobile (<=768px), .filter-bar disembunyikan (display:none) dan cuma
+  // muncul sebagai overlay fullscreen kalau class "filter-bar-open" aktif.
+  const filterToggleBtn = document.getElementById("filter-toggle-btn");
+  const filterBar = document.getElementById("filter-bar");
+  const filterCloseBtn = document.getElementById("filter-close-btn");
+  const applyFiltersBtn = document.getElementById("apply-filters");
+
+  const openFilterModal = () => {
+    filterBar?.classList.add("filter-bar-open");
+    document.body.classList.add("filter-modal-active");
+  };
+  const closeFilterModal = () => {
+    filterBar?.classList.remove("filter-bar-open");
+    document.body.classList.remove("filter-modal-active");
+  };
+
+  if (filterToggleBtn) {
+    filterToggleBtn.addEventListener("click", openFilterModal);
+  }
+  if (filterCloseBtn) {
+    filterCloseBtn.addEventListener("click", closeFilterModal);
+  }
+  if (applyFiltersBtn) {
+    // Filter lain sudah live-update (langsung re-render tiap select berubah),
+    // tombol ini cuma menutup modalnya di mobile setelah user selesai memilih
+    applyFiltersBtn.addEventListener("click", closeFilterModal);
+  }
+  // Tutup modal kalau klik area backdrop di luar konten filter (mobile)
+  if (filterBar) {
+    filterBar.addEventListener("click", (e) => {
+      if (e.target === filterBar) closeFilterModal();
+    });
+  }
+
   // Search input with debounce
   const searchInput = document.getElementById("search-transaction");
   if (searchInput) {
@@ -982,7 +1032,10 @@ async function showTransactionModal(transactionId = null) {
       }
 
       // 3. Cek saldo cukup — expense DAN saving sama-sama ambil dari saldo dompet
-      if ((type === "expense" || type === "saving") && wallet.balance < amount) {
+      if (
+        (type === "expense" || type === "saving") &&
+        wallet.balance < amount
+      ) {
         showToast(
           `Saldo ${wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(wallet.balance)})`,
           "error",
@@ -1028,7 +1081,9 @@ async function showTransactionModal(transactionId = null) {
         if (saving) {
           saving.currentAmount += amount;
           saving.status =
-            saving.currentAmount >= saving.targetAmount ? "completed" : "active";
+            saving.currentAmount >= saving.targetAmount
+              ? "completed"
+              : "active";
           saving.updatedAt = getCurrentDateTime().datetime;
           if (!Array.isArray(saving.history)) saving.history = [];
           saving.history.push({
@@ -1046,7 +1101,9 @@ async function showTransactionModal(transactionId = null) {
       }
 
       showToast(
-        isEdit ? "Transaksi berhasil diupdate" : "Transaksi berhasil ditambahkan",
+        isEdit
+          ? "Transaksi berhasil diupdate"
+          : "Transaksi berhasil ditambahkan",
         "success",
       );
 
@@ -1091,7 +1148,12 @@ async function showTransactionModal(transactionId = null) {
 }
 
 // Modal untuk memilih tabungan tujuan (dipakai saat transaksi bertipe "saving")
-async function showSelectSavingGoalModal(amount, itemName, preselectedId, onConfirm) {
+async function showSelectSavingGoalModal(
+  amount,
+  itemName,
+  preselectedId,
+  onConfirm,
+) {
   const savings = await getAllItems(STORES.SAVINGS);
 
   if (savings.length === 0) {
@@ -1148,19 +1210,21 @@ async function showSelectSavingGoalModal(amount, itemName, preselectedId, onConf
     if (e.target === modal) closeModal();
   });
 
-  modal.querySelector("#confirm-select-saving").addEventListener("click", async () => {
-    const savingIdRaw = modal.querySelector("#select-saving-goal").value;
-    if (!savingIdRaw) {
-      showToast("Pilih tabungan tujuan dulu", "error");
-      return;
-    }
-    // STORES.SAVINGS pakai autoIncrement (id berupa number), sedangkan
-    // <select>.value selalu string - wajib dikonversi supaya getItem() nanti
-    // tidak gagal karena mismatch tipe data (IndexedDB key matching strict)
-    const savingId = parseInt(savingIdRaw, 10);
-    closeModal();
-    await onConfirm(savingId);
-  });
+  modal
+    .querySelector("#confirm-select-saving")
+    .addEventListener("click", async () => {
+      const savingIdRaw = modal.querySelector("#select-saving-goal").value;
+      if (!savingIdRaw) {
+        showToast("Pilih tabungan tujuan dulu", "error");
+        return;
+      }
+      // STORES.SAVINGS pakai autoIncrement (id berupa number), sedangkan
+      // <select>.value selalu string - wajib dikonversi supaya getItem() nanti
+      // tidak gagal karena mismatch tipe data (IndexedDB key matching strict)
+      const savingId = parseInt(savingIdRaw, 10);
+      closeModal();
+      await onConfirm(savingId);
+    });
 }
 
 // Edit transaction
