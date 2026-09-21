@@ -16,6 +16,8 @@ import {
   showToast,
   confirmDialog,
   capitalize,
+  formatMoneyInput,
+  parseMoney,
 } from "./utils.js";
 
 // State
@@ -375,8 +377,8 @@ async function showWalletModal(walletId = null) {
             
             <div class="form-group">
                 <label>Saldo Awal</label>
-                <input type="number" id="wallet-balance" class="form-input" 
-                       value="${isEdit ? wallet.balance : 0}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="wallet-balance" class="form-input" 
+                       value="${isEdit ? formatMoneyInput(wallet.balance) : 0}" 
                        placeholder="0" min="0" step="1000">
                 <small class="form-help">Saldo awal hanya untuk dompet baru. Untuk dompet yang sudah ada, edit saldo melalui transaksi.</small>
             </div>
@@ -453,7 +455,7 @@ async function showWalletModal(walletId = null) {
     const type = typeInput.value;
     const icon = iconInput.value;
     const color = colorInput.value;
-    const balance = parseInt(modal.querySelector("#wallet-balance").value) || 0;
+    const balance = parseMoney(modal.querySelector("#wallet-balance").value) || 0;
 
     if (!name) {
       showToast("Nama dompet harus diisi", "error");
@@ -589,8 +591,8 @@ async function editWalletBalance(id) {
         </p>
         <div class="form-group">
           <label>Saldo Baru (Rp)</label>
-          <input type="number" id="new-balance-input" class="form-input"
-            value="${wallet.balance}" min="0" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);">
+          <input type="text" inputmode="numeric" autocomplete="off" data-money id="new-balance-input" class="form-input"
+            value="${formatMoneyInput(wallet.balance)}" min="0" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);">
         </div>
         <div style="display:flex;gap:12px;margin-top:20px;">
           <button class="btn-secondary modal-cancel" style="flex:1;padding:10px;border-radius:8px;cursor:pointer;border:none;">Batal</button>
@@ -613,7 +615,7 @@ async function editWalletBalance(id) {
     .querySelector("#save-balance-btn")
     .addEventListener("click", async () => {
       const input = modal.querySelector("#new-balance-input");
-      const newBalance = parseInt(input.value);
+      const newBalance = parseMoney(input.value);
       if (isNaN(newBalance) || newBalance < 0) {
         showToast("Saldo tidak valid", "error");
         return;
@@ -711,7 +713,7 @@ async function showTransferModal() {
 
                     <div class="form-group">
                         <label>Nominal Transfer <span class="required">*</span></label>
-                        <input type="number" id="transfer-amount" class="form-input"
+                        <input type="text" inputmode="numeric" autocomplete="off" data-money id="transfer-amount" class="form-input"
                                placeholder="0" min="1" step="1" required>
                     </div>
 
@@ -778,7 +780,7 @@ async function showTransferModal() {
 
     const fromId = fromSelect.value;
     const toId = toSelect.value;
-    const amount = parseInt(modal.querySelector("#transfer-amount").value) || 0;
+    const amount = parseMoney(modal.querySelector("#transfer-amount").value) || 0;
     const note = modal.querySelector("#transfer-note").value.trim();
     const date = modal.querySelector("#transfer-date").value || today;
 

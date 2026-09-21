@@ -15,6 +15,8 @@ import {
   showToast,
   confirmDialog,
   getCurrentDateTime,
+  formatMoneyInput,
+  parseMoney,
 } from "./utils.js";
 
 // State
@@ -307,15 +309,15 @@ async function showSavingModal(savingId = null) {
             
             <div class="form-group">
                 <label>Target Nominal <span class="required">*</span></label>
-                <input type="number" id="saving-target" class="form-input" 
-                       value="${isEdit ? saving.targetAmount : ""}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="saving-target" class="form-input" 
+                       value="${isEdit ? formatMoneyInput(saving.targetAmount) : ""}" 
                        placeholder="0" min="1" required>
             </div>
             
             <div class="form-group">
                 <label>Jumlah Saat Ini</label>
-                <input type="number" id="saving-current" class="form-input" 
-                       value="${isEdit ? saving.currentAmount : 0}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="saving-current" class="form-input" 
+                       value="${isEdit ? formatMoneyInput(saving.currentAmount) : 0}" 
                        placeholder="0" min="0">
                 <small class="form-help">Jumlah yang sudah terkumpul saat ini</small>
             </div>
@@ -410,9 +412,9 @@ async function showSavingModal(savingId = null) {
     e.preventDefault();
 
     const name = modal.querySelector("#saving-name").value.trim();
-    const targetAmount = parseInt(modal.querySelector("#saving-target").value);
+    const targetAmount = parseMoney(modal.querySelector("#saving-target").value);
     let currentAmount =
-      parseInt(modal.querySelector("#saving-current").value) || 0;
+      parseMoney(modal.querySelector("#saving-current").value) || 0;
     const description = modal.querySelector("#saving-description").value;
     const deadline = modal.querySelector("#saving-deadline").value;
 
@@ -502,7 +504,7 @@ async function showAddMoneyModal(savingId) {
             
             <div class="form-group">
                 <label>Jumlah yang Ditambahkan <span class="required">*</span></label>
-                <input type="number" id="add-amount" class="form-input" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="add-amount" class="form-input" 
                        placeholder="0" min="1" max="${remaining}" required>
                 <small class="form-help">Maksimal: ${formatCurrency(remaining)}</small>
             </div>
@@ -540,7 +542,7 @@ async function showAddMoneyModal(savingId) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const amount = parseInt(modal.querySelector("#add-amount").value);
+    const amount = parseMoney(modal.querySelector("#add-amount").value);
     const note = modal.querySelector("#add-note").value;
 
     if (!amount || amount <= 0) {
@@ -617,7 +619,7 @@ async function showWithdrawModal(savingId) {
             
             <div class="form-group">
                 <label>Jumlah yang Diambil <span class="required">*</span></label>
-                <input type="number" id="withdraw-amount" class="form-input" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="withdraw-amount" class="form-input" 
                        placeholder="0" min="1" max="${saving.currentAmount}" required>
                 <small class="form-help">Maksimal: ${formatCurrency(saving.currentAmount)}</small>
             </div>
@@ -655,7 +657,7 @@ async function showWithdrawModal(savingId) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const amount = parseInt(modal.querySelector("#withdraw-amount").value);
+    const amount = parseMoney(modal.querySelector("#withdraw-amount").value);
     const note = modal.querySelector("#withdraw-note").value;
 
     if (!amount || amount <= 0) {

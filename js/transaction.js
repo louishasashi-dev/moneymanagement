@@ -18,6 +18,8 @@ import {
   normalizeString,
   capitalize,
   validateAmount,
+  formatMoneyInput,
+  parseMoney,
 } from "./utils.js";
 
 // State untuk pagination dan filter
@@ -772,8 +774,8 @@ async function showTransactionModal(transactionId = null) {
             
             <div class="form-group">
                 <label>Nominal <span class="required">*</span></label>
-                <input type="number" id="transaction-amount" class="form-input" 
-                       value="${isEdit ? transaction.amount : ""}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="transaction-amount" class="form-input" 
+                       value="${isEdit ? formatMoneyInput(transaction.amount) : ""}" 
                        placeholder="0" min="1" required>
             </div>
             
@@ -944,7 +946,7 @@ async function showTransactionModal(transactionId = null) {
 
     const name = modal.querySelector("#transaction-name").value.trim();
     const amountRaw = modal.querySelector("#transaction-amount").value;
-    const amount = parseInt(amountRaw, 10);
+    const amount = parseMoney(amountRaw);
     const type = typeInput.value;
     let category = modal.querySelector("#transaction-category").value;
     const walletId = modal.querySelector("#transaction-wallet").value;

@@ -327,6 +327,14 @@ async function loadPage(page) {
         break;
       }
 
+      case "health": {
+        const { renderHealthPage } = await import("./health.js");
+
+        await renderHealthPage();
+
+        break;
+      }
+
       case "reports":
         try {
           const module = await import("./report.js");

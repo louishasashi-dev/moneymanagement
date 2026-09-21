@@ -15,6 +15,8 @@ import {
   showToast,
   confirmDialog,
   getCurrentDateTime,
+  formatMoneyInput,
+  parseMoney,
 } from "./utils.js";
 
 // State
@@ -408,6 +410,9 @@ function renderDebtCard(debt) {
                     <button class="icon-btn view-debt-history" data-id="${debt.id}" title="Rincian">
                         <i class="fas fa-list-alt"></i>
                     </button>
+                    <button class="icon-btn print-debt-report" data-id="${debt.id}" title="Cetak Laporan">
+                        <i class="fas fa-print"></i>
+                    </button>
                     <button class="icon-btn edit-debt" data-id="${debt.id}" title="Edit">
                         <i class="fas fa-edit"></i>
                     </button>
@@ -550,6 +555,14 @@ function attachCardEventListeners() {
     });
   });
 
+  // Cetak laporan pembayaran (PDF, read-only)
+  document.querySelectorAll(".print-debt-report").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      printDebtReport(parseInt(btn.dataset.id));
+    });
+  });
+
   // Edit buttons
   document.querySelectorAll(".edit-debt").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -606,15 +619,15 @@ async function showDebtModal(debtId = null) {
             
             <div class="form-group">
                 <label>Nominal <span class="required">*</span></label>
-                <input type="number" id="debt-amount" class="form-input" 
-                       value="${isEdit ? debt.amount : ""}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-amount" class="form-input" 
+                       value="${isEdit ? formatMoneyInput(debt.amount) : ""}" 
                        placeholder="0" min="1" required>
             </div>
             
             <div class="form-group">
                 <label>Sisa Hutang (Opsional)</label>
-                <input type="number" id="debt-remaining" class="form-input" 
-                       value="${isEdit ? debt.remainingAmount || debt.amount : ""}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-remaining" class="form-input" 
+                       value="${isEdit ? formatMoneyInput(debt.remainingAmount || debt.amount) : ""}" 
                        placeholder="Kosongkan jika sama dengan total" min="0">
                 <small class="form-help">Isi jika sudah ada pembayaran sebagian</small>
             </div>
@@ -706,7 +719,7 @@ async function showDebtModal(debtId = null) {
   const interestTypeBtns = modal.querySelectorAll(".interest-type-btn");
 
   const updateInterestPreview = () => {
-    const principal = parseFloat(amountInput.value) || 0;
+    const principal = parseMoney(amountInput.value) || 0;
     const rate = parseFloat(interestRateInput.value) || 0;
     const period = interestPeriodSelect.value;
     const interestType = interestTypeInput.value;
@@ -749,7 +762,7 @@ async function showDebtModal(debtId = null) {
     e.preventDefault();
 
     const partyName = modal.querySelector("#debt-party").value.trim();
-    const amount = parseInt(modal.querySelector("#debt-amount").value);
+    const amount = parseMoney(modal.querySelector("#debt-amount").value);
     let remainingAmount = modal.querySelector("#debt-remaining").value;
     const type = typeInput.value;
     const description = modal.querySelector("#debt-description").value;
@@ -777,7 +790,7 @@ async function showDebtModal(debtId = null) {
     if (remainingAmount === "") {
       remainingAmount = amount;
     } else {
-      remainingAmount = parseInt(remainingAmount);
+      remainingAmount = parseMoney(remainingAmount);
       if (remainingAmount < 0) remainingAmount = 0;
       if (remainingAmount > amount) remainingAmount = amount;
     }
@@ -900,7 +913,7 @@ async function showPaymentModal(debtId) {
             
             <div class="form-group">
                 <label>Jumlah Dibayar <span class="required">*</span></label>
-                <input type="number" id="payment-amount" class="form-input" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="payment-amount" class="form-input" 
                        placeholder="0" min="1" max="${remaining}" required>
                 <small class="form-help">Maksimal: ${formatCurrency(remaining)}</small>
             </div>
@@ -944,7 +957,7 @@ async function showPaymentModal(debtId) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const amount = parseInt(modal.querySelector("#payment-amount").value);
+    const amount = parseMoney(modal.querySelector("#payment-amount").value);
     const note = modal.querySelector("#payment-note").value;
     const paymentDateValue = modal.querySelector("#payment-date").value;
 
@@ -1036,7 +1049,7 @@ async function showAddAmountModal(debtId) {
             
             <div class="form-group">
                 <label>Nominal Tambahan <span class="required">*</span></label>
-                <input type="number" id="add-amount-value" class="form-input" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="add-amount-value" class="form-input" 
                        placeholder="0" min="1" required>
             </div>
             
@@ -1079,7 +1092,7 @@ async function showAddAmountModal(debtId) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const addAmount = parseInt(modal.querySelector("#add-amount-value").value);
+    const addAmount = parseMoney(modal.querySelector("#add-amount-value").value);
     const note = modal.querySelector("#add-amount-note").value;
     const dateValue = modal.querySelector("#add-amount-date").value;
 
@@ -1310,6 +1323,205 @@ async function showDebtHistoryModal(debtId) {
   modal.addEventListener("click", (e) => {
     if (e.target === modal) modal.remove();
   });
+}
+
+// Cetak laporan pembayaran satu data hutang/piutang ke PDF (A4).
+// READ-ONLY: hanya membaca record dari IndexedDB, tidak menghitung bunga
+// (accrueInterestForDebt tidak dipanggil) dan tidak menulis apa pun.
+async function printDebtReport(debtId) {
+  const debt = await getItem(STORES.DEBTS, debtId);
+  if (!debt) {
+    showToast("Data tidak ditemukan", "error");
+    return;
+  }
+  if (!window.jspdf) {
+    showToast("Library PDF belum termuat. Pastikan koneksi internet aktif.", "error");
+    return;
+  }
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF("p", "mm", "a4");
+    const W = 210;
+    const H = 297;
+    const ML = 15;
+    const CW = W - ML * 2;
+    const BOTTOM = H - 15;
+    const rp = (n) => formatCurrency(n).replace(/\u00a0/g, " ");
+    const fmtDateTime = (str) => {
+      const d = parseHistoryDate(str);
+      return d ? formatDate(d, "datetime") : str || "-";
+    };
+
+    // Nilai diambil dari data tersimpan, dengan definisi yang sama dengan modal Rincian
+    const isOwe = debt.type === "owe";
+    const payments = debt.payments || [];
+    const additions = debt.additions || [];
+    const interests = debt.interestLog || [];
+    const totalPaid = payments.reduce((s, p) => s + p.amount, 0);
+    const totalAdditions = additions.reduce((s, a) => s + a.amount, 0);
+    const totalInterest = interests.reduce((s, i) => s + i.amount, 0);
+    const total = debt.amount || 0;
+    const remaining = debt.remainingAmount ?? debt.amount ?? 0;
+    const initial = total - totalAdditions - totalInterest;
+    const hasInterest =
+      debt.interestPeriod && debt.interestPeriod !== "none" && Number(debt.interestRate) > 0;
+    const statusLabel =
+      { completed: "Lunas", partial: "Dibayar Sebagian", active: "Aktif" }[debt.status] ||
+      debt.status ||
+      "-";
+    const kind = isOwe ? "Hutang" : "Piutang";
+
+    // ── Header ──
+    doc.setFillColor(26, 26, 46);
+    doc.rect(0, 0, W, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text(`Laporan Pembayaran ${kind}`, ML, 12);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(180, 190, 210);
+    doc.text("Money Manager", ML, 18);
+    doc.text(`Dicetak: ${getCurrentDateTime().datetime}   |   ID Data: ${debt.id}`, ML, 23);
+
+    let y = 38;
+    const ensureSpace = (h, redrawHeader) => {
+      if (y + h > BOTTOM) {
+        doc.addPage();
+        y = 15;
+        if (redrawHeader) redrawHeader();
+      }
+    };
+
+    // ── Ringkasan ──
+    doc.setTextColor(30, 30, 30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Ringkasan", ML, y);
+    y += 3;
+
+    const summary = [
+      ["Jenis", isOwe ? "Hutang (Saya berhutang)" : "Piutang (Berhutang ke saya)"],
+      ["Pihak", debt.partyName || "-"],
+      debt.description ? ["Catatan", debt.description] : null,
+      ["Nominal Awal", rp(initial)],
+      totalAdditions > 0 ? ["Penambahan Nominal", rp(totalAdditions)] : null,
+      hasInterest
+        ? [
+            "Suku Bunga",
+            `${debt.interestType === "fixed" ? rp(debt.interestRate) : debt.interestRate + "%"} / ${(INTEREST_PERIOD_LABELS[debt.interestPeriod] || debt.interestPeriod).toLowerCase()}`,
+          ]
+        : null,
+      totalInterest > 0 ? ["Total Bunga", rp(totalInterest)] : null,
+      ["Total (Pokok + Bunga)", rp(total)],
+      ["Total Dibayar", rp(totalPaid)],
+      ["Sisa", rp(remaining)],
+      ["Status", statusLabel],
+      ["Tanggal Dibuat", fmtDateTime(debt.createdAt)],
+      debt.dueDate ? ["Jatuh Tempo", formatDate(debt.dueDate)] : null,
+    ].filter(Boolean);
+
+    doc.setFontSize(9);
+    summary.forEach(([label, value]) => {
+      const lines = doc.splitTextToSize(String(value), CW - 55);
+      const h = Math.max(6.5, lines.length * 4.2 + 2.5);
+      ensureSpace(h);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100, 100, 100);
+      doc.text(label, ML, y + 4.5);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(30, 30, 30);
+      doc.text(lines, ML + 55, y + 4.5);
+      y += h;
+      doc.setDrawColor(225, 225, 225);
+      doc.line(ML, y, ML + CW, y);
+    });
+
+    // ── Riwayat Pembayaran ──
+    y += 8;
+    ensureSpace(30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(30, 30, 30);
+    doc.text("Riwayat Pembayaran", ML, y);
+    y += 3;
+
+    const cols = [
+      { t: "No", x: ML + 1, w: 10, a: "left" },
+      { t: "Tanggal", x: ML + 12, w: 36, a: "left" },
+      { t: "Keterangan", x: ML + 50, w: 56, a: "left" },
+      { t: "Dibayar", x: ML + 145, w: 0, a: "right" },
+      { t: "Sisa Setelah Bayar", x: ML + CW - 1, w: 0, a: "right" },
+    ];
+    const drawTableHeader = () => {
+      doc.setFillColor(240, 242, 247);
+      doc.rect(ML, y, CW, 7, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(60, 60, 60);
+      cols.forEach((c) => doc.text(c.t, c.x, y + 4.8, { align: c.a }));
+      y += 7;
+    };
+
+    if (payments.length === 0) {
+      y += 3;
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(120, 120, 120);
+      doc.text("Belum ada pembayaran.", ML, y + 4);
+      y += 8;
+    } else {
+      ensureSpace(20);
+      drawTableHeader();
+      doc.setFontSize(8.5);
+      payments.forEach((p, idx) => {
+        const noteLines = doc.splitTextToSize(p.note || "-", cols[2].w);
+        const h = Math.max(7, noteLines.length * 4 + 3);
+        ensureSpace(h, drawTableHeader);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(30, 30, 30);
+        doc.text(String(idx + 1), cols[0].x, y + 4.8);
+        doc.text(fmtDateTime(p.date), cols[1].x, y + 4.8);
+        doc.text(noteLines, cols[2].x, y + 4.8);
+        doc.text(rp(p.amount), cols[3].x, y + 4.8, { align: "right" });
+        doc.text(
+          p.remainingAfter === undefined || p.remainingAfter === null ? "-" : rp(p.remainingAfter),
+          cols[4].x,
+          y + 4.8,
+          { align: "right" },
+        );
+        y += h;
+        doc.setDrawColor(230, 230, 230);
+        doc.line(ML, y, ML + CW, y);
+      });
+
+      ensureSpace(9, drawTableHeader);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("Total Dibayar", cols[2].x, y + 6);
+      doc.text(rp(totalPaid), cols[3].x, y + 6, { align: "right" });
+      y += 9;
+    }
+
+    // ── Footer semua halaman ──
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(140, 140, 140);
+      doc.text(`Halaman ${i} / ${pages}`, W - ML, H - 8, { align: "right" });
+      doc.text(`${kind} - ${debt.partyName || ""}`, ML, H - 8);
+    }
+
+    const slug = String(debt.partyName || "data").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    doc.save(`laporan_${kind.toLowerCase()}_${slug || "data"}_${getCurrentDateTime().date}.pdf`);
+    showToast("Laporan berhasil dibuat!", "success");
+  } catch (error) {
+    console.error("Debt report error:", error);
+    showToast("Gagal membuat laporan PDF", "error");
+  }
 }
 
 // Parse tanggal dari format "dd/mm/yyyy HH:MM" atau "yyyy-mm-dd" jadi objek Date

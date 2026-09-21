@@ -205,8 +205,58 @@ export function normalizeString(str) {
   return str.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+// Money input helpers: tampilan "1.000.000", nilai tersimpan tetap angka (1000000)
+// Format string/angka menjadi pemisah ribuan titik. Tidak memakai Number agar aman untuk angka sangat besar.
+export function formatMoneyInput(value) {
+  if (value === null || value === undefined) return "";
+  let str = typeof value === "number" ? String(Math.trunc(value)) : String(value).trim();
+  if (str === "" || str === "NaN") return "";
+  const negative = /^-\s*\d/.test(str);
+  str = str.split(",")[0]; // koma = desimal gaya Indonesia, abaikan pecahan
+  if (/^-?\d+\.\d{1,2}$/.test(str)) str = str.split(".")[0]; // paste "1500.50" -> pecahan dibuang
+  let digits = str.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  if (digits === "") return "";
+  return (negative ? "-" : "") + digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+// Ubah teks input (mis. "1.500.000") menjadi angka (1500000). NaN jika kosong/tidak valid.
+export function parseMoney(value) {
+  const formatted = formatMoneyInput(value);
+  if (formatted === "") return NaN;
+  return Number(formatted.replace(/\./g, ""));
+}
+
+// Satu listener global untuk semua input[data-money]; menjaga posisi kursor
+function handleMoneyInput(e) {
+  const el = e.target;
+  if (!el || !el.matches || !el.matches("input[data-money]")) return;
+  const raw = el.value;
+  const formatted = formatMoneyInput(raw);
+  if (formatted === raw) return;
+  const caret = el.selectionStart;
+  const digitsBefore = caret === null ? null : raw.slice(0, caret).replace(/\D/g, "").length;
+  el.value = formatted;
+  if (digitsBefore === null) return;
+  let pos = formatted.startsWith("-") ? 1 : 0;
+  if (digitsBefore > 0) {
+    let seen = 0;
+    pos = formatted.length;
+    for (let i = 0; i < formatted.length; i++) {
+      if (/\d/.test(formatted[i]) && ++seen === digitsBefore) {
+        pos = i + 1;
+        break;
+      }
+    }
+  }
+  try {
+    el.setSelectionRange(pos, pos);
+  } catch (_) {}
+}
+
 // Setup Global Event Listeners
 export function setupEventListeners() {
+  document.addEventListener("input", handleMoneyInput);
+
   // Handle ESC key untuk tutup SEMUA modal overlay sekaligus
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {

@@ -16,6 +16,8 @@ import {
   getCurrentDateTime,
   showToast,
   capitalize,
+  formatMoneyInput,
+  parseMoney,
 } from "./utils.js";
 
 const PLANNED_STORE = "planned_transactions";
@@ -214,6 +216,9 @@ async function confirmPlanned(id) {
     return;
   }
 
+  // Tanggal & jam transaksi aktual = waktu saat dikonfirmasi
+  const confirmedAt = getCurrentDateTime();
+
   // Tambah ke transaksi aktual
   await addItem(STORES.TRANSACTIONS, {
     itemName: item.itemName,
@@ -222,8 +227,8 @@ async function confirmPlanned(id) {
     category: item.category,
     walletId: item.walletId,
     note: item.note || "",
-    date: item.date,
-    time: item.time,
+    date: confirmedAt.date,
+    time: confirmedAt.time,
     createdAt: new Date().toISOString(),
   });
 
@@ -556,7 +561,7 @@ function renderPlannedItem(item, isConfirmed = false) {
           ${escapeHtml(item.itemName)}
         </div>
         <div style="font-size:.78rem;color:var(--text-secondary);margin-top:2px;">
-          ${item.category || "-"} • ${item.date} ${item.time || ""}
+          ${item.category || "-"}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
           ${item.note ? `<br><span style="font-style:italic;">${escapeHtml(item.note)}</span>` : ""}
         </div>
       </div>
@@ -645,8 +650,6 @@ async function showPlannedModal(plannedId = null) {
   const expenseCats = categories.filter((c) => c.type === "expense");
   const incomeCats = categories.filter((c) => c.type === "income");
 
-  const now = getCurrentDateTime();
-
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
@@ -685,8 +688,8 @@ async function showPlannedModal(plannedId = null) {
 
           <div class="form-group">
             <label>Nominal <span class="required">*</span></label>
-            <input type="number" id="planned-amount" class="form-input"
-              value="${isEdit ? item.amount : ""}"
+            <input type="text" inputmode="numeric" autocomplete="off" data-money id="planned-amount" class="form-input"
+              value="${isEdit ? formatMoneyInput(item.amount) : ""}"
               placeholder="0" min="1" required>
           </div>
 
@@ -714,19 +717,6 @@ async function showPlannedModal(plannedId = null) {
           <div class="form-group">
             <label>Catatan (Opsional)</label>
             <textarea id="planned-note" class="form-input" rows="2" placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(item.note || "") : ""}</textarea>
-          </div>
-
-          <div class="form-row" style="display:flex;gap:12px;">
-            <div class="form-group" style="flex:1;">
-              <label>📅 Tanggal</label>
-              <input type="date" id="planned-date" class="form-input"
-                value="${isEdit ? item.date : now.date}">
-            </div>
-            <div class="form-group" style="flex:1;">
-              <label>⏰ Jam</label>
-              <input type="time" id="planned-time" class="form-input"
-                value="${isEdit ? item.time : now.time}">
-            </div>
           </div>
 
           <div class="modal-buttons">
@@ -767,13 +757,11 @@ async function showPlannedModal(plannedId = null) {
     e.preventDefault();
 
     const name = modal.querySelector("#planned-name").value.trim();
-    const amount = parseInt(modal.querySelector("#planned-amount").value, 10);
+    const amount = parseMoney(modal.querySelector("#planned-amount").value, 10);
     const type = typeInput.value;
     let category = modal.querySelector("#planned-category").value;
     const walletId = modal.querySelector("#planned-wallet").value;
     const note = modal.querySelector("#planned-note").value;
-    const date = modal.querySelector("#planned-date").value;
-    const time = modal.querySelector("#planned-time").value;
 
     if (!name) {
       showToast("Nama transaksi harus diisi", "error");
@@ -796,8 +784,8 @@ async function showPlannedModal(plannedId = null) {
       category,
       walletId,
       note,
-      date,
-      time,
+      // Data lama: pertahankan tanggal/jam lama saat diedit (tidak dipakai sebagai tanggal transaksi aktual)
+      ...(isEdit && item.date ? { date: item.date, time: item.time } : {}),
       status: "pending",
       createdAt: isEdit ? item.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),

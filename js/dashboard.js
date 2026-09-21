@@ -16,6 +16,7 @@ import {
   calculateStats,
   showToast,
   getCurrentDateTime,
+  parseMoney,
 } from "./utils.js";
 
 // State
@@ -570,7 +571,7 @@ async function showManageBudgetModal() {
             <option value="">Pilih Kategori</option>
             ${expCats.map((c) => `<option value="${c.name}">${c.name}</option>`).join("")}
           </select>
-          <input type="number" id="budget-amount-input" class="form-input" placeholder="Nominal" style="flex:2;min-width:100px;">
+          <input type="text" inputmode="numeric" autocomplete="off" data-money id="budget-amount-input" class="form-input" placeholder="Nominal" style="flex:2;min-width:100px;">
           <button id="add-budget-btn" style="
             padding:10px 14px;background:var(--info);color:#fff;
             border:none;border-radius:8px;cursor:pointer;flex:1;
@@ -613,7 +614,7 @@ async function showManageBudgetModal() {
   // Tambah anggaran
   modal.querySelector("#add-budget-btn").addEventListener("click", async () => {
     const cat = modal.querySelector("#budget-cat-select").value;
-    const amount = parseInt(modal.querySelector("#budget-amount-input").value);
+    const amount = parseMoney(modal.querySelector("#budget-amount-input").value);
     if (!cat) {
       showToast("Pilih kategori dulu", "error");
       return;
