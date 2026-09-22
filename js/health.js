@@ -3,27 +3,11 @@
 // Tidak menulis apa pun ke IndexedDB.
 
 import { getAllItems, STORES } from "./db.js";
-import {
-  formatCurrency,
-  formatDate,
-  calculateStats,
-  groupByMonth,
-  getMonthName,
-} from "./utils.js";
+import { formatCurrency, formatDate, calculateStats } from "./utils.js";
 
 const MONTH_NAMES = [
-  "Januari",
-  "Februari",
-  "Maret",
-  "April",
-  "Mei",
-  "Juni",
-  "Juli",
-  "Agustus",
-  "September",
-  "Oktober",
-  "November",
-  "Desember",
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
 ];
 
 const PERIODS = [
@@ -36,7 +20,6 @@ const PERIODS = [
 
 // Data dimuat sekali per pembukaan halaman; ganti filter hanya menghitung ulang
 let data = null;
-let trendChartInstance = null;
 const state = { period: "month", from: "", to: "" };
 
 const iso = (d) => formatDate(d, "yyyy-mm-dd");
@@ -49,18 +32,10 @@ export function getRange(period, from, to, now = new Date()) {
   const m = now.getMonth();
   switch (period) {
     case "month":
-      return {
-        start: iso(new Date(y, m, 1)),
-        end: iso(new Date(y, m + 1, 0)),
-        label: `${MONTH_NAMES[m]} ${y}`,
-      };
+      return { start: iso(new Date(y, m, 1)), end: iso(new Date(y, m + 1, 0)), label: `${MONTH_NAMES[m]} ${y}` };
     case "lastmonth": {
       const d = new Date(y, m - 1, 1);
-      return {
-        start: iso(d),
-        end: iso(new Date(y, m, 0)),
-        label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
-      };
+      return { start: iso(d), end: iso(new Date(y, m, 0)), label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
     }
     case "year":
       return { start: `${y}-01-01`, end: `${y}-12-31`, label: `Tahun ${y}` };
@@ -69,14 +44,7 @@ export function getRange(period, from, to, now = new Date()) {
       let e = to || null;
       if (s && e && s > e) [s, e] = [e, s];
       const fmt = (v) => formatDate(v);
-      const label =
-        s && e
-          ? `${fmt(s)} – ${fmt(e)}`
-          : s
-            ? `Sejak ${fmt(s)}`
-            : e
-              ? `Sampai ${fmt(e)}`
-              : "Semua waktu";
+      const label = s && e ? `${fmt(s)} – ${fmt(e)}` : s ? `Sejak ${fmt(s)}` : e ? `Sampai ${fmt(e)}` : "Semua waktu";
       return { start: s, end: e, label };
     }
     default:
@@ -91,18 +59,9 @@ export function getPreviousRange(period, range, now = new Date()) {
   if (period === "month") return getRange("lastmonth", "", "", now);
   if (period === "lastmonth") {
     const d = new Date(y, m - 2, 1);
-    return {
-      start: iso(d),
-      end: iso(new Date(y, m - 1, 0)),
-      label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}`,
-    };
+    return { start: iso(d), end: iso(new Date(y, m - 1, 0)), label: `${MONTH_NAMES[d.getMonth()]} ${d.getFullYear()}` };
   }
-  if (period === "year")
-    return {
-      start: `${y - 1}-01-01`,
-      end: `${y - 1}-12-31`,
-      label: `Tahun ${y - 1}`,
-    };
+  if (period === "year") return { start: `${y - 1}-01-01`, end: `${y - 1}-12-31`, label: `Tahun ${y - 1}` };
   if (period === "custom" && range.start && range.end) {
     const s = new Date(range.start + "T00:00:00");
     const e = new Date(range.end + "T00:00:00");
@@ -111,11 +70,7 @@ export function getPreviousRange(period, range, now = new Date()) {
     pe.setDate(pe.getDate() - 1);
     const ps = new Date(pe);
     ps.setDate(ps.getDate() - (days - 1));
-    return {
-      start: iso(ps),
-      end: iso(pe),
-      label: `${formatDate(ps)} – ${formatDate(pe)}`,
-    };
+    return { start: iso(ps), end: iso(pe), label: `${formatDate(ps)} – ${formatDate(pe)}` };
   }
   return null;
 }
@@ -135,9 +90,7 @@ export function filterByRange(transactions, range) {
 // Statistik berbasis periode. income/expense/net memakai calculateStats yang sudah ada.
 export function computePeriodStats(transactions) {
   const { income, expense, balance } = calculateStats(transactions);
-  const saving = transactions
-    .filter((t) => t.type === "saving")
-    .reduce((s, t) => s + t.amount, 0);
+  const saving = transactions.filter((t) => t.type === "saving").reduce((s, t) => s + t.amount, 0);
   const expenses = transactions.filter((t) => t.type === "expense");
   const incomes = transactions.filter((t) => t.type === "income");
 
@@ -156,9 +109,6 @@ export function computePeriodStats(transactions) {
   expenses.forEach((t) => {
     if (!largestExpense || t.amount > largestExpense.amount) largestExpense = t;
   });
-  const topExpenses = [...expenses]
-    .sort((a, b) => b.amount - a.amount)
-    .slice(0, 3);
 
   return {
     income,
@@ -172,68 +122,7 @@ export function computePeriodStats(transactions) {
     expenseByCategory: group(expenses),
     incomeByCategory: group(incomes),
     largestExpense,
-    topExpenses,
   };
-}
-
-// Rata-rata pengeluaran bulanan berbasis riwayat (independen dari filter periode).
-// Hanya menghitung bulan yang SUDAH SELESAI (bulan berjalan tidak diikutkan karena
-// datanya belum lengkap dan bisa menyesatkan rata-rata).
-export function computeAverageMonthlyExpense(transactions, now = new Date()) {
-  const currentKey = iso(now).slice(0, 7);
-  const expenseByMonth = groupByMonth(
-    transactions.filter((t) => t.type === "expense"),
-  );
-  const completedKeys = Object.keys(expenseByMonth).filter(
-    (k) => k < currentKey,
-  );
-
-  if (completedKeys.length === 0) {
-    return {
-      value: null,
-      months: 0,
-      reason:
-        "Belum ada satu bulan penuh dengan data pengeluaran (bulan berjalan belum selesai sehingga tidak dihitung).",
-    };
-  }
-
-  const total = completedKeys.reduce(
-    (sum, k) => sum + expenseByMonth[k].reduce((s, t) => s + t.amount, 0),
-    0,
-  );
-  return {
-    value: total / completedKeys.length,
-    months: completedKeys.length,
-    reason: null,
-  };
-}
-
-// Tren bulanan pemasukan vs pengeluaran, independen dari filter periode.
-// Mengambil maksimal `limit` bulan terakhir yang punya data (termasuk bulan berjalan jika ada).
-export function computeMonthlyTrend(transactions, now = new Date(), limit = 6) {
-  const relevant = transactions.filter(
-    (t) => t.type === "income" || t.type === "expense",
-  );
-  const grouped = groupByMonth(relevant);
-  const currentKey = iso(now).slice(0, 7);
-  const keys = Object.keys(grouped).sort().slice(-limit);
-
-  return keys.map((k) => {
-    const list = grouped[k];
-    const income = list
-      .filter((t) => t.type === "income")
-      .reduce((s, t) => s + t.amount, 0);
-    const expense = list
-      .filter((t) => t.type === "expense")
-      .reduce((s, t) => s + t.amount, 0);
-    return {
-      key: k,
-      label: getMonthName(k),
-      income,
-      expense,
-      partial: k === currentKey,
-    };
-  });
 }
 
 // Kondisi saat ini. Definisi SAMA dengan halaman Total Aset (assets.js):
@@ -256,16 +145,8 @@ export function computeCurrentState({ wallets, savings, debts }) {
   return {
     walletTotal,
     savingsTotal,
-    receivables: {
-      count: receivables.length,
-      total: sum(receivables, (d) => d.amount || 0),
-      remaining: receivableRemaining,
-    },
-    payables: {
-      count: payables.length,
-      total: sum(payables, (d) => d.amount || 0),
-      remaining: payableRemaining,
-    },
+    receivables: { count: receivables.length, total: sum(receivables, (d) => d.amount || 0), remaining: receivableRemaining },
+    payables: { count: payables.length, total: sum(payables, (d) => d.amount || 0), remaining: payableRemaining },
     totalAssets,
     totalLiabilities: payableRemaining,
     netWorth: totalAssets - payableRemaining,
@@ -310,11 +191,8 @@ export async function renderHealthPage() {
   container.querySelectorAll(".fh-period-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       state.period = btn.dataset.period;
-      container
-        .querySelectorAll(".fh-period-btn")
-        .forEach((b) => b.classList.toggle("active", b === btn));
-      document.getElementById("fh-custom").style.display =
-        state.period === "custom" ? "flex" : "none";
+      container.querySelectorAll(".fh-period-btn").forEach((b) => b.classList.toggle("active", b === btn));
+      document.getElementById("fh-custom").style.display = state.period === "custom" ? "flex" : "none";
       renderBody();
     });
   });
@@ -335,22 +213,15 @@ function renderBody() {
   const range = getRange(state.period, state.from, state.to);
   const stats = computePeriodStats(filterByRange(data.transactions, range));
   const prevRange = getPreviousRange(state.period, range);
-  const prev = prevRange
-    ? computePeriodStats(filterByRange(data.transactions, prevRange))
-    : null;
+  const prev = prevRange ? computePeriodStats(filterByRange(data.transactions, prevRange)) : null;
   const cur = computeCurrentState(data);
-  const avgMonthly = computeAverageMonthlyExpense(data.transactions);
-  const trend = computeMonthlyTrend(data.transactions);
 
   body.innerHTML = `
     ${renderCashFlow(stats, prev, range, prevRange)}
-    ${renderTrend(trend)}
     ${renderCategories(stats)}
     ${renderCurrentState(cur)}
-    ${renderRatios(stats, cur, avgMonthly)}
+    ${renderRatios(stats, cur)}
   `;
-
-  renderTrendChart(trend);
 }
 
 function money(n) {
@@ -375,24 +246,9 @@ function section(icon, title, badge, inner) {
 function renderCashFlow(s, prev, range, prevRange) {
   const empty = s.count === 0;
   const cards = [
-    {
-      cls: "income",
-      icon: "fa-arrow-down",
-      label: "Total Pemasukan",
-      val: s.income,
-    },
-    {
-      cls: "expense",
-      icon: "fa-arrow-up",
-      label: "Total Pengeluaran",
-      val: s.expense,
-    },
-    {
-      cls: "balance",
-      icon: "fa-balance-scale",
-      label: "Arus Kas Bersih",
-      val: s.net,
-    },
+    { cls: "income", icon: "fa-arrow-down", label: "Total Pemasukan", val: s.income },
+    { cls: "expense", icon: "fa-arrow-up", label: "Total Pengeluaran", val: s.expense },
+    { cls: "balance", icon: "fa-balance-scale", label: "Arus Kas Bersih", val: s.net },
     { cls: "saving", icon: "fa-piggy-bank", label: "Ditabung", val: s.saving },
   ];
   let html = `<div class="fh-cards">${cards
@@ -408,8 +264,7 @@ function renderCashFlow(s, prev, range, prevRange) {
     )
     .join("")}</div>`;
   html += `<p class="fh-note">Arus Kas Bersih = Pemasukan − Pengeluaran. Transaksi bertipe Tabungan ditampilkan terpisah dan tidak dihitung sebagai pengeluaran.</p>`;
-  if (empty)
-    html += `<p class="fh-empty">Belum ada transaksi pada periode ini.</p>`;
+  if (empty) html += `<p class="fh-empty">Belum ada transaksi pada periode ini.</p>`;
 
   if (prev && prevRange) {
     const rows = [
@@ -422,10 +277,7 @@ function renderCashFlow(s, prev, range, prevRange) {
       if (prev.count === 0) return "—";
       const d = c - p;
       const arrow = d > 0 ? "▲" : d < 0 ? "▼" : "•";
-      const pc =
-        p !== 0
-          ? ` (${(Math.abs(d / p) * 100).toFixed(1).replace(".", ",")}%)`
-          : "";
+      const pc = p !== 0 ? ` (${(Math.abs(d / p) * 100).toFixed(1).replace(".", ",")}%)` : "";
       return `${arrow} ${money(Math.abs(d))}${pc}`;
     };
     html += `
@@ -437,95 +289,12 @@ function renderCashFlow(s, prev, range, prevRange) {
       </div>
       ${prev.count === 0 ? `<p class="fh-empty">Tidak ada transaksi pada periode pembanding.</p>` : ""}`;
   }
-  return section(
-    "fa-exchange-alt",
-    "Arus Kas",
-    `Periode: ${escapeHtml(range.label)}`,
-    html,
-  );
-}
-
-function renderTrend(trend) {
-  if (trend.length < 2) {
-    return section(
-      "fa-chart-line",
-      "Tren Pemasukan vs Pengeluaran",
-      "6 bulan terakhir",
-      `<p class="fh-empty">Belum cukup riwayat bulanan untuk menampilkan tren (minimal data 2 bulan berbeda).</p>`,
-    );
-  }
-  const partialNote = trend.some((m) => m.partial)
-    ? `<p class="fh-note">Bulan berjalan bersifat sementara karena datanya belum lengkap.</p>`
-    : "";
-  return section(
-    "fa-chart-line",
-    "Tren Pemasukan vs Pengeluaran",
-    `${trend.length} bulan terakhir`,
-    `<div class="fh-trend-wrap"><canvas id="fh-trend-chart"></canvas></div>${partialNote}`,
-  );
-}
-
-function renderTrendChart(trend) {
-  const canvas = document.getElementById("fh-trend-chart");
-  if (trendChartInstance) {
-    trendChartInstance.destroy();
-    trendChartInstance = null;
-  }
-  if (!canvas || trend.length < 2 || typeof Chart === "undefined") return;
-
-  trendChartInstance = new Chart(canvas.getContext("2d"), {
-    type: "line",
-    data: {
-      labels: trend.map((m) => m.label + (m.partial ? " *" : "")),
-      datasets: [
-        {
-          label: "Pemasukan",
-          data: trend.map((m) => m.income),
-          borderColor: "#10b981",
-          backgroundColor: "rgba(16, 185, 129, 0.1)",
-          fill: true,
-          tension: 0.3,
-        },
-        {
-          label: "Pengeluaran",
-          data: trend.map((m) => m.expense),
-          borderColor: "#ef4444",
-          backgroundColor: "rgba(239, 68, 68, 0.1)",
-          fill: true,
-          tension: 0.3,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: "bottom", labels: { font: { size: 11 } } },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `${ctx.dataset.label}: ${formatCurrency(ctx.raw)}`,
-          },
-        },
-      },
-      scales: {
-        y: {
-          ticks: {
-            callback: (v) => formatCurrency(v),
-          },
-        },
-      },
-    },
-  });
+  return section("fa-exchange-alt", "Arus Kas", `Periode: ${escapeHtml(range.label)}`, html);
 }
 
 function renderCategories(s) {
   if (s.count === 0) {
-    return section(
-      "fa-tags",
-      "Statistik Kategori",
-      "Periode terpilih",
-      `<p class="fh-empty">Belum ada transaksi pada periode ini.</p>`,
-    );
+    return section("fa-tags", "Statistik Kategori", "Periode terpilih", `<p class="fh-empty">Belum ada transaksi pada periode ini.</p>`);
   }
   const list = (items, total, cls, emptyText) =>
     items.length === 0
@@ -539,10 +308,7 @@ function renderCategories(s) {
           <div class="fh-bar"><div class="fh-bar-fill ${cls}" style="width:${total > 0 ? Math.max(2, (c.total / total) * 100) : 0}%"></div></div>
         </div>`,
           )
-          .join("") +
-        (items.length > 10
-          ? `<p class="fh-note">+ ${items.length - 10} kategori lainnya</p>`
-          : "");
+          .join("") + (items.length > 10 ? `<p class="fh-note">+ ${items.length - 10} kategori lainnya</p>` : "");
 
   const le = s.largestExpense;
   const top = s.expenseByCategory[0];
@@ -554,21 +320,11 @@ function renderCategories(s) {
       <div><span class="fh-label">Pengeluaran Tunggal Terbesar</span><strong class="fh-clip">${le ? `${money(le.amount)} · ${escapeHtml(le.itemName || le.category || "-")}` : "—"}</strong></div>
     </div>`;
 
-  const topList = s.topExpenses.length
-    ? `<h4 class="fh-sub">3 Pengeluaran Terbesar</h4>${s.topExpenses
-        .map(
-          (t) =>
-            `<div class="fh-row"><span class="fh-clip">${escapeHtml(t.itemName || t.category || "-")}${t.date ? ` · ${formatDate(t.date)}` : ""}</span><span>${money(t.amount)}</span></div>`,
-        )
-        .join("")}`
-    : "";
-
   return section(
     "fa-tags",
     "Statistik Kategori",
     "Periode terpilih",
     `${facts}
-     ${topList}
      <h4 class="fh-sub">Pengeluaran per Kategori</h4>${list(s.expenseByCategory, s.expense, "exp", "Tidak ada pengeluaran pada periode ini.")}
      <h4 class="fh-sub">Pemasukan per Kategori</h4>${list(s.incomeByCategory, s.income, "inc", "Tidak ada pemasukan pada periode ini.")}`,
   );
@@ -577,19 +333,11 @@ function renderCategories(s) {
 function renderCurrentState(c) {
   const wallets = data.wallets;
   const walletList = wallets.length
-    ? wallets
-        .map(
-          (w) =>
-            `<div class="fh-row"><span class="fh-clip">${escapeHtml(w.name)}</span><span>${money(w.balance || 0)}</span></div>`,
-        )
-        .join("")
+    ? wallets.map((w) => `<div class="fh-row"><span class="fh-clip">${escapeHtml(w.name)}</span><span>${money(w.balance || 0)}</span></div>`).join("")
     : `<p class="fh-empty">Belum ada dompet.</p>`;
   const savingList = data.savings.length
     ? data.savings
-        .map(
-          (x) =>
-            `<div class="fh-row"><span class="fh-clip">${escapeHtml(x.name)}</span><span>${money(x.currentAmount || 0)}</span></div>`,
-        )
+        .map((x) => `<div class="fh-row"><span class="fh-clip">${escapeHtml(x.name)}</span><span>${money(x.currentAmount || 0)}</span></div>`)
         .join("")
     : `<p class="fh-empty">Belum ada tabungan.</p>`;
   const debtBlock = (title, d, emptyText) =>
@@ -622,92 +370,23 @@ function renderCurrentState(c) {
   );
 }
 
-function renderRatios(s, c, avgMonthly) {
+function renderRatios(s, c) {
   const items = [
-    {
-      name: "Rasio Pengeluaran",
-      formula: "Pengeluaran ÷ Pemasukan (periode terpilih)",
-      val: pct(s.expense, s.income),
-      explain:
-        s.income > 0
-          ? `Pengeluaran periode ini setara ${pct(s.expense, s.income)} dari pemasukan periode ini.`
-          : "Tidak dapat dihitung karena tidak ada pemasukan pada periode ini.",
-    },
-    {
-      name: "Rasio Menabung",
-      formula: "Ditabung ÷ Pemasukan (periode terpilih)",
-      val: pct(s.saving, s.income),
-      explain:
-        s.income > 0
-          ? `${pct(s.saving, s.income)} dari pemasukan periode ini dipindahkan ke tabungan.`
-          : "Tidak dapat dihitung karena tidak ada pemasukan pada periode ini.",
-    },
-    {
-      name: "Rasio Arus Kas (Surplus)",
-      formula: "(Pemasukan − Pengeluaran) ÷ Pemasukan (periode terpilih)",
-      val: pct(s.net, s.income),
-      explain:
-        s.income > 0
-          ? `${pct(s.net, s.income)} dari pemasukan periode ini masih tersisa setelah pengeluaran.`
-          : "Tidak dapat dihitung karena tidak ada pemasukan pada periode ini.",
-    },
-    {
-      name: "Rasio Hutang terhadap Aset",
-      formula: "Sisa Hutang (kondisi saat ini) ÷ Total Aset (kondisi saat ini)",
-      val: pct(c.totalLiabilities, c.totalAssets),
-      explain:
-        c.totalAssets > 0
-          ? `Sisa hutang saat ini setara ${pct(c.totalLiabilities, c.totalAssets)} dari total aset saat ini.`
-          : "Tidak dapat dihitung karena total aset saat ini nol.",
-    },
-    {
-      name: "Rasio Hutang terhadap Pemasukan",
-      formula: "Sisa Hutang (kondisi saat ini) ÷ Pemasukan (periode terpilih)",
-      val: pct(c.totalLiabilities, s.income),
-      explain:
-        s.income > 0
-          ? `Sisa hutang saat ini setara ${pct(c.totalLiabilities, s.income)} dari pemasukan periode ini.`
-          : "Tidak dapat dihitung karena tidak ada pemasukan pada periode ini.",
-    },
+    { name: "Rasio Pengeluaran", formula: "Pengeluaran ÷ Pemasukan (periode terpilih)", val: pct(s.expense, s.income) },
+    { name: "Rasio Menabung", formula: "Ditabung ÷ Pemasukan (periode terpilih)", val: pct(s.saving, s.income) },
+    { name: "Rasio Hutang terhadap Aset", formula: "Total Hutang ÷ Total Aset (kondisi saat ini)", val: pct(c.totalLiabilities, c.totalAssets) },
   ];
-
-  const efc = emergencyFundCoverage(c.walletTotal, avgMonthly);
-
   return section(
     "fa-percentage",
     "Rasio Keuangan",
     "Angka apa adanya",
     `${items
       .map(
-        (i) =>
-          `<div class="fh-ratio"><div><strong>${i.name}</strong><small>${i.formula}</small><small class="fh-explain">${i.explain}</small></div><span>${i.val}</span></div>`,
+        (i) => `<div class="fh-ratio"><div><strong>${i.name}</strong><small>${i.formula}</small></div><span>${i.val}</span></div>`,
       )
       .join("")}
-     <div class="fh-ratio"><div><strong>Cakupan Dana Darurat</strong><small>Saldo Dompet ÷ Rata-rata Pengeluaran Bulanan (bulan penuh)</small><small class="fh-explain">${efc.explain}</small></div><span>${efc.val}</span></div>
-     <p class="fh-note">"—" berarti pembagi bernilai nol atau data belum cukup sehingga rasio tidak dapat dihitung. Halaman ini sengaja tidak memberi skor kesehatan tunggal karena skor memerlukan asumsi/ambang batas yang belum ada di aplikasi.</p>`,
+     <p class="fh-note">"—" berarti pembagi bernilai nol sehingga rasio tidak dapat dihitung. Halaman ini sengaja tidak memberi skor kesehatan tunggal karena skor memerlukan asumsi/ambang batas yang belum ada di aplikasi.</p>`,
   );
-}
-
-// Cakupan dana darurat = saldo dompet (aset paling likuid & jelas semantiknya di
-// aplikasi ini) dibagi rata-rata pengeluaran bulanan (bulan penuh saja).
-// Tabungan sengaja TIDAK dimasukkan sebagai aset likuid karena bertujuan (goal-based)
-// dan aplikasi tidak membedakan mana yang benar-benar bisa dicairkan sewaktu-waktu.
-function emergencyFundCoverage(walletTotal, avgMonthly) {
-  if (avgMonthly.value === null) {
-    return { val: "—", explain: `Tidak dapat dihitung: ${avgMonthly.reason}` };
-  }
-  if (avgMonthly.value === 0) {
-    return {
-      val: "—",
-      explain:
-        "Tidak dapat dihitung karena rata-rata pengeluaran bulanan bernilai nol.",
-    };
-  }
-  const months = walletTotal / avgMonthly.value;
-  return {
-    val: `${months.toFixed(1).replace(".", ",")} bulan`,
-    explain: `Saldo dompet saat ini cukup untuk ±${months.toFixed(1).replace(".", ",")} bulan pengeluaran, berdasarkan rata-rata ${avgMonthly.months} bulan penuh terakhir. Tabungan tidak dihitung karena bersifat bertarget, bukan dana siap pakai.`,
-  };
 }
 
 function escapeHtml(text) {
@@ -771,11 +450,8 @@ function addHealthStyles() {
     .fh-row.strong { font-weight: 700; }
     .fh-ratio { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border-color); }
     .fh-ratio > div { display: flex; flex-direction: column; min-width: 0; }
-    .fh-ratio small { color: var(--text-secondary); font-size: .72rem; display: block; }
-    .fh-ratio small.fh-explain { margin-top: 3px; font-size: .74rem; font-style: italic; }
+    .fh-ratio small { color: var(--text-secondary); font-size: .72rem; }
     .fh-ratio > span { font-weight: 700; font-size: 1.05rem; flex-shrink: 0; }
-    .fh-trend-wrap { position: relative; height: 260px; }
-    @media (max-width: 600px) { .fh-trend-wrap { height: 220px; } }
     @media (max-width: 600px) {
       .fh-period-btn { padding: 7px 12px; font-size: .8rem; }
       .fh-cards { grid-template-columns: 1fr; }

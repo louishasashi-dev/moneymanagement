@@ -9,6 +9,7 @@ import {
   getItem,
   STORES,
 } from "./db.js";
+import { getTemplatesByType } from "./template.js";
 import {
   formatCurrency,
   formatDate,
@@ -765,11 +766,19 @@ async function showTransactionModal(transactionId = null) {
                 <input type="hidden" id="transaction-type" value="${isEdit ? transaction.type : "expense"}">
             </div>
             
-            <div class="form-group">
-                <label>Nama Barang/Transaksi <span class="required">*</span></label>
-                <input type="text" id="transaction-name" class="form-input" 
-                       value="${isEdit ? escapeHtml(transaction.itemName) : ""}" 
-                       placeholder="Contoh: Makan Siang, Belanja Bulanan..." required>
+            <div class="form-row">
+                <div class="form-group half">
+                    <label>Nama Transaksi</label>
+                    <input type="text" id="transaction-name" class="form-input" 
+                           value="${isEdit ? escapeHtml(transaction.itemName) : ""}" 
+                           placeholder="Contoh: Makan Siang, Belanja Bulanan..." required>
+                </div>
+                <div class="form-group half" id="transaction-template-group">
+                    <label>Template</label>
+                    <select id="transaction-template" class="form-input">
+                        <option value="">Tanpa Template</option>
+                    </select>
+                </div>
             </div>
             
             <div class="form-group">
@@ -902,6 +911,76 @@ async function showTransactionModal(transactionId = null) {
   const typeInput = modal.querySelector("#transaction-type");
   const categorySelect = modal.querySelector("#transaction-category");
   const categoryGroup = modal.querySelector("#transaction-category-group");
+  const templateSelect = modal.querySelector("#transaction-template");
+  const templateGroup = modal.querySelector("#transaction-template-group");
+
+  // Template hanya berlaku untuk Pengeluaran/Pemasukan (bukan Tabungan)
+  async function updateTemplateOptions() {
+    const currentType = typeInput.value;
+
+    if (currentType !== "income" && currentType !== "expense") {
+      templateGroup.style.display = "none";
+      templateSelect.value = "";
+      return;
+    }
+    templateGroup.style.display = "";
+
+    let templates = [];
+    try {
+      templates = await getTemplatesByType(currentType);
+    } catch (err) {
+      console.error("Gagal memuat template:", err);
+    }
+
+    templateSelect.innerHTML =
+      `<option value="">Tanpa Template</option>` +
+      templates
+        .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
+        .join("");
+  }
+
+  // Pilih template = autofill form saja, TIDAK membuat transaksi
+  templateSelect.addEventListener("change", async () => {
+    const templateId = Number(templateSelect.value);
+    if (!templateId) return;
+
+    const currentType = typeInput.value;
+    let templates = [];
+    try {
+      templates = await getTemplatesByType(currentType);
+    } catch (err) {
+      console.error("Gagal memuat template:", err);
+      return;
+    }
+    const tpl = templates.find((t) => t.id === templateId);
+    if (!tpl) return;
+
+    modal.querySelector("#transaction-name").value = tpl.name;
+    modal.querySelector("#transaction-amount").value = formatMoneyInput(
+      tpl.amount,
+    );
+
+    // Kategori: hanya isi kalau kategori template masih tersedia untuk tipe ini
+    if (tpl.category) {
+      const optionExists = Array.from(categorySelect.options).some(
+        (opt) => opt.value === tpl.category,
+      );
+      if (optionExists) categorySelect.value = tpl.category;
+    }
+
+    // Wallet: hanya isi kalau dompet template masih ada (belum dihapus)
+    if (tpl.walletId) {
+      const walletSelect = modal.querySelector("#transaction-wallet");
+      const walletExists = Array.from(walletSelect.options).some(
+        (opt) => opt.value === tpl.walletId,
+      );
+      if (walletExists) walletSelect.value = tpl.walletId;
+    }
+
+    if (tpl.note) {
+      modal.querySelector("#transaction-note").value = tpl.note;
+    }
+  });
 
   function updateCategoryOptions() {
     const currentType = typeInput.value;
@@ -934,10 +1013,12 @@ async function showTransactionModal(transactionId = null) {
       btn.classList.add("active");
       typeInput.value = btn.dataset.type;
       updateCategoryOptions();
+      updateTemplateOptions();
     });
   });
 
   updateCategoryOptions();
+  updateTemplateOptions();
 
   // Handle form submission
   const form = modal.querySelector("#transaction-form");

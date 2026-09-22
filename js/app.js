@@ -367,6 +367,14 @@ async function loadPage(page) {
         break;
       }
 
+      case "templates": {
+        const { renderTemplatesPage } = await import("./template.js");
+
+        await renderTemplatesPage();
+
+        break;
+      }
+
       case "settings":
         try {
           const { renderSettingsPage } = await import("./settings.js");

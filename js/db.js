@@ -2,7 +2,7 @@
 // Mengelola koneksi dan operasi dasar IndexedDB
 
 const DB_NAME = "MoneyManagerDB";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 const STORES = {
   TRANSACTIONS: "transactions",
@@ -15,6 +15,7 @@ const STORES = {
   NOTIFICATIONS: "notifications",
   PLANNED: "planned_transactions",
   TRANSFERS: "transfers",
+  TEMPLATES: "templates",
 };
 
 // Default Categories
@@ -225,6 +226,17 @@ export async function initDB() {
         });
         transferStore.createIndex("createdAt", "createdAt", { unique: false });
         console.log("Transfers store created");
+      }
+
+      // Templates Store (v5) - template transaksi untuk autofill form
+      if (!db.objectStoreNames.contains(STORES.TEMPLATES)) {
+        const templateStore = db.createObjectStore(STORES.TEMPLATES, {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+        templateStore.createIndex("type", "type", { unique: false });
+        templateStore.createIndex("name", "name", { unique: false });
+        console.log("Templates store created");
       }
     };
   });

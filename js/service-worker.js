@@ -1,4 +1,4 @@
-const CACHE_NAME = "money-manager-v25";
+const CACHE_NAME = "money-manager-v26";
 const BASE_URL = "/moneymanagement";
 
 const ASSETS = [
@@ -15,6 +15,8 @@ const ASSETS = [
   BASE_URL + "/js/debt.js",
   BASE_URL + "/js/report.js",
   BASE_URL + "/js/settings.js",
+  BASE_URL + "/js/health.js",
+  BASE_URL + "/js/template.js",
   BASE_URL + "/manifest.json",
   BASE_URL + "/images/icons/icon-192x192.png",
   BASE_URL + "/images/icons/icon-512x512.png",
