@@ -2,7 +2,7 @@
 // Mengelola koneksi dan operasi dasar IndexedDB
 
 const DB_NAME = "MoneyManagerDB";
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 const STORES = {
   TRANSACTIONS: "transactions",
@@ -16,6 +16,7 @@ const STORES = {
   PLANNED: "planned_transactions",
   TRANSFERS: "transfers",
   TEMPLATES: "templates",
+  PLANNED_PLANS: "planned_plans",
 };
 
 // Default Categories
@@ -237,6 +238,17 @@ export async function initDB() {
         templateStore.createIndex("type", "type", { unique: false });
         templateStore.createIndex("name", "name", { unique: false });
         console.log("Templates store created");
+      }
+
+      // Planned Plans Store (v6) - kumpulan rencana transaksi (multi-plan)
+      // Aditif: store planned_transactions TIDAK diubah. Item lama tanpa
+      // planId dianggap milik plan default (legacy) saat dibaca.
+      if (!db.objectStoreNames.contains(STORES.PLANNED_PLANS)) {
+        const planStore = db.createObjectStore(STORES.PLANNED_PLANS, {
+          keyPath: "id",
+        });
+        planStore.createIndex("createdAt", "createdAt", { unique: false });
+        console.log("Planned plans store created");
       }
     };
   });

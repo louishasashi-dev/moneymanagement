@@ -798,6 +798,64 @@ body {
   border-color: var(--info);
 }
 
+/* Quantity selector (jumlah barang pada transaksi) */
+.quantity-selector {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.qty-btn {
+  padding: 10px 4px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.qty-btn.active {
+  background: var(--info);
+  color: white;
+  border-color: var(--info);
+}
+
+@media (max-width: 480px) {
+  .quantity-selector {
+    gap: 6px;
+  }
+  .qty-btn {
+    padding: 8px 2px;
+    font-size: 0.75rem;
+  }
+}
+
+/* Transaction detail modal */
+.transaction-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.transaction-detail-row:last-child {
+  border-bottom: none;
+}
+
+.transaction-detail-label {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.transaction-detail-value {
+  font-weight: 600;
+  text-align: right;
+}
+
 /* Empty state */
 .empty-state {
   text-align: center;

@@ -496,6 +496,105 @@ function renderTransactionsList(transactions) {
       deleteTransactionById(id);
     });
   });
+
+  // Klik card (selain tombol edit/hapus) membuka detail transaksi
+  document.querySelectorAll(".transaction-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const id = parseInt(card.dataset.id);
+      showTransactionDetailModal(id);
+    });
+  });
+}
+
+// Modal detail transaksi (read-only) — menampilkan nama, tipe, harga satuan,
+// quantity, total, kategori, wallet, catatan, tanggal, dan waktu.
+async function showTransactionDetailModal(id) {
+  const transaction = await getItem(STORES.TRANSACTIONS, id);
+  if (!transaction) {
+    showToast("Transaksi tidak ditemukan", "error");
+    return;
+  }
+
+  const quantity = transaction.quantity || 1;
+  const unitPrice = transaction.amount / quantity;
+
+  const wallet = transaction.walletId
+    ? await getItem(STORES.WALLETS, transaction.walletId)
+    : null;
+
+  const typeLabel =
+    transaction.type === "income"
+      ? "Pemasukan"
+      : transaction.type === "saving"
+        ? "Tabungan"
+        : "Pengeluaran";
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3><i class="fas fa-receipt"></i> Detail Transaksi</h3>
+                <button class="modal-close-btn modal-close-x">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Nama</span>
+                    <span class="transaction-detail-value">${escapeHtml(transaction.itemName)}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Tipe</span>
+                    <span class="transaction-detail-value">${typeLabel}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Harga Satuan</span>
+                    <span class="transaction-detail-value">${formatCurrency(unitPrice)}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Jumlah</span>
+                    <span class="transaction-detail-value">${quantity}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Total</span>
+                    <span class="transaction-detail-value">${formatCurrency(transaction.amount)}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Kategori</span>
+                    <span class="transaction-detail-value">${escapeHtml(transaction.category || "Umum")}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Wallet</span>
+                    <span class="transaction-detail-value">${wallet ? escapeHtml(wallet.name) : "-"}</span>
+                </div>
+                ${
+                  transaction.note
+                    ? `<div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Catatan</span>
+                    <span class="transaction-detail-value">${escapeHtml(transaction.note)}</span>
+                </div>`
+                    : ""
+                }
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Tanggal</span>
+                    <span class="transaction-detail-value">${formatDate(transaction.date)}</span>
+                </div>
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">Waktu</span>
+                    <span class="transaction-detail-value">${transaction.time || "-"}</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+  document.body.appendChild(modal);
+
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
 }
 
 // Render pagination
@@ -784,8 +883,23 @@ async function showTransactionModal(transactionId = null) {
             <div class="form-group">
                 <label>Nominal <span class="required">*</span></label>
                 <input type="text" inputmode="numeric" autocomplete="off" data-money id="transaction-amount" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(transaction.amount) : ""}" 
+                       value="${isEdit ? formatMoneyInput(transaction.amount / (transaction.quantity || 1)) : ""}" 
                        placeholder="0" min="1" required>
+            </div>
+
+            <div class="form-group" id="transaction-quantity-group">
+                <label>Jumlah</label>
+                <div class="quantity-selector">
+                    <button type="button" class="qty-btn" data-qty="1">1</button>
+                    <button type="button" class="qty-btn" data-qty="2">2</button>
+                    <button type="button" class="qty-btn" data-qty="3">3</button>
+                    <button type="button" class="qty-btn" data-qty="4">4</button>
+                    <button type="button" class="qty-btn" data-qty="5">5</button>
+                    <button type="button" class="qty-btn" data-qty="other">Lainnya</button>
+                </div>
+                <input type="text" inputmode="numeric" autocomplete="off" id="transaction-quantity-custom" class="form-input"
+                       placeholder="Masukkan jumlah" style="display:none;margin-top:8px;">
+                <input type="hidden" id="transaction-quantity" value="${isEdit ? (transaction.quantity || 1) : 1}">
             </div>
             
             <div class="form-group" id="transaction-category-group">
@@ -913,6 +1027,55 @@ async function showTransactionModal(transactionId = null) {
   const categoryGroup = modal.querySelector("#transaction-category-group");
   const templateSelect = modal.querySelector("#transaction-template");
   const templateGroup = modal.querySelector("#transaction-template-group");
+  const quantityGroup = modal.querySelector("#transaction-quantity-group");
+  const quantityInput = modal.querySelector("#transaction-quantity");
+  const quantityCustomInput = modal.querySelector(
+    "#transaction-quantity-custom",
+  );
+  const qtyBtns = modal.querySelectorAll(".qty-btn");
+
+  // Quantity hanya berlaku untuk Pengeluaran/Pemasukan (bukan Tabungan)
+  function updateQuantityVisibility() {
+    quantityGroup.style.display =
+      typeInput.value === "saving" ? "none" : "";
+  }
+
+  function setQuantitySelection(qty) {
+    const isPreset = ["1", "2", "3", "4", "5"].includes(String(qty));
+    qtyBtns.forEach((b) => {
+      b.classList.toggle(
+        "active",
+        isPreset ? b.dataset.qty === String(qty) : b.dataset.qty === "other",
+      );
+    });
+    quantityCustomInput.style.display = isPreset ? "none" : "";
+    if (!isPreset) quantityCustomInput.value = qty > 0 ? String(qty) : "";
+    quantityInput.value = qty;
+  }
+
+  qtyBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.qty === "other") {
+        qtyBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        quantityCustomInput.style.display = "";
+        quantityCustomInput.focus();
+        quantityInput.value = quantityCustomInput.value || "";
+      } else {
+        setQuantitySelection(btn.dataset.qty);
+      }
+    });
+  });
+
+  quantityCustomInput.addEventListener("input", () => {
+    const digits = quantityCustomInput.value.replace(/\D/g, "");
+    quantityCustomInput.value = digits;
+    quantityInput.value = digits;
+  });
+
+  // Set state awal quantity (existing transaction atau default 1)
+  setQuantitySelection(isEdit ? transaction.quantity || 1 : 1);
+  updateQuantityVisibility();
 
   // Template hanya berlaku untuk Pengeluaran/Pemasukan (bukan Tabungan)
   async function updateTemplateOptions() {
@@ -959,6 +1122,9 @@ async function showTransactionModal(transactionId = null) {
     modal.querySelector("#transaction-amount").value = formatMoneyInput(
       tpl.amount,
     );
+    // Template lama belum punya quantity -> default 1; jika template punya
+    // quantity (future-safe), gunakan nilai tersebut.
+    setQuantitySelection(tpl.quantity || 1);
 
     // Kategori: hanya isi kalau kategori template masih tersedia untuk tipe ini
     if (tpl.category) {
@@ -1014,6 +1180,7 @@ async function showTransactionModal(transactionId = null) {
       typeInput.value = btn.dataset.type;
       updateCategoryOptions();
       updateTemplateOptions();
+      updateQuantityVisibility();
     });
   });
 
@@ -1027,8 +1194,14 @@ async function showTransactionModal(transactionId = null) {
 
     const name = modal.querySelector("#transaction-name").value.trim();
     const amountRaw = modal.querySelector("#transaction-amount").value;
-    const amount = parseMoney(amountRaw);
+    const unitPrice = parseMoney(amountRaw);
     const type = typeInput.value;
+
+    // Quantity hanya berlaku untuk expense/income; tipe saving selalu 1
+    let quantity = 1;
+    if (type !== "saving") {
+      quantity = parseInt(quantityInput.value, 10);
+    }
     let category = modal.querySelector("#transaction-category").value;
     const walletId = modal.querySelector("#transaction-wallet").value;
     const note = modal.querySelector("#transaction-note").value;
@@ -1041,10 +1214,17 @@ async function showTransactionModal(transactionId = null) {
       return;
     }
 
-    if (isNaN(amount) || amount <= 0) {
+    if (isNaN(unitPrice) || unitPrice <= 0) {
       showToast("Nominal harus lebih dari 0", "error");
       return;
     }
+
+    if (isNaN(quantity) || !Number.isInteger(quantity) || quantity <= 0) {
+      showToast("Jumlah harus berupa angka positif", "error");
+      return;
+    }
+
+    const amount = unitPrice * quantity;
 
     if (!walletId) {
       showToast("Pilih metode pembayaran", "error");
@@ -1130,6 +1310,7 @@ async function showTransactionModal(transactionId = null) {
       const payload = {
         itemName: capitalize(name),
         amount,
+        quantity,
         type,
         category,
         walletId,

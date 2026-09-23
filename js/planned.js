@@ -18,9 +18,20 @@ import {
   capitalize,
   formatMoneyInput,
   parseMoney,
+  generateId,
 } from "./utils.js";
 
 const PLANNED_STORE = "planned_transactions";
+const PLAN_STORE = STORES.PLANNED_PLANS;
+
+// Multi-plan: item lama (dibuat sebelum fitur ini) tidak punya planId.
+// Saat dibaca, item tanpa planId dianggap milik plan default ini.
+// Record lama TIDAK ditulis ulang.
+const LEGACY_PLAN_ID = "plan_legacy";
+const LEGACY_PLAN_NAME = "Rencana Transaksi";
+
+// State navigasi in-page: null = daftar plan, string = detail plan.
+let currentPlanId = null;
 
 // ───────────────────────────────────────────────
 // DB helpers (planned pakai localStorage sebagai
@@ -90,6 +101,96 @@ async function plannedClearAll() {
     req.onsuccess = () => resolve(true);
     req.onerror = () => reject(req.error);
   });
+}
+
+// ───────────────────────────────────────────────
+// Multi-plan helpers
+// ───────────────────────────────────────────────
+
+// planId efektif sebuah item (item lama tanpa planId => plan legacy)
+function planIdOf(item) {
+  return item.planId || LEGACY_PLAN_ID;
+}
+
+async function planGetAll() {
+  const db = await getDB();
+  if (!db.objectStoreNames.contains(PLAN_STORE)) return [];
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([PLAN_STORE], "readonly");
+    const req = tx.objectStore(PLAN_STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function planPut(plan) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([PLAN_STORE], "readwrite");
+    const req = tx.objectStore(PLAN_STORE).put(plan);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function planDeleteRecord(id) {
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([PLAN_STORE], "readwrite");
+    const req = tx.objectStore(PLAN_STORE).delete(id);
+    req.onsuccess = () => resolve(true);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Pastikan plan default ada JIKA ada item lama tanpa planId.
+// Tidak membuat data baru bila user tidak punya data lama.
+async function ensureLegacyPlan(items, plans) {
+  const hasLegacyItems = items.some((i) => !i.planId);
+  const exists = plans.some((p) => p.id === LEGACY_PLAN_ID);
+  if (!hasLegacyItems || exists) return plans;
+
+  const legacy = {
+    id: LEGACY_PLAN_ID,
+    name: LEGACY_PLAN_NAME,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date().toISOString(),
+    isLegacy: true,
+  };
+  await planPut(legacy);
+  return [...plans, legacy];
+}
+
+// Ambil semua plan (termasuk migrasi plan legacy bila perlu), terurut lama -> baru
+async function loadPlans(items) {
+  const allItems = items || (await plannedGetAll());
+  let plans = await planGetAll();
+  plans = await ensureLegacyPlan(allItems, plans);
+  return plans.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+}
+
+// Hapus semua item milik satu plan (plan record tetap ada)
+async function plannedDeleteByPlan(planId) {
+  const items = await plannedGetAll();
+  for (const it of items) {
+    if (planIdOf(it) === planId) await plannedDelete(it.id);
+  }
+}
+
+// Ringkasan plan dihitung dari data aktual (tidak disimpan)
+function summarizePlan(items) {
+  const total = items.reduce(
+    (s, i) => s + (i.type === "income" ? i.amount : -i.amount),
+    0,
+  );
+  const income = items
+    .filter((i) => i.type === "income")
+    .reduce((s, i) => s + i.amount, 0);
+  const expense = items
+    .filter((i) => i.type === "expense")
+    .reduce((s, i) => s + i.amount, 0);
+  const pending = items.filter((i) => i.status === "pending").length;
+  return { count: items.length, pending, income, expense, net: total };
 }
 
 // ───────────────────────────────────────────────
@@ -170,17 +271,21 @@ export async function checkPlannedReminder() {
 // menunggu tanggal 1 awal bulan
 // ───────────────────────────────────────────────
 async function manualResetPlanned() {
-  const items = await plannedGetAll();
+  // Multi-plan: reset manual hanya berlaku untuk plan yang sedang dibuka.
+  // Plan itu sendiri tetap ada; hanya isinya yang dikosongkan.
+  const items = (await plannedGetAll()).filter(
+    (i) => planIdOf(i) === currentPlanId,
+  );
 
   if (items.length === 0) {
     showToast("Tidak ada rencana transaksi untuk direset", "info");
     return;
   }
 
-  const confirmMsg = `Reset SEMUA rencana transaksi sekarang? (${items.length} data, termasuk yang sudah dikonfirmasi). Tindakan ini tidak bisa dibatalkan.`;
+  const confirmMsg = `Reset SEMUA rencana transaksi di plan ini sekarang? (${items.length} data, termasuk yang sudah dikonfirmasi). Tindakan ini tidak bisa dibatalkan.`;
   if (!confirm(confirmMsg)) return;
 
-  await plannedClearAll();
+  await plannedDeleteByPlan(currentPlanId);
 
   // Tandai bulan berjalan sudah direset, agar auto-reset tanggal 1
   // tidak dobel-notifikasi kalau reset manual ini kebetulan dilakukan
@@ -190,7 +295,7 @@ async function manualResetPlanned() {
   localStorage.setItem(resetKey, "1");
 
   showToast("Rencana transaksi berhasil direset", "success");
-  await renderPlannedPage();
+  await renderPlannedView();
 }
 
 // ───────────────────────────────────────────────
@@ -245,7 +350,7 @@ async function confirmPlanned(id) {
   await plannedUpdate(item);
 
   showToast("Transaksi berhasil dikonfirmasi dan disimpan!", "success");
-  await renderPlannedPage();
+  await renderPlannedView();
 }
 
 // ───────────────────────────────────────────────
@@ -258,7 +363,229 @@ export async function renderPlannedPage() {
   await checkAndAutoReset();
   await checkPlannedReminder();
 
-  const items = await plannedGetAll();
+  // Masuk dari menu sidebar/bottom-nav selalu mulai dari daftar plan.
+  // Re-render dari dalam modul (setelah simpan/hapus/konfirmasi) memakai
+  // renderPlannedView() agar user tetap di plan yang sedang dibuka.
+  currentPlanId = null;
+  await renderPlannedView();
+}
+
+async function renderPlannedView() {
+  if (currentPlanId === null) {
+    await renderPlanList();
+  } else {
+    await renderPlanDetail();
+  }
+}
+
+// ───────────────────────────────────────────────
+// Daftar plan (halaman utama Rencana Transaksi)
+// ───────────────────────────────────────────────
+async function renderPlanList() {
+  const container = document.getElementById("page-content");
+  if (!container) return;
+
+  const allItems = await plannedGetAll();
+  const plans = await loadPlans(allItems);
+
+  const cards = plans
+    .map((plan) => {
+      const planItems = allItems.filter((i) => planIdOf(i) === plan.id);
+      const sum = summarizePlan(planItems);
+      return `
+      <article class="card plan-card" data-plan-id="${escapeHtml(plan.id)}" style="margin-bottom:12px;padding:16px;">
+        <h3 class="plan-card-title" style="margin:0 0 6px;font-size:1.05rem;">${escapeHtml(plan.name)}</h3>
+        <div class="plan-card-meta" style="font-size:.85rem;color:var(--text-secondary);">
+          <div>${sum.count} transaksi${sum.pending > 0 ? ` • ${sum.pending} menunggu` : ""}</div>
+          <div>Total ${formatCurrency(sum.net)}</div>
+        </div>
+        <div class="plan-card-actions" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+          <button class="btn-primary plan-open-btn" data-plan-id="${escapeHtml(plan.id)}">
+            <i class="fas fa-folder-open"></i> Buka
+          </button>
+          <button class="btn-secondary plan-rename-btn" data-plan-id="${escapeHtml(plan.id)}" title="Ubah nama rencana" aria-label="Ubah nama rencana">
+            <i class="fas fa-pencil-alt"></i>
+          </button>
+          <button class="btn-secondary plan-delete-btn" data-plan-id="${escapeHtml(plan.id)}" title="Hapus rencana" aria-label="Hapus rencana">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      </article>`;
+    })
+    .join("");
+
+  container.innerHTML = `
+    <div class="transactions-container planned-plan-list">
+      <div class="page-header">
+        <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
+        <div>
+          <button class="btn-primary" id="create-plan-btn">
+            <i class="fas fa-plus"></i> Buat Rencana
+          </button>
+        </div>
+      </div>
+
+      ${
+        plans.length === 0
+          ? `<div class="card empty-state" style="padding:30px 16px;text-align:center;">
+              <i class="fas fa-calendar-check"></i>
+              <p>Belum ada rencana transaksi.</p>
+              <p style="font-size:.85rem;">Buat rencana pertama untuk mengelompokkan transaksi yang ingin direncanakan.</p>
+              <button class="btn-primary" id="create-plan-empty-btn">
+                <i class="fas fa-plus"></i> Buat Rencana
+              </button>
+            </div>`
+          : `<div class="plan-list">${cards}</div>`
+      }
+    </div>
+  `;
+
+  document
+    .getElementById("create-plan-btn")
+    ?.addEventListener("click", () => showPlanNameModal());
+  document
+    .getElementById("create-plan-empty-btn")
+    ?.addEventListener("click", () => showPlanNameModal());
+
+  container.querySelectorAll(".plan-open-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      currentPlanId = btn.dataset.planId;
+      await renderPlannedView();
+    });
+  });
+  container.querySelectorAll(".plan-rename-btn").forEach((btn) => {
+    btn.addEventListener("click", () => showPlanNameModal(btn.dataset.planId));
+  });
+  container.querySelectorAll(".plan-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", () => deletePlan(btn.dataset.planId));
+  });
+}
+
+// ───────────────────────────────────────────────
+// Buat / ubah nama plan
+// ───────────────────────────────────────────────
+async function showPlanNameModal(planId = null) {
+  const isEdit = planId !== null;
+  let plan = null;
+  if (isEdit) {
+    plan = (await planGetAll()).find((p) => p.id === planId);
+    if (!plan) {
+      showToast("Rencana tidak ditemukan", "error");
+      return;
+    }
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3><i class="fas ${isEdit ? "fa-edit" : "fa-plus"}"></i>
+          ${isEdit ? "Ubah Nama Rencana" : "Buat Rencana"}
+        </h3>
+        <button class="modal-close-btn modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);padding:0 8px;">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="plan-name-form">
+          <div class="form-group">
+            <label>Nama Rencana <span class="required">*</span></label>
+            <input type="text" id="plan-name" class="form-input" maxlength="60"
+              value="${isEdit ? escapeHtml(plan.name) : ""}"
+              placeholder="Contoh: Rencana Bulanan, Rencana Kos..." required>
+          </div>
+          <div class="modal-buttons">
+            <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+            <button type="submit" class="btn-primary">
+              <i class="fas fa-save"></i> ${isEdit ? "Simpan" : "Buat Rencana"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("#plan-name")?.focus();
+
+  modal.querySelectorAll(".modal-close-btn, .modal-close-x").forEach((btn) => {
+    btn.addEventListener("click", () => modal.remove());
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) modal.remove();
+  });
+
+  modal.querySelector("#plan-name-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = modal.querySelector("#plan-name").value.trim();
+    if (!name) {
+      showToast("Nama rencana harus diisi", "error");
+      return;
+    }
+
+    if (isEdit) {
+      await planPut({ ...plan, name, updatedAt: new Date().toISOString() });
+      showToast("Nama rencana diperbarui", "success");
+    } else {
+      const now = new Date().toISOString();
+      await planPut({ id: generateId(), name, createdAt: now, updatedAt: now });
+      showToast("Rencana dibuat", "success");
+    }
+
+    modal.remove();
+    await renderPlannedView();
+  });
+}
+
+// ───────────────────────────────────────────────
+// Hapus plan: item di dalamnya ikut dihapus, dengan konfirmasi eksplisit.
+// (Konsisten dengan semantik reset existing yang juga menghapus item planned.
+// Transaksi AKTUAL yang sudah dikonfirmasi tidak tersentuh.)
+// ───────────────────────────────────────────────
+async function deletePlan(planId) {
+  const plans = await planGetAll();
+  const plan = plans.find((p) => p.id === planId);
+  if (!plan) return;
+
+  const items = (await plannedGetAll()).filter((i) => planIdOf(i) === planId);
+  const pending = items.filter((i) => i.status === "pending").length;
+
+  const msg =
+    items.length === 0
+      ? `Hapus rencana "${plan.name}"?`
+      : `Hapus rencana "${plan.name}" beserta ${items.length} rencana transaksi di dalamnya (${pending} belum dikonfirmasi)? Transaksi aktual yang sudah dikonfirmasi tidak ikut terhapus. Tindakan ini tidak bisa dibatalkan.`;
+  if (!confirm(msg)) return;
+
+  await plannedDeleteByPlan(planId);
+  await planDeleteRecord(planId);
+  showToast("Rencana dihapus", "success");
+  await renderPlannedView();
+}
+
+// ───────────────────────────────────────────────
+// Detail plan: workflow Rencana Transaksi existing, difilter per plan
+// ───────────────────────────────────────────────
+async function renderPlanDetail() {
+  const container = document.getElementById("page-content");
+  if (!container) return;
+
+  const plans = await planGetAll();
+  const plan = plans.find((p) => p.id === currentPlanId);
+  if (!plan) {
+    // Plan sudah tidak ada (mis. plan legacy belum ter-migrasi) -> kembali ke daftar
+    const all = await plannedGetAll();
+    const loaded = await loadPlans(all);
+    if (!loaded.some((p) => p.id === currentPlanId)) {
+      currentPlanId = null;
+      await renderPlanList();
+      return;
+    }
+  }
+  const planName =
+    plan?.name ||
+    (currentPlanId === LEGACY_PLAN_ID ? LEGACY_PLAN_NAME : "Rencana");
+
+  const items = (await plannedGetAll()).filter(
+    (i) => planIdOf(i) === currentPlanId,
+  );
   items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   const pending = items.filter((i) => i.status === "pending");
@@ -279,9 +606,12 @@ export async function renderPlannedPage() {
   container.innerHTML = `
     <div class="transactions-container">
       <div class="page-header">
-        <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
+        <h1><i class="fas fa-calendar-check"></i> ${escapeHtml(planName)}</h1>
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn-secondary" id="reset-planned-btn" title="Reset semua rencana transaksi sekarang">
+          <button class="btn-secondary" id="back-to-plans-btn" title="Kembali ke daftar rencana">
+            <i class="fas fa-arrow-left"></i> Kembali
+          </button>
+          <button class="btn-secondary" id="reset-planned-btn" title="Reset semua rencana transaksi di plan ini sekarang">
             <i class="fas fa-rotate-left"></i> Reset Manual
           </button>
           <button class="btn-primary" id="add-planned-btn">
@@ -441,6 +771,13 @@ export async function renderPlannedPage() {
   `;
 
   // Event listeners
+  document
+    .getElementById("back-to-plans-btn")
+    ?.addEventListener("click", async () => {
+      currentPlanId = null;
+      await renderPlannedView();
+    });
+
   document.getElementById("add-planned-btn")?.addEventListener("click", () => {
     showPlannedModal();
   });
@@ -623,7 +960,7 @@ function setupPlannedItemListeners() {
       if (confirm("Hapus rencana transaksi ini?")) {
         await plannedDelete(id);
         showToast("Rencana transaksi dihapus", "success");
-        await renderPlannedPage();
+        await renderPlannedView();
       }
     });
   });
@@ -784,6 +1121,13 @@ async function showPlannedModal(plannedId = null) {
       category,
       walletId,
       note,
+      // Multi-plan: create => plan yang sedang dibuka; edit => pertahankan plan
+      // item (item lama tanpa planId tetap dianggap plan legacy, tidak ditulis ulang)
+      ...(isEdit
+        ? item.planId
+          ? { planId: item.planId }
+          : {}
+        : { planId: currentPlanId }),
       // Data lama: pertahankan tanggal/jam lama saat diedit (tidak dipakai sebagai tanggal transaksi aktual)
       ...(isEdit && item.date ? { date: item.date, time: item.time } : {}),
       status: "pending",
@@ -801,7 +1145,7 @@ async function showPlannedModal(plannedId = null) {
     }
 
     modal.remove();
-    await renderPlannedPage();
+    await renderPlannedView();
   });
 }
 
