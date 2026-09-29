@@ -327,7 +327,8 @@ async function confirmPlanned(id) {
   // Tambah ke transaksi aktual
   await addItem(STORES.TRANSACTIONS, {
     itemName: item.itemName,
-    amount: item.amount,
+    amount: item.amount, // sudah total (harga satuan × quantity), jangan dikalikan lagi
+    quantity: item.quantity || 1, // data lama tanpa quantity = 1
     type: item.type,
     category: item.category,
     walletId: item.walletId,
@@ -873,6 +874,7 @@ function renderWalletUsageStats(allItems, wallets) {
 
 function renderPlannedItem(item, isConfirmed = false) {
   const isIncome = item.type === "income";
+  const quantity = item.quantity || 1;
   const amountColor = isIncome
     ? "var(--success,#10b981)"
     : "var(--danger,#ef4444)";
@@ -898,7 +900,7 @@ function renderPlannedItem(item, isConfirmed = false) {
           ${escapeHtml(item.itemName)}
         </div>
         <div style="font-size:.78rem;color:var(--text-secondary);margin-top:2px;">
-          ${item.category || "-"}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
+          ${item.category || "-"}${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
           ${item.note ? `<br><span style="font-style:italic;">${escapeHtml(item.note)}</span>` : ""}
         </div>
       </div>
@@ -1026,8 +1028,23 @@ async function showPlannedModal(plannedId = null) {
           <div class="form-group">
             <label>Nominal <span class="required">*</span></label>
             <input type="text" inputmode="numeric" autocomplete="off" data-money id="planned-amount" class="form-input"
-              value="${isEdit ? formatMoneyInput(item.amount) : ""}"
+              value="${isEdit ? formatMoneyInput(item.amount / (item.quantity || 1)) : ""}"
               placeholder="0" min="1" required>
+          </div>
+
+          <div class="form-group" id="planned-quantity-group">
+            <label>Jumlah</label>
+            <div class="quantity-selector">
+              <button type="button" class="qty-btn" data-qty="1">1</button>
+              <button type="button" class="qty-btn" data-qty="2">2</button>
+              <button type="button" class="qty-btn" data-qty="3">3</button>
+              <button type="button" class="qty-btn" data-qty="4">4</button>
+              <button type="button" class="qty-btn" data-qty="5">5</button>
+              <button type="button" class="qty-btn" data-qty="other">Lainnya</button>
+            </div>
+            <input type="text" inputmode="numeric" autocomplete="off" id="planned-quantity-custom" class="form-input"
+              placeholder="Masukkan jumlah" style="display:none;margin-top:8px;">
+            <input type="hidden" id="planned-quantity" value="${isEdit ? item.quantity || 1 : 1}">
           </div>
 
           <div class="form-group">
@@ -1081,6 +1098,48 @@ async function showPlannedModal(plannedId = null) {
     });
   });
 
+  // Quantity selector (pola sama dengan transaction.js)
+  const quantityInput = modal.querySelector("#planned-quantity");
+  const quantityCustomInput = modal.querySelector("#planned-quantity-custom");
+  const qtyBtns = modal.querySelectorAll(".qty-btn");
+
+  function setQuantitySelection(qty) {
+    const isPreset = ["1", "2", "3", "4", "5"].includes(String(qty));
+    qtyBtns.forEach((b) => {
+      b.classList.toggle(
+        "active",
+        isPreset ? b.dataset.qty === String(qty) : b.dataset.qty === "other",
+      );
+    });
+    quantityCustomInput.style.display = isPreset ? "none" : "";
+    // Tampilan custom diformat ribuan; nilai hidden tetap angka murni
+    if (!isPreset) quantityCustomInput.value = qty > 0 ? formatMoneyInput(qty) : "";
+    quantityInput.value = qty;
+  }
+
+  qtyBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.qty === "other") {
+        qtyBtns.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        quantityCustomInput.style.display = "";
+        quantityCustomInput.focus();
+        quantityInput.value = quantityCustomInput.value.replace(/\D/g, "");
+      } else {
+        setQuantitySelection(btn.dataset.qty);
+      }
+    });
+  });
+
+  quantityCustomInput.addEventListener("input", () => {
+    const digits = quantityCustomInput.value.replace(/\D/g, "");
+    quantityCustomInput.value = formatMoneyInput(digits); // "1000" -> "1.000"
+    quantityInput.value = digits; // nilai yang dipakai/disimpan: "1000"
+  });
+
+  // State awal (edit: quantity lama; data lama tanpa quantity = 1)
+  setQuantitySelection(isEdit ? item.quantity || 1 : 1);
+
   // Close handlers
   modal.querySelectorAll(".modal-close-btn, .modal-close-x").forEach((btn) => {
     btn.addEventListener("click", () => modal.remove());
@@ -1094,7 +1153,8 @@ async function showPlannedModal(plannedId = null) {
     e.preventDefault();
 
     const name = modal.querySelector("#planned-name").value.trim();
-    const amount = parseMoney(modal.querySelector("#planned-amount").value, 10);
+    const unitPrice = parseMoney(modal.querySelector("#planned-amount").value, 10);
+    const quantity = parseInt(quantityInput.value, 10);
     const type = typeInput.value;
     let category = modal.querySelector("#planned-category").value;
     const walletId = modal.querySelector("#planned-wallet").value;
@@ -1104,10 +1164,16 @@ async function showPlannedModal(plannedId = null) {
       showToast("Nama transaksi harus diisi", "error");
       return;
     }
-    if (isNaN(amount) || amount <= 0) {
+    if (isNaN(unitPrice) || unitPrice <= 0) {
       showToast("Nominal harus lebih dari 0", "error");
       return;
     }
+    if (isNaN(quantity) || !Number.isInteger(quantity) || quantity <= 0) {
+      showToast("Jumlah harus berupa angka positif", "error");
+      return;
+    }
+    // Nominal = harga satuan; amount yang disimpan = total
+    const amount = unitPrice * quantity;
     if (!walletId) {
       showToast("Pilih dompet", "error");
       return;
@@ -1117,6 +1183,7 @@ async function showPlannedModal(plannedId = null) {
     const data = {
       itemName: capitalize(name),
       amount,
+      quantity,
       type,
       category,
       walletId,

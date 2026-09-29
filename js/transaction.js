@@ -899,7 +899,7 @@ async function showTransactionModal(transactionId = null) {
                 </div>
                 <input type="text" inputmode="numeric" autocomplete="off" id="transaction-quantity-custom" class="form-input"
                        placeholder="Masukkan jumlah" style="display:none;margin-top:8px;">
-                <input type="hidden" id="transaction-quantity" value="${isEdit ? (transaction.quantity || 1) : 1}">
+                <input type="hidden" id="transaction-quantity" value="${isEdit ? transaction.quantity || 1 : 1}">
             </div>
             
             <div class="form-group" id="transaction-category-group">
@@ -1036,8 +1036,7 @@ async function showTransactionModal(transactionId = null) {
 
   // Quantity hanya berlaku untuk Pengeluaran/Pemasukan (bukan Tabungan)
   function updateQuantityVisibility() {
-    quantityGroup.style.display =
-      typeInput.value === "saving" ? "none" : "";
+    quantityGroup.style.display = typeInput.value === "saving" ? "none" : "";
   }
 
   function setQuantitySelection(qty) {
@@ -1049,7 +1048,9 @@ async function showTransactionModal(transactionId = null) {
       );
     });
     quantityCustomInput.style.display = isPreset ? "none" : "";
-    if (!isPreset) quantityCustomInput.value = qty > 0 ? String(qty) : "";
+    // Tampilan diformat ribuan ("1.000"); nilai hidden tetap angka murni
+    if (!isPreset)
+      quantityCustomInput.value = qty > 0 ? formatMoneyInput(qty) : "";
     quantityInput.value = qty;
   }
 
@@ -1060,7 +1061,7 @@ async function showTransactionModal(transactionId = null) {
         btn.classList.add("active");
         quantityCustomInput.style.display = "";
         quantityCustomInput.focus();
-        quantityInput.value = quantityCustomInput.value || "";
+        quantityInput.value = quantityCustomInput.value.replace(/\D/g, "");
       } else {
         setQuantitySelection(btn.dataset.qty);
       }
@@ -1069,8 +1070,8 @@ async function showTransactionModal(transactionId = null) {
 
   quantityCustomInput.addEventListener("input", () => {
     const digits = quantityCustomInput.value.replace(/\D/g, "");
-    quantityCustomInput.value = digits;
-    quantityInput.value = digits;
+    quantityCustomInput.value = formatMoneyInput(digits); // "1000" -> "1.000"
+    quantityInput.value = digits; // nilai yang dipakai/disimpan: "1000"
   });
 
   // Set state awal quantity (existing transaction atau default 1)
