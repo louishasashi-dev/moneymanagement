@@ -7,6 +7,7 @@ import {
   deleteItem,
   getAllItems,
   getItem,
+  initDB,
   STORES,
 } from "./db.js";
 import { getTemplatesByType } from "./template.js";
@@ -71,9 +72,14 @@ export async function renderTransactionsPage() {
             <!-- Header -->
             <div class="page-header">
                 <h1><i class="fas fa-exchange-alt"></i> Transaksi</h1>
-                <button class="btn-primary btn-add-transaction" id="add-transaction-btn">
-                    <i class="fas fa-plus"></i> Transaksi Baru
-                </button>
+                <div class="page-header-actions">
+                    <button class="btn-primary btn-add-transaction" id="add-transaction-btn">
+                        <i class="fas fa-plus"></i> Transaksi Baru
+                    </button>
+                    <button class="btn-secondary" id="add-multi-transaction-btn">
+                        <i class="fas fa-shopping-basket"></i> Transaksi Banyak
+                    </button>
+                </div>
             </div>
             
             <!-- Tombol Filter (khusus tampil di mobile, buka filter sebagai modal) -->
@@ -357,7 +363,12 @@ function renderFilteredTransactions() {
     filtered = filtered.filter(
       (t) =>
         normalizeString(t.itemName).includes(searchTerm) ||
-        (t.note && normalizeString(t.note).includes(searchTerm)),
+        (t.note && normalizeString(t.note).includes(searchTerm)) ||
+        (Array.isArray(t.items) &&
+          t.items.some(
+            (i) =>
+              i.itemName && normalizeString(i.itemName).includes(searchTerm),
+          )),
     );
   }
 
@@ -373,7 +384,13 @@ function renderFilteredTransactions() {
 
   // Filter by category
   if (currentFilters.category !== "all") {
-    filtered = filtered.filter((t) => t.category === currentFilters.category);
+    filtered = filtered.filter(
+      (t) =>
+        t.category === currentFilters.category ||
+        (t.isMultiItem === true &&
+          Array.isArray(t.items) &&
+          t.items.some((i) => i.category === currentFilters.category)),
+    );
   }
 
   // Update summary
@@ -453,12 +470,16 @@ function renderTransactionsList(transactions) {
       (t) => `
         <div class="transaction-card" data-id="${t.id}">
             <div class="transaction-card-icon ${t.type}">
-                <i class="fas ${t.type === "income" ? "fa-arrow-down" : t.type === "saving" ? "fa-piggy-bank" : "fa-arrow-up"}"></i>
+                <i class="fas ${t.isMultiItem === true ? "fa-shopping-basket" : t.type === "income" ? "fa-arrow-down" : t.type === "saving" ? "fa-piggy-bank" : "fa-arrow-up"}"></i>
             </div>
             <div class="transaction-card-details">
                 <div class="transaction-card-name">${escapeHtml(t.itemName)}</div>
                 <div class="transaction-card-meta">
-                    <span class="category-badge">📌 ${t.category || "Umum"}</span>
+                    ${
+                      t.isMultiItem === true && Array.isArray(t.items)
+                        ? `<span class="category-badge">🧺 ${t.items.length} barang</span>`
+                        : `<span class="category-badge">📌 ${t.category || "Umum"}</span>`
+                    }
                     <span class="date-badge">📅 ${formatDate(t.date)}</span>
                     ${t.time ? `<span class="time-badge">⏰ ${t.time}</span>` : ""}
                 </div>
@@ -521,6 +542,11 @@ async function showTransactionDetailModal(id) {
   const wallet = transaction.walletId
     ? await getItem(STORES.WALLETS, transaction.walletId)
     : null;
+
+  if (transaction.isMultiItem === true && Array.isArray(transaction.items)) {
+    showMultiTransactionDetailModal(transaction, wallet);
+    return;
+  }
 
   const typeLabel =
     transaction.type === "income"
@@ -822,6 +848,14 @@ function setupTransactionEventListeners() {
   if (addBtn) {
     addBtn.addEventListener("click", () => {
       showTransactionModal();
+    });
+  }
+
+  // Add multi-item transaction button
+  const addMultiBtn = document.getElementById("add-multi-transaction-btn");
+  if (addMultiBtn) {
+    addMultiBtn.addEventListener("click", () => {
+      showMultiTransactionModal();
     });
   }
 }
@@ -1492,8 +1526,603 @@ async function showSelectSavingGoalModal(
     });
 }
 
+// ==================== TRANSAKSI BANYAK ====================
+// Satu belanja dengan banyak barang = SATU record di store "transactions".
+// Record parent: amount = total semua barang, type = "expense", isMultiItem = true,
+// items = [{ itemName, amount (harga satuan), quantity, category }].
+// Tidak ada record per barang, sehingga saldo/report/summary otomatis hanya
+// melihat parent.amount satu kali.
+const MULTI_DEFAULT_NAME = "Transaksi Banyak";
+const MULTI_MIN_ITEMS = 2;
+
+function newBlankMultiItem() {
+  return { name: "", price: "", qty: "1", qtyOther: false, category: "" };
+}
+
+// Escape untuk dipakai di dalam atribut HTML (kutip ikut di-escape)
+function escapeAttr(text) {
+  return escapeHtml(String(text ?? "")).replace(/"/g, "&quot;");
+}
+
+// Total satu barang = harga satuan × jumlah. 0 jika input belum valid.
+function calcMultiItemTotal(item) {
+  const price = parseMoney(item.price);
+  const qty = /^\d+$/.test(item.qty) ? parseInt(item.qty, 10) : NaN;
+  if (!Number.isFinite(price) || price <= 0) return 0;
+  if (!Number.isInteger(qty) || qty <= 0) return 0;
+  return price * qty;
+}
+
+function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Simpan transaksi banyak + update saldo dompet dalam SATU transaksi IndexedDB.
+// Jika ada langkah yang gagal, seluruhnya dibatalkan (tidak ada data setengah jadi).
+// oldRecord != null berarti edit: efek lama dibalikkan, efek baru diterapkan,
+// semuanya di transaksi yang sama.
+function saveMultiTransactionAtomic(record, oldRecord) {
+  return initDB().then(
+    (db) =>
+      new Promise((resolve) => {
+        const tx = db.transaction(
+          [STORES.TRANSACTIONS, STORES.WALLETS],
+          "readwrite",
+        );
+        const txStore = tx.objectStore(STORES.TRANSACTIONS);
+        const walletStore = tx.objectStore(STORES.WALLETS);
+        let outcome = { ok: false, error: "aborted" };
+
+        tx.oncomplete = () => resolve({ ok: true });
+        tx.onabort = () => resolve(outcome);
+
+        (async () => {
+          try {
+            const newWallet = await idbRequest(
+              walletStore.get(record.walletId),
+            );
+            if (!newWallet) {
+              outcome = { ok: false, error: "wallet-missing" };
+              tx.abort();
+              return;
+            }
+
+            // Edit: kembalikan dulu efek transaksi lama (selalu expense)
+            let oldWallet = null;
+            if (oldRecord) {
+              oldWallet =
+                oldRecord.walletId === record.walletId
+                  ? newWallet
+                  : await idbRequest(walletStore.get(oldRecord.walletId));
+              if (oldWallet) oldWallet.balance += oldRecord.amount;
+            }
+
+            // Cek saldo SEBELUM menulis apa pun
+            if (newWallet.balance < record.amount) {
+              outcome = { ok: false, error: "insufficient", wallet: newWallet };
+              tx.abort();
+              return;
+            }
+
+            // Terapkan efek baru: kurangi saldo sebesar total, satu kali
+            newWallet.balance -= record.amount;
+            if (oldWallet && oldWallet !== newWallet) {
+              walletStore.put(oldWallet);
+            }
+            walletStore.put(newWallet);
+
+            if (oldRecord) txStore.put(record);
+            else txStore.add(record);
+          } catch (err) {
+            console.error("Gagal menyimpan transaksi banyak:", err);
+            outcome = { ok: false, error: "exception" };
+            try {
+              tx.abort();
+            } catch (_) {
+              /* transaksi sudah selesai/abort */
+            }
+          }
+        })();
+      }),
+  );
+}
+
+// Form tambah/edit Transaksi Banyak
+async function showMultiTransactionModal(transactionId = null) {
+  const isEdit = transactionId !== null;
+  let transaction = null;
+
+  if (isEdit) {
+    transaction = await getItem(STORES.TRANSACTIONS, transactionId);
+    if (!transaction || transaction.isMultiItem !== true) {
+      showToast("Transaksi tidak ditemukan", "error");
+      return;
+    }
+  }
+
+  const wallets = await getAllItems(STORES.WALLETS);
+  const categories = await getAllItems(STORES.CATEGORIES);
+  const expenseCategories = categories.filter((c) => c.type === "expense");
+
+  // State barang (sumber kebenaran form; DOM hanya cerminannya)
+  const items =
+    isEdit && Array.isArray(transaction.items)
+      ? transaction.items.map((i) => {
+          const qty = String(i.quantity || 1);
+          return {
+            name: i.itemName || "",
+            price: formatMoneyInput(i.amount),
+            qty,
+            qtyOther: !["1", "2", "3", "4", "5"].includes(qty),
+            category: i.category || "",
+          };
+        })
+      : [];
+  while (items.length < MULTI_MIN_ITEMS) items.push(newBlankMultiItem());
+
+  function categoryOptionsHtml(selected) {
+    // Kategori lama yang sudah dihapus tetap ditampilkan agar data tidak hilang diam-diam
+    const extra =
+      selected && !expenseCategories.some((c) => c.name === selected)
+        ? `<option value="${escapeAttr(selected)}" selected>${escapeHtml(selected)}</option>`
+        : "";
+    return (
+      `<option value="">Pilih Kategori</option>` +
+      extra +
+      expenseCategories
+        .map(
+          (c) =>
+            `<option value="${escapeAttr(c.name)}" ${c.name === selected ? "selected" : ""}>${escapeHtml(c.name)}</option>`,
+        )
+        .join("")
+    );
+  }
+
+  function itemsHtml() {
+    return items
+      .map((it, i) => {
+        const qtyBtns = ["1", "2", "3", "4", "5"]
+          .map(
+            (q) =>
+              `<button type="button" class="qty-btn ${!it.qtyOther && it.qty === q ? "active" : ""}" data-qty="${q}">${q}</button>`,
+          )
+          .join("");
+        return `
+        <div class="multi-item" data-index="${i}">
+            <div class="multi-item-header">
+                <span class="multi-item-title">Barang ${i + 1}</span>
+                ${
+                  items.length > MULTI_MIN_ITEMS
+                    ? `<button type="button" class="icon-btn multi-item-remove" title="Hapus barang" aria-label="Hapus Barang ${i + 1}"><i class="fas fa-trash"></i></button>`
+                    : ""
+                }
+            </div>
+            <div class="form-group">
+                <label>Nama Barang <span class="required">*</span></label>
+                <input type="text" class="form-input multi-item-name" value="${escapeAttr(it.name)}" placeholder="Contoh: Indomie Goreng" autocomplete="off">
+            </div>
+            <div class="multi-form-row">
+                <div class="form-group">
+                    <label>Harga Satuan <span class="required">*</span></label>
+                    <input type="text" inputmode="numeric" autocomplete="off" data-money class="form-input multi-item-price" value="${escapeAttr(formatMoneyInput(it.price))}" placeholder="0">
+                </div>
+                <div class="form-group">
+                    <label>Total Barang</label>
+                    <div class="multi-item-total">${formatCurrency(calcMultiItemTotal(it))}</div>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Jumlah</label>
+                <div class="quantity-selector">
+                    ${qtyBtns}
+                    <button type="button" class="qty-btn ${it.qtyOther ? "active" : ""}" data-qty="other">Lainnya</button>
+                </div>
+                <input type="text" inputmode="numeric" autocomplete="off" class="form-input multi-item-qty-custom" value="${it.qtyOther ? escapeAttr(formatMoneyInput(it.qty)) : ""}" placeholder="Masukkan jumlah" ${it.qtyOther ? "" : "hidden"}>
+            </div>
+            <div class="form-group">
+                <label>Kategori <span class="required">*</span></label>
+                <select class="form-input multi-item-category">${categoryOptionsHtml(it.category)}</select>
+            </div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+        <div class="modal-container modal-large">
+            <div class="modal-header">
+                <h3><i class="fas fa-shopping-basket"></i> ${isEdit ? "Edit Transaksi Banyak" : "Transaksi Banyak"}</h3>
+                <button class="modal-close-btn modal-close-x">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="multi-transaction-form" novalidate>
+                    <div class="form-group">
+                        <label>Nama Transaksi</label>
+                        <input type="text" id="multi-name" class="form-input" value="${isEdit ? escapeAttr(transaction.itemName) : ""}" placeholder="${MULTI_DEFAULT_NAME} (contoh: Belanja Indomaret)">
+                    </div>
+                    <div class="form-group">
+                        <label>Dompet <span class="required">*</span></label>
+                        <select id="multi-wallet" class="form-input">
+                            <option value="">Pilih Dompet</option>
+                            ${wallets
+                              .map(
+                                (w) =>
+                                  `<option value="${escapeAttr(w.id)}" ${isEdit && transaction.walletId === w.id ? "selected" : ""}>${escapeHtml(w.name)} - ${formatCurrency(w.balance)}</option>`,
+                              )
+                              .join("")}
+                        </select>
+                    </div>
+                    <div class="multi-form-row">
+                        <div class="form-group">
+                            <label>📅 Tanggal</label>
+                            <input type="date" id="multi-date" class="form-input" value="${isEdit ? transaction.date : getCurrentDateTime().date}">
+                        </div>
+                        <div class="form-group">
+                            <label>⏰ Jam</label>
+                            <input type="time" id="multi-time" class="form-input" value="${isEdit ? transaction.time || "" : getCurrentDateTime().time}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Catatan (Opsional)</label>
+                        <textarea id="multi-note" class="form-input" rows="2" placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea>
+                    </div>
+
+                    <div class="multi-section-title">Barang yang Dibeli</div>
+                    <div id="multi-items">${itemsHtml()}</div>
+                    <button type="button" class="btn-secondary multi-add-btn" id="multi-add-item">
+                        <i class="fas fa-plus"></i> Tambah Barang
+                    </button>
+
+                    <div class="multi-footer">
+                        <div class="multi-total-row">
+                            <span>Total Transaksi</span>
+                            <span id="multi-total">${formatCurrency(0)}</span>
+                        </div>
+                        <div class="modal-buttons">
+                            <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+                            <button type="submit" class="btn-primary" id="multi-submit">${isEdit ? "Simpan Perubahan" : "Simpan Transaksi"}</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+  document.body.appendChild(modal);
+
+  const itemsContainer = modal.querySelector("#multi-items");
+  const totalEl = modal.querySelector("#multi-total");
+
+  function updateTotals() {
+    const grand = items.reduce((sum, it) => sum + calcMultiItemTotal(it), 0);
+    totalEl.textContent = formatCurrency(grand);
+  }
+
+  function rerenderItems() {
+    itemsContainer.innerHTML = itemsHtml();
+    updateTotals();
+  }
+
+  function itemIndexOf(el) {
+    const block = el.closest(".multi-item");
+    return block ? Number(block.dataset.index) : -1;
+  }
+
+  // Sinkronkan tampilan Jumlah satu barang tanpa merender ulang seluruh daftar
+  function syncQtyUi(block, it) {
+    block.querySelectorAll(".qty-btn").forEach((b) => {
+      b.classList.toggle(
+        "active",
+        it.qtyOther ? b.dataset.qty === "other" : b.dataset.qty === it.qty,
+      );
+    });
+    const custom = block.querySelector(".multi-item-qty-custom");
+    custom.hidden = !it.qtyOther;
+    if (it.qtyOther) custom.value = formatMoneyInput(it.qty);
+  }
+
+  itemsContainer.addEventListener("input", (e) => {
+    const i = itemIndexOf(e.target);
+    if (i < 0) return;
+    const it = items[i];
+    const block = e.target.closest(".multi-item");
+
+    if (e.target.classList.contains("multi-item-name")) {
+      it.name = e.target.value;
+    } else if (e.target.classList.contains("multi-item-price")) {
+      it.price = e.target.value;
+      block.querySelector(".multi-item-total").textContent = formatCurrency(
+        calcMultiItemTotal(it),
+      );
+    } else if (e.target.classList.contains("multi-item-qty-custom")) {
+      // Tampilan "1.000", nilai state tetap digit murni "1000"
+      const digits = e.target.value.replace(/\D/g, "");
+      e.target.value = formatMoneyInput(digits);
+      it.qty = digits;
+      block.querySelector(".multi-item-total").textContent = formatCurrency(
+        calcMultiItemTotal(it),
+      );
+    } else {
+      return;
+    }
+    updateTotals();
+  });
+
+  itemsContainer.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("multi-item-category")) return;
+    const i = itemIndexOf(e.target);
+    if (i >= 0) items[i].category = e.target.value;
+  });
+
+  itemsContainer.addEventListener("click", (e) => {
+    const removeBtn = e.target.closest(".multi-item-remove");
+    if (removeBtn) {
+      const i = itemIndexOf(removeBtn);
+      if (i >= 0 && items.length > MULTI_MIN_ITEMS) {
+        items.splice(i, 1);
+        rerenderItems();
+      }
+      return;
+    }
+
+    const qtyBtn = e.target.closest(".qty-btn");
+    if (qtyBtn) {
+      const i = itemIndexOf(qtyBtn);
+      if (i < 0) return;
+      const it = items[i];
+      const block = qtyBtn.closest(".multi-item");
+      if (qtyBtn.dataset.qty === "other") {
+        // Sama seperti form transaksi biasa: pindah dari preset ke "Lainnya"
+        // mengosongkan input custom; jika sudah mode "Lainnya", angka dipertahankan
+        if (!it.qtyOther) it.qty = "";
+        it.qtyOther = true;
+        syncQtyUi(block, it);
+        block.querySelector(".multi-item-qty-custom").focus();
+      } else {
+        it.qtyOther = false;
+        it.qty = qtyBtn.dataset.qty;
+        syncQtyUi(block, it);
+      }
+      block.querySelector(".multi-item-total").textContent = formatCurrency(
+        calcMultiItemTotal(it),
+      );
+      updateTotals();
+    }
+  });
+
+  modal.querySelector("#multi-add-item").addEventListener("click", () => {
+    items.push(newBlankMultiItem());
+    rerenderItems();
+    const blocks = itemsContainer.querySelectorAll(".multi-item");
+    const last = blocks[blocks.length - 1];
+    if (last) {
+      last.scrollIntoView({ block: "nearest" });
+      last.querySelector(".multi-item-name").focus();
+    }
+  });
+
+  updateTotals();
+
+  const form = modal.querySelector("#multi-transaction-form");
+  const submitBtn = modal.querySelector("#multi-submit");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const name =
+      modal.querySelector("#multi-name").value.trim() || MULTI_DEFAULT_NAME;
+    const walletId = modal.querySelector("#multi-wallet").value;
+    const date = modal.querySelector("#multi-date").value;
+    const time = modal.querySelector("#multi-time").value;
+    const note = modal.querySelector("#multi-note").value;
+
+    if (!walletId) {
+      showToast("Pilih dompet", "error");
+      return;
+    }
+    if (!date) {
+      showToast("Tanggal harus diisi", "error");
+      return;
+    }
+    if (items.length < MULTI_MIN_ITEMS) {
+      showToast(`Minimal ${MULTI_MIN_ITEMS} barang`, "error");
+      return;
+    }
+
+    // Validasi SEMUA barang dulu; satu saja invalid = tidak ada yang disimpan
+    const cleanItems = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const label = `Barang ${i + 1}`;
+      const itemName = it.name.trim();
+      const price = parseMoney(it.price);
+      const qty = /^\d+$/.test(it.qty) ? parseInt(it.qty, 10) : NaN;
+
+      if (!itemName) {
+        showToast(`${label}: nama barang harus diisi`, "error");
+        return;
+      }
+      if (!Number.isSafeInteger(price) || price <= 0) {
+        showToast(`${label}: harga harus lebih dari 0`, "error");
+        return;
+      }
+      if (!Number.isSafeInteger(qty) || qty <= 0) {
+        showToast(`${label}: jumlah harus berupa angka positif`, "error");
+        return;
+      }
+      if (!it.category) {
+        showToast(`${label}: pilih kategori`, "error");
+        return;
+      }
+      cleanItems.push({
+        itemName,
+        amount: price, // harga satuan
+        quantity: qty,
+        category: it.category,
+      });
+    }
+
+    const totalAmount = cleanItems.reduce(
+      (sum, it) => sum + it.amount * it.quantity,
+      0,
+    );
+    if (!Number.isSafeInteger(totalAmount) || totalAmount <= 0) {
+      showToast("Total transaksi tidak valid", "error");
+      return;
+    }
+
+    const payload = {
+      itemName: name,
+      amount: totalAmount, // TOTAL seluruh barang (bukan harga satuan)
+      quantity: 1,
+      type: "expense",
+      category: MULTI_DEFAULT_NAME,
+      walletId,
+      note,
+      date,
+      time,
+      savingId: null,
+      isMultiItem: true,
+      items: cleanItems,
+    };
+
+    let record;
+    if (isEdit) {
+      record = { ...transaction, ...payload };
+      record.updatedAt = getCurrentDateTime().datetime;
+    } else {
+      record = { ...payload, createdAt: getCurrentDateTime().timestamp };
+    }
+
+    submitBtn.disabled = true;
+    let result;
+    try {
+      result = await saveMultiTransactionAtomic(
+        record,
+        isEdit ? transaction : null,
+      );
+    } catch (err) {
+      console.error("Gagal menyimpan transaksi banyak:", err);
+      result = { ok: false, error: "exception" };
+    }
+    submitBtn.disabled = false;
+
+    if (!result.ok) {
+      if (result.error === "wallet-missing") {
+        showToast("Dompet tidak ditemukan", "error");
+      } else if (result.error === "insufficient") {
+        showToast(
+          `Saldo ${result.wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(result.wallet.balance)})`,
+          "error",
+        );
+      } else {
+        showToast(
+          "Gagal menyimpan transaksi. Tidak ada data yang diubah.",
+          "error",
+        );
+      }
+      return; // modal tetap terbuka, input user tidak hilang
+    }
+
+    showToast(
+      isEdit ? "Transaksi berhasil diupdate" : "Transaksi berhasil ditambahkan",
+      "success",
+    );
+
+    modal.remove();
+    await loadTransactions();
+    renderFilteredTransactions();
+
+    // Refresh dashboard hanya jika dashboard yang sedang aktif (pola dari wallet.js),
+    // agar user tidak berpindah dari halaman Transaksi setelah menyimpan
+    if (
+      window.renderDashboard &&
+      window.getCurrentPage &&
+      window.getCurrentPage() === "dashboard"
+    ) {
+      await window.renderDashboard();
+    }
+  });
+
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+}
+
+// Detail (read-only) Transaksi Banyak: info parent + daftar barang + total
+function showMultiTransactionDetailModal(transaction, wallet) {
+  const row = (label, value) => `
+                <div class="transaction-detail-row">
+                    <span class="transaction-detail-label">${label}</span>
+                    <span class="transaction-detail-value">${value}</span>
+                </div>`;
+
+  const itemsHtml = transaction.items
+    .map((it) => {
+      const qty = it.quantity || 1;
+      return `
+                <div class="multi-detail-item">
+                    <div class="multi-detail-item-name">${escapeHtml(it.itemName)}</div>
+                    ${row("Harga Satuan", formatCurrency(it.amount))}
+                    ${row("Jumlah", qty)}
+                    ${row("Total", formatCurrency(it.amount * qty))}
+                    ${row("Kategori", escapeHtml(it.category || "Umum"))}
+                </div>`;
+    })
+    .join("");
+
+  const modal = document.createElement("div");
+  modal.className = "modal-overlay";
+  modal.innerHTML = `
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3><i class="fas fa-shopping-basket"></i> Detail Transaksi</h3>
+                <button class="modal-close-btn modal-close-x">&times;</button>
+            </div>
+            <div class="modal-body">
+                ${row("Nama", escapeHtml(transaction.itemName))}
+                ${row("Tipe", "Pengeluaran")}
+                ${row("Dompet", wallet ? escapeHtml(wallet.name) : "-")}
+                ${transaction.note ? row("Catatan", escapeHtml(transaction.note)) : ""}
+                ${row("Tanggal", formatDate(transaction.date))}
+                ${row("Waktu", transaction.time || "-")}
+
+                <div class="multi-section-title">Barang yang Dibeli</div>
+                ${itemsHtml}
+
+                <div class="multi-total-row multi-detail-total">
+                    <span>Total Transaksi</span>
+                    <span>${formatCurrency(transaction.amount)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+  document.body.appendChild(modal);
+
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
+  });
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+}
+
 // Edit transaction
 async function editTransaction(id) {
+  const existing = await getItem(STORES.TRANSACTIONS, id);
+  if (existing && existing.isMultiItem === true) {
+    await showMultiTransactionModal(id);
+    return;
+  }
   await showTransactionModal(id);
 }
 

@@ -1222,3 +1222,105 @@ input[type="number"]::-webkit-outer-spin-button {
     overflow: hidden;
   }
 }
+
+/* ===== Transaksi Banyak ===== */
+.page-header-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.multi-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.multi-form-row > * {
+  min-width: 0;
+}
+
+.multi-section-title {
+  font-weight: 600;
+  margin: 16px 0 10px;
+}
+
+.multi-item {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.multi-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.multi-item-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.multi-item-total {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-item-qty-custom {
+  margin-top: 8px;
+}
+
+.multi-add-btn {
+  width: 100%;
+}
+
+.multi-footer {
+  position: sticky;
+  bottom: -20px;
+  margin: 16px -20px -20px;
+  padding: 12px 20px 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+}
+
+.multi-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-footer .modal-buttons {
+  margin-top: 12px;
+}
+
+.multi-detail-item {
+  border-top: 1px solid var(--border-color);
+  padding-top: 10px;
+  margin-top: 6px;
+}
+
+.multi-detail-item-name {
+  font-weight: 600;
+}
+
+.multi-detail-total {
+  border-top: 1px solid var(--border-color);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+@media (max-width: 768px) {
+  .page-header-actions > button {
+    flex: 1;
+  }
+}
