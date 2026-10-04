@@ -80,7 +80,10 @@ function calculateInterestPerDay(
     case "weekly":
       return interestAmount / 7;
     case "monthly": {
-      const days = getDaysInMonth(refDate.getFullYear(), refDate.getMonth() + 1);
+      const days = getDaysInMonth(
+        refDate.getFullYear(),
+        refDate.getMonth() + 1,
+      );
       return interestAmount / days;
     }
     case "yearly": {
@@ -133,7 +136,9 @@ function parseISODateOnly(str) {
 // yang diberikan (mutasi), dan mengembalikan info perubahan.
 function accrueInterestForDebt(debt, todayISO) {
   const hasInterest =
-    debt.interestPeriod && debt.interestPeriod !== "none" && Number(debt.interestRate) > 0;
+    debt.interestPeriod &&
+    debt.interestPeriod !== "none" &&
+    Number(debt.interestRate) > 0;
 
   if (!hasInterest) {
     return { changed: false, accrued: 0 };
@@ -271,7 +276,7 @@ export async function renderDebtsPage() {
                         <span class="stat-label">Net Balance</span>
                         <span class="stat-value ${stats.netBalance >= 0 ? "positive" : "negative"}">
                             ${formatCurrency(Math.abs(stats.netBalance))}
-                            <small>${stats.netBalance >= 0 ? "(dibayarkan)" : "(harus bayar)"}</small>
+                            <small>${stats.netBalance >= 0 ? "" : "(harus bayar)"}</small>
                         </span>
                     </div>
                 </div>
@@ -448,7 +453,9 @@ function renderDebtCard(debt) {
                     }
                 </div>
                 ${
-                  debt.interestPeriod && debt.interestPeriod !== "none" && debt.interestRate > 0
+                  debt.interestPeriod &&
+                  debt.interestPeriod !== "none" &&
+                  debt.interestRate > 0
                     ? `
                     <div class="interest-badge">
                         <i class="fas ${debt.interestType === "fixed" ? "fa-money-bill-wave" : "fa-percentage"}"></i>
@@ -714,7 +721,9 @@ async function showDebtModal(debtId = null) {
   const interestRateInput = modal.querySelector("#debt-interest-rate");
   const interestPeriodSelect = modal.querySelector("#debt-interest-period");
   const interestPreview = modal.querySelector("#debt-interest-preview");
-  const interestPreviewText = modal.querySelector("#debt-interest-preview-text");
+  const interestPreviewText = modal.querySelector(
+    "#debt-interest-preview-text",
+  );
   const interestTypeInput = modal.querySelector("#debt-interest-type");
   const interestTypeBtns = modal.querySelectorAll(".interest-type-btn");
 
@@ -729,9 +738,22 @@ async function showDebtModal(debtId = null) {
       return;
     }
 
-    const perDay = calculateInterestPerDay(principal, rate, period, new Date(), interestType);
-    const perMonth = calculateInterestPerMonth(principal, rate, period, new Date(), interestType);
-    const rateLabel = interestType === "fixed" ? formatCurrency(rate) : `${rate}%`;
+    const perDay = calculateInterestPerDay(
+      principal,
+      rate,
+      period,
+      new Date(),
+      interestType,
+    );
+    const perMonth = calculateInterestPerMonth(
+      principal,
+      rate,
+      period,
+      new Date(),
+      interestType,
+    );
+    const rateLabel =
+      interestType === "fixed" ? formatCurrency(rate) : `${rate}%`;
 
     interestPreviewText.textContent =
       `Bunga ${rateLabel} / ${INTEREST_PERIOD_LABELS[period].toLowerCase()} → estimasi ${formatCurrency(perDay)} / hari` +
@@ -746,7 +768,9 @@ async function showDebtModal(debtId = null) {
       btn.classList.add("active");
       interestTypeInput.value = btn.dataset.interestType;
       interestRateInput.placeholder =
-        btn.dataset.interestType === "fixed" ? "Nominal (Rp)" : "Persentase (%)";
+        btn.dataset.interestType === "fixed"
+          ? "Nominal (Rp)"
+          : "Persentase (%)";
       updateInterestPreview();
     });
   });
@@ -767,9 +791,11 @@ async function showDebtModal(debtId = null) {
     const type = typeInput.value;
     const description = modal.querySelector("#debt-description").value;
     const dueDate = modal.querySelector("#debt-duedate").value;
-    const interestRate = parseFloat(modal.querySelector("#debt-interest-rate").value) || 0;
+    const interestRate =
+      parseFloat(modal.querySelector("#debt-interest-rate").value) || 0;
     const interestPeriod = modal.querySelector("#debt-interest-period").value;
-    const interestType = interestTypeInput.value === "fixed" ? "fixed" : "percent";
+    const interestType =
+      interestTypeInput.value === "fixed" ? "fixed" : "percent";
 
     if (!partyName) {
       showToast("Nama harus diisi", "error");
@@ -1092,7 +1118,9 @@ async function showAddAmountModal(debtId) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
-    const addAmount = parseMoney(modal.querySelector("#add-amount-value").value);
+    const addAmount = parseMoney(
+      modal.querySelector("#add-amount-value").value,
+    );
     const note = modal.querySelector("#add-amount-note").value;
     const dateValue = modal.querySelector("#add-amount-date").value;
 
@@ -1195,9 +1223,27 @@ async function showDebtHistoryModal(debtId) {
   const sisaPokok = debt.principalRemaining ?? totalHutang;
 
   const kindMeta = {
-    payment: { icon: "fa-money-bill-wave", color: "#10b981", bg: "rgba(16,185,129,.15)", label: "Pembayaran", sign: "-" },
-    addition: { icon: "fa-plus-circle", color: "#8b5cf6", bg: "rgba(139,92,246,.15)", label: "Penambahan Hutang", sign: "+" },
-    interest: { icon: "fa-percentage", color: "#f59e0b", bg: "rgba(245,158,11,.15)", label: "Bunga berjalan", sign: "+" },
+    payment: {
+      icon: "fa-money-bill-wave",
+      color: "#10b981",
+      bg: "rgba(16,185,129,.15)",
+      label: "Pembayaran",
+      sign: "-",
+    },
+    addition: {
+      icon: "fa-plus-circle",
+      color: "#8b5cf6",
+      bg: "rgba(139,92,246,.15)",
+      label: "Penambahan Hutang",
+      sign: "+",
+    },
+    interest: {
+      icon: "fa-percentage",
+      color: "#f59e0b",
+      bg: "rgba(245,158,11,.15)",
+      label: "Bunga berjalan",
+      sign: "+",
+    },
   };
 
   const rows =
@@ -1335,7 +1381,10 @@ async function printDebtReport(debtId) {
     return;
   }
   if (!window.jspdf) {
-    showToast("Library PDF belum termuat. Pastikan koneksi internet aktif.", "error");
+    showToast(
+      "Library PDF belum termuat. Pastikan koneksi internet aktif.",
+      "error",
+    );
     return;
   }
 
@@ -1365,9 +1414,13 @@ async function printDebtReport(debtId) {
     const remaining = debt.remainingAmount ?? debt.amount ?? 0;
     const initial = total - totalAdditions - totalInterest;
     const hasInterest =
-      debt.interestPeriod && debt.interestPeriod !== "none" && Number(debt.interestRate) > 0;
+      debt.interestPeriod &&
+      debt.interestPeriod !== "none" &&
+      Number(debt.interestRate) > 0;
     const statusLabel =
-      { completed: "Lunas", partial: "Dibayar Sebagian", active: "Aktif" }[debt.status] ||
+      { completed: "Lunas", partial: "Dibayar Sebagian", active: "Aktif" }[
+        debt.status
+      ] ||
       debt.status ||
       "-";
     const kind = isOwe ? "Hutang" : "Piutang";
@@ -1383,7 +1436,11 @@ async function printDebtReport(debtId) {
     doc.setFontSize(8);
     doc.setTextColor(180, 190, 210);
     doc.text("Money Manager", ML, 18);
-    doc.text(`Dicetak: ${getCurrentDateTime().datetime}   |   ID Data: ${debt.id}`, ML, 23);
+    doc.text(
+      `Dicetak: ${getCurrentDateTime().datetime}   |   ID Data: ${debt.id}`,
+      ML,
+      23,
+    );
 
     let y = 38;
     const ensureSpace = (h, redrawHeader) => {
@@ -1402,7 +1459,10 @@ async function printDebtReport(debtId) {
     y += 3;
 
     const summary = [
-      ["Jenis", isOwe ? "Hutang (Saya berhutang)" : "Piutang (Berhutang ke saya)"],
+      [
+        "Jenis",
+        isOwe ? "Hutang (Saya berhutang)" : "Piutang (Berhutang ke saya)",
+      ],
       ["Pihak", debt.partyName || "-"],
       debt.description ? ["Catatan", debt.description] : null,
       ["Nominal Awal", rp(initial)],
@@ -1486,7 +1546,9 @@ async function printDebtReport(debtId) {
         doc.text(noteLines, cols[2].x, y + 4.8);
         doc.text(rp(p.amount), cols[3].x, y + 4.8, { align: "right" });
         doc.text(
-          p.remainingAfter === undefined || p.remainingAfter === null ? "-" : rp(p.remainingAfter),
+          p.remainingAfter === undefined || p.remainingAfter === null
+            ? "-"
+            : rp(p.remainingAfter),
           cols[4].x,
           y + 4.8,
           { align: "right" },
@@ -1515,8 +1577,13 @@ async function printDebtReport(debtId) {
       doc.text(`${kind} - ${debt.partyName || ""}`, ML, H - 8);
     }
 
-    const slug = String(debt.partyName || "data").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-    doc.save(`laporan_${kind.toLowerCase()}_${slug || "data"}_${getCurrentDateTime().date}.pdf`);
+    const slug = String(debt.partyName || "data")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    doc.save(
+      `laporan_${kind.toLowerCase()}_${slug || "data"}_${getCurrentDateTime().date}.pdf`,
+    );
     showToast("Laporan berhasil dibuat!", "success");
   } catch (error) {
     console.error("Debt report error:", error);

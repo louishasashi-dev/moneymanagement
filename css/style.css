@@ -1324,3 +1324,1372 @@ input[type="number"]::-webkit-outer-spin-button {
     flex: 1;
   }
 }
+
+/* ===== DASHBOARD – PREMIUM CARD BACKGROUNDS =====
+   Path relatif terhadap css/style.css -> ../images/background/
+   Catatan: file Anda bernama "sliver.jpg" (bukan silver). ===== */
+
+/* ---------- Base: semua summary card ---------- */
+.dashboard-container .stats-grid .stat-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: #fff;
+  background-color: #2b2a4c; /* fallback jika gambar gagal dimuat */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(43, 42, 76, 0.22);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.dashboard-container .stats-grid .stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(43, 42, 76, 0.32);
+}
+
+/* Highlight tipis di sudut atas (glass sheen) */
+.dashboard-container .stats-grid .stat-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+/* ---------- Per card: gambar + overlay #2B2A4C ---------- */
+/* Overlay lebih pekat di kiri (tempat teks), lebih tipis di kanan agar gambar tetap terlihat */
+
+/* 1. Pemasukan -> green.jpg */
+.dashboard-container .stats-grid .stat-card.income-card {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/green.jpg");
+}
+
+/* 2. Pengeluaran -> violet.jpg */
+.dashboard-container .stats-grid .stat-card.expense-card {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.42) 100%
+    ),
+    url("../images/background/violet.jpg");
+}
+
+/* 3. Arus Kas -> blue.jpg */
+.dashboard-container .stats-grid .stat-card.balance-card {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/blue.jpg");
+}
+
+/* 4. Total Saldo -> violet2.jpg */
+.dashboard-container .stats-grid .stat-card.total-saldo-stat-card {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.42) 100%
+    ),
+    url("../images/background/violet2.jpg");
+}
+
+/* ---------- Icon: glass chip, kontras tinggi ---------- */
+.dashboard-container .stats-grid .stat-card .stat-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
+}
+
+/* ---------- Teks ---------- */
+.dashboard-container .stats-grid .stat-card .stat-info {
+  min-width: 0;
+}
+
+.dashboard-container .stats-grid .stat-card .stat-label {
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.dashboard-container .stats-grid .stat-card .stat-value {
+  color: #fff;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Arus kas positif/negatif: versi terang agar kontras di atas overlay gelap */
+.dashboard-container .stats-grid .stat-card .stat-value.positive {
+  color: #6ee7b7;
+}
+
+.dashboard-container .stats-grid .stat-card .stat-value.negative {
+  color: #fca5a5;
+}
+
+/* ---------- 5. Anggaran per Kategori -> silver.jpg ---------- */
+.dashboard-container .card.daily-budget-card {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-image:
+    linear-gradient(
+      160deg,
+      rgba(43, 42, 76, 0.88) 0%,
+      rgba(43, 42, 76, 0.7) 100%
+    ),
+    url("../images/background/sliver.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 8px 24px rgba(43, 42, 76, 0.22);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.dashboard-container .card.daily-budget-card:hover {
+  box-shadow: 0 12px 30px rgba(43, 42, 76, 0.3);
+}
+
+.dashboard-container .daily-budget-card .card-header h3 {
+  color: #fff;
+}
+
+/* Tombol "Atur" jadi pill glass ringan */
+.dashboard-container .daily-budget-card .edit-budget-btn {
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition:
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.dashboard-container .daily-budget-card .edit-budget-btn:hover {
+  background: rgba(255, 255, 255, 0.26);
+  transform: translateY(-1px);
+}
+
+/* Isi daftar anggaran dirender JS dengan inline style -> perlu !important */
+/* Track progress bar */
+.dashboard-container #category-budget-list div[style*="height:8px"] {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* Nominal "terpakai / batas": warna status tetap, dicerahkan agar terbaca di atas gelap */
+.dashboard-container #category-budget-list span[style*="font-weight:600"] {
+  filter: brightness(1.3);
+}
+
+/* Pesan "Melebihi anggaran" */
+.dashboard-container #category-budget-list div[style*="font-size:.75rem"] {
+  color: #fca5a5 !important;
+}
+
+/* Empty state ("Belum ada anggaran kategori") */
+.dashboard-container #category-budget-list > div[style*="text-align:center"] {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* ---------- Statistik Bulan Ini: sengaja TIDAK diubah (tetap putih/clean) ---------- */
+
+/* ---------- Responsive ---------- */
+@media (max-width: 768px) {
+  .dashboard-container .stats-grid .stat-card {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .dashboard-container .stats-grid .stat-card:hover {
+    transform: none; /* tidak ada hover di layar sentuh */
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-container .stats-grid .stat-card .stat-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-container .stats-grid .stat-card,
+  .dashboard-container .card.daily-budget-card,
+  .dashboard-container .daily-budget-card .edit-budget-btn {
+    transition: none;
+  }
+}
+
+/* =====================================================================
+   FIX: nominal panjang pada summary card (tidak patah baris / keluar card)
+   ===================================================================== */
+
+/* Semua ukuran layar: nominal tidak boleh patah baris, angka lebar seragam */
+.dashboard-container .stats-grid .stat-card .stat-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.dashboard-container .stats-grid .stat-card .stat-label {
+  white-space: nowrap;
+}
+
+/* Layar sempit (mobile + tablet/desktop dengan sidebar):
+   ikon di atas, teks di bawah -> nominal mendapat lebar penuh card,
+   ukuran font mengecil otomatis mengikuti lebar layar */
+@media (max-width: 1150px) {
+  .dashboard-container .stats-grid .stat-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .dashboard-container .stats-grid .stat-card .stat-info {
+    width: 100%;
+  }
+
+  .dashboard-container .stats-grid .stat-card .stat-value {
+    font-size: clamp(0.78rem, 3.6vw, 1.15rem);
+  }
+}
+
+/* Desktop lebar: 4 kolom, ikon di kiri seperti semula */
+@media (min-width: 1151px) {
+  .dashboard-container .stats-grid .stat-card .stat-value {
+    font-size: clamp(1rem, 1.6vw, 1.25rem);
+  }
+}
+
+/* =====================================================================
+   RINGKASAN DOMPET – aksen tipis white.jpg (hanya area header, memudar ke bawah)
+   Daftar dompet di bawahnya tetap polos agar mudah dibaca.
+   ===================================================================== */
+.dashboard-container .card.wallets-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.dashboard-container .card.wallets-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 90px;
+  z-index: -1;
+  pointer-events: none;
+  background: url("../images/background/white.jpg") center / cover no-repeat;
+  opacity: 0.5;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+}
+
+/* Tema gelap: gambar putih dibuat jauh lebih redup agar tidak menyilaukan */
+[data-theme="dark"] .dashboard-container .card.wallets-card::before {
+  opacity: 0.08;
+}
+
+/* =====================================================================
+   HALAMAN TRANSAKSI – baris ringkasan (Total Transaksi/Pemasukan/Pengeluaran/Ditabung)
+   Hanya baris ringkasan yang diberi gambar; filter & daftar transaksi tetap polos.
+   ===================================================================== */
+.transactions-container .transactions-summary.card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  background-color: #2b2a4c; /* fallback jika gambar gagal dimuat */
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.82) 0%,
+      rgba(43, 42, 76, 0.5) 100%
+    ),
+    url("../images/background/violet2.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(43, 42, 76, 0.22);
+}
+
+/* Highlight tipis (glass sheen) */
+.transactions-container .transactions-summary.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+/* Item transparan (sebelumnya putih) + pemisah tipis */
+.transactions-container .transactions-summary .summary-item {
+  background: transparent;
+  border-radius: 0;
+}
+
+@media (min-width: 769px) {
+  .transactions-container .transactions-summary .summary-item + .summary-item {
+    border-left: 1px solid rgba(255, 255, 255, 0.16);
+    padding-left: 20px;
+  }
+}
+
+.transactions-container .transactions-summary .summary-item span {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.transactions-container .transactions-summary .summary-item strong {
+  color: #fff;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Warna status versi terang agar kontras di atas overlay gelap */
+.transactions-container .transactions-summary .summary-item strong.income-text {
+  color: #6ee7b7;
+}
+
+.transactions-container
+  .transactions-summary
+  .summary-item
+  strong.expense-text {
+  color: #fca5a5;
+}
+
+.transactions-container .transactions-summary .summary-item strong.saving-text {
+  color: #c4b5fd;
+}
+
+/* Mobile: baris bertumpuk, beri garis pemisah antar baris */
+@media (max-width: 768px) {
+  .transactions-container .transactions-summary .summary-item {
+    padding: 10px 0;
+  }
+
+  .transactions-container .transactions-summary .summary-item + .summary-item {
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+  }
+}
+
+/* =====================================================================
+   HALAMAN DOMPET – setiap kartu dompet bergaya premium
+   Warna dompet sudah ada di ikon (inline style color). Pseudo-element milik ikon
+   memakai currentColor sebagai warna dasar, dicampur white.jpg (multiply) lalu
+   ditutup gradient #2B2A4C agar teks putih selalu terbaca, apa pun warna dompetnya.
+   Berlaku otomatis juga untuk warna kustom (tanpa aturan per warna).
+   ===================================================================== */
+.wallets-container .wallet-cards .wallet-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  background: #2b2a4c; /* fallback */
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(43, 42, 76, 0.2);
+}
+
+.wallets-container .wallet-cards .wallet-card:hover {
+  box-shadow: 0 14px 32px rgba(43, 42, 76, 0.32);
+}
+
+/* Lapisan warna: mengacu ke .wallet-card (header & ikon tidak positioned) */
+.wallets-container .wallet-cards .wallet-card .wallet-card-icon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: currentColor;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.62) 0%,
+      rgba(43, 42, 76, 0.28) 100%
+    ),
+    url("../images/background/white.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-blend-mode: normal, multiply;
+}
+
+/* Highlight tipis (glass sheen) */
+.wallets-container .wallet-cards .wallet-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+/* Header: hilangkan latar & garis kiri inline (dari wallet.js) */
+.wallets-container .wallet-cards .wallet-card .wallet-card-header {
+  background: transparent !important;
+  border-left: none !important;
+}
+
+/* Ikon: chip putih; glyph tetap berwarna dompet (warna inline) */
+.wallets-container .wallet-cards .wallet-card .wallet-card-icon {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.wallets-container .wallet-cards .wallet-card .wallet-name-row h4 {
+  color: #fff;
+}
+
+.wallets-container .wallet-cards .wallet-card .wallet-type-badge {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+.wallets-container .wallet-cards .wallet-card .default-badge {
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  color: #fff;
+}
+
+/* Tombol edit/hapus kecil di header */
+.wallets-container .wallet-cards .wallet-card .wallet-card-actions .icon-btn {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.wallets-container
+  .wallet-cards
+  .wallet-card
+  .wallet-card-actions
+  .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Badan kartu */
+.wallets-container .wallet-cards .wallet-card .wallet-card-body {
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.wallets-container .wallet-cards .wallet-card .balance-label {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.wallets-container .wallet-cards .wallet-card .balance-amount {
+  color: #fff;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.2rem, 5vw, 1.5rem);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.wallets-container .wallet-cards .wallet-card .balance-amount.negative {
+  color: #fca5a5;
+}
+
+/* Tombol "Edit Saldo" (inline style di wallet.js -> perlu !important) */
+.wallets-container .wallet-cards .wallet-card .btn-edit-balance {
+  background: rgba(255, 255, 255, 0.14) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  color: #fff !important;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: background 0.2s ease;
+}
+
+.wallets-container .wallet-cards .wallet-card .btn-edit-balance:hover {
+  background: rgba(255, 255, 255, 0.26) !important;
+}
+
+/* =====================================================================
+   HALAMAN DOMPET – banner "Total Seluruh Saldo" (violet2.jpg + overlay #2B2A4C)
+   Ikon yang tidak perlu sudah dihapus dari template wallet.js.
+   ===================================================================== */
+.wallets-container .total-balance-card.card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 20px;
+  color: #fff;
+  text-align: center;
+  background-color: #2b2a4c; /* fallback jika gambar gagal dimuat */
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.4) 100%
+    ),
+    url("../images/background/violet2.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 28px rgba(43, 42, 76, 0.26);
+}
+
+/* Highlight tipis (glass sheen) */
+.wallets-container .total-balance-card.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+/* Label kecil di atas */
+.wallets-container .total-balance-card .total-balance-header {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+/* Nominal besar: tidak patah baris, mengecil otomatis di layar sempit */
+.wallets-container .total-balance-card .total-balance-amount {
+  margin: 0;
+  font-size: clamp(1.6rem, 6vw, 2.5rem);
+  font-weight: 700;
+  line-height: 1.15;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+/* Footer jadi chip glass */
+.wallets-container .total-balance-card .total-balance-footer {
+  opacity: 1;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* =====================================================================
+   HALAMAN TOTAL ASET
+   - Net Worth : violet2.jpg      - Total Aset : green.jpg
+   - Total Hutang : violet.jpg    - Header Rincian Aset : silver(sliver).jpg
+   - Header Rincian Hutang : violet.jpg
+   Daftar rincian tetap di latar putih agar mudah dibaca.
+   Semua selector di-scope ke .assets-container (nama class .summary-* juga
+   dipakai halaman lain). Nilai ditulis eksplisit karena .section-header /
+   .settings-section juga disuntik oleh halaman Dompet & Pengaturan.
+   ===================================================================== */
+
+/* ---------- Net Worth banner ---------- */
+.assets-container .networth-card.card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 20px;
+  color: #fff;
+  text-align: center;
+  background-color: #2b2a4c;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.4) 100%
+    ),
+    url("../images/background/violet2.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 28px rgba(43, 42, 76, 0.26);
+}
+
+.assets-container .networth-card.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+.assets-container .networth-card .networth-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.assets-container .networth-card .networth-amount {
+  font-size: clamp(1.6rem, 6vw, 2.6rem);
+  line-height: 1.15;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+
+.assets-container .networth-card .networth-formula {
+  margin: 0;
+  opacity: 1;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* ---------- Total Aset & Total Hutang ---------- */
+.assets-container .assets-summary-row .summary-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(43, 42, 76, 0.22);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.assets-container .assets-summary-row .summary-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(43, 42, 76, 0.32);
+}
+
+.assets-container .assets-summary-row .summary-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+.assets-container .assets-summary-row .summary-card.assets-card {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/green.jpg");
+}
+
+.assets-container .assets-summary-row .summary-card.liabilities-card {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.42) 100%
+    ),
+    url("../images/background/violet.jpg");
+}
+
+.assets-container .assets-summary-row .summary-card .summary-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
+}
+
+.assets-container .assets-summary-row .summary-card .summary-info {
+  min-width: 0;
+}
+
+.assets-container .assets-summary-row .summary-card .summary-label {
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.assets-container .assets-summary-row .summary-card .summary-value {
+  color: #fff;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(0.95rem, 3.4vw, 1.2rem);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* ---------- Rincian Aset & Rincian Hutang: header bergambar, isi tetap putih ---------- */
+.assets-container .settings-section.card {
+  padding: 0 20px 20px;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+}
+
+.assets-container .settings-section.card .section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 -20px 18px;
+  padding: 16px 20px;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.assets-container .settings-section.card .section-header h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.assets-container .settings-section.card .section-header i {
+  color: #fff;
+  font-size: 1.1rem;
+}
+
+/* Header pertama (Rincian Aset) -> silver ; kedua (Rincian Hutang) -> violet */
+.assets-container .settings-section.card .section-header {
+  background-image:
+    linear-gradient(
+      160deg,
+      rgba(43, 42, 76, 0.86) 0%,
+      rgba(43, 42, 76, 0.66) 100%
+    ),
+    url("../images/background/sliver.jpg");
+}
+
+.assets-container
+  .settings-section.card
+  ~ .settings-section.card
+  .section-header {
+  background-image:
+    linear-gradient(
+      160deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.55) 100%
+    ),
+    url("../images/background/violet.jpg");
+}
+
+/* Judul grup (Saldo Dompet / Tabungan / ...): rata kiri, nominal di kanan.
+   Sebelumnya teks terdorong ke tengah karena ada 3 elemen dengan space-between. */
+.assets-container .asset-detail-title {
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.assets-container .asset-detail-title > span {
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.assets-container .asset-detail-item > :last-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assets-container .assets-summary-row .summary-card {
+    transition: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .assets-container .assets-summary-row .summary-card:hover {
+    transform: none;
+  }
+}
+
+.assets-container .asset-detail-title > i {
+  flex-shrink: 0;
+}
+
+/* =====================================================================
+   HALAMAN TABUNGAN
+   - Banner "Progress Keseluruhan" : violet2.jpg + overlay #2B2A4C
+   - Header tiap kartu target      : bergantian violet / blue / green (isi kartu tetap putih)
+   Semua selector di-scope ke .savings-container, karena class .stat-label,
+   .stat-value, .progress-fill, .progress-text juga disuntik halaman lain.
+   ===================================================================== */
+
+/* ---------- Banner Progress Keseluruhan ---------- */
+.savings-container .overall-progress-card.card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  padding: 26px 20px 22px;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.4) 100%
+    ),
+    url("../images/background/violet2.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 28px rgba(43, 42, 76, 0.26);
+}
+
+.savings-container .overall-progress-card.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.14) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+/* Judul: ikon grafik dihilangkan, label kecil kapital */
+.savings-container .overall-progress-card .progress-header {
+  margin-bottom: 18px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.savings-container .overall-progress-card .progress-header i {
+  display: none;
+}
+
+.savings-container .overall-progress-card .progress-stats {
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.savings-container .overall-progress-card .progress-stats .stat {
+  flex: 1;
+  max-width: 260px;
+  padding: 0 16px;
+  min-width: 0;
+}
+
+.savings-container .overall-progress-card .progress-stats .stat + .stat {
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Label dulu abu-abu (tertimpa .stat-label global) -> putih lembut */
+.savings-container .overall-progress-card .progress-stats .stat-label {
+  color: rgba(255, 255, 255, 0.82);
+  opacity: 1;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.savings-container .overall-progress-card .progress-stats .stat-value {
+  color: #fff;
+  font-size: clamp(1rem, 4.2vw, 1.5rem);
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* Progress bar banner: track glass, fill putih dengan glow tipis */
+.savings-container .overall-progress-card .progress-bar-container {
+  height: 10px;
+  margin: 14px 0;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.savings-container .overall-progress-card .progress-fill {
+  background: #fff;
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.55);
+}
+
+.savings-container .overall-progress-card .progress-percentage {
+  display: inline-block;
+  padding: 4px 14px;
+  font-size: 0.78rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+/* ---------- Kartu target tabungan ---------- */
+.savings-container .saving-card {
+  border: 1px solid var(--border-color);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.savings-container .saving-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(43, 42, 76, 0.18);
+}
+
+/* Header bergambar */
+.savings-container .saving-card .saving-card-header {
+  position: relative;
+  isolation: isolate;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.savings-container .saving-card .saving-card-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+/* Variasi gambar bergantian: violet -> blue -> green */
+.savings-container .saving-card:nth-child(3n + 1) .saving-card-header {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/violet.jpg");
+}
+
+.savings-container .saving-card:nth-child(3n + 2) .saving-card-header {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/blue.jpg");
+}
+
+.savings-container .saving-card:nth-child(3n) .saving-card-header {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/green.jpg");
+}
+
+.savings-container .saving-card .saving-info h3 {
+  color: #fff;
+}
+
+.savings-container .saving-card .saving-description {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Ikon bawaan: chip putih, glyph tetap ungu. Foto: bingkai putih tipis */
+.savings-container .saving-card .saving-icon {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.savings-container .saving-card .saving-icon.has-photo {
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.7);
+}
+
+/* Tombol aksi (tambah / ambil / riwayat / edit / hapus) */
+.savings-container .saving-card .saving-actions .icon-btn {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.savings-container .saving-card .saving-actions .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Isi kartu */
+.savings-container .saving-card .amount-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Progress bar di kartu: dulu putih di atas putih (tidak terlihat) */
+.savings-container .saving-card .progress-bar-container {
+  height: 10px;
+  margin: 4px 0 0;
+  background: var(--border-color);
+}
+
+.savings-container .saving-card .progress-fill {
+  background: linear-gradient(90deg, #8b5cf6, #6366f1);
+}
+
+.savings-container .saving-card .progress-fill.completed {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .savings-container .saving-card {
+    transition: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .savings-container .saving-card:hover {
+    transform: none;
+  }
+}
+
+/* =====================================================================
+   HALAMAN HUTANG / PIUTANG (debt.js)
+   - Saya Berhutang : violet.jpg   - Orang Berhutang : green.jpg
+   - Net Balance    : blue.jpg     - Tab aktif : violet2.jpg
+   - Header kartu   : green.jpg (berhutang ke saya) / violet.jpg (saya berhutang)
+   Isi kartu (nominal, bunga, progress) tetap di latar putih.
+   Semua selector di-scope ke .debts-container karena .stat-label, .stat-value,
+   .progress-* juga disuntik oleh halaman lain.
+   ===================================================================== */
+
+/* ---------- 3 kartu ringkasan ---------- */
+.debts-container .stats-row .stat-card-mini {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 8px 24px rgba(43, 42, 76, 0.22);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.debts-container .stats-row .stat-card-mini:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 32px rgba(43, 42, 76, 0.32);
+}
+
+.debts-container .stats-row .stat-card-mini::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+.debts-container .stats-row .stat-card-mini:nth-child(1) {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.42) 100%
+    ),
+    url("../images/background/violet.jpg");
+}
+
+.debts-container .stats-row .stat-card-mini:nth-child(2) {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/green.jpg");
+}
+
+.debts-container .stats-row .stat-card-mini:nth-child(3) {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/blue.jpg");
+}
+
+.debts-container .stats-row .stat-card-mini .stat-icon {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  flex-shrink: 0;
+}
+
+.debts-container .stats-row .stat-card-mini .stat-details {
+  min-width: 0;
+}
+
+.debts-container .stats-row .stat-card-mini .stat-label {
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.debts-container .stats-row .stat-card-mini .stat-value {
+  color: #fff;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(0.95rem, 3.4vw, 1.2rem);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.25);
+}
+
+.debts-container .stats-row .stat-card-mini .stat-value small {
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: none;
+}
+
+/* Net balance: warna status versi terang agar kontras di atas gelap */
+.debts-container .stats-row .stat-card-mini .stat-value.positive {
+  color: #6ee7b7;
+}
+
+.debts-container .stats-row .stat-card-mini .stat-value.negative {
+  color: #fca5a5;
+}
+
+/* ---------- Tab Aktif / Lunas / Overdue ---------- */
+.debts-container .debt-tabs {
+  border: 1px solid var(--border-color);
+}
+
+.debts-container .debt-tabs .tab-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  font-weight: 500;
+}
+
+.debts-container .debt-tabs .tab-btn.active {
+  color: #fff;
+  background-color: #2b2a4c;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.78) 0%,
+      rgba(43, 42, 76, 0.4) 100%
+    ),
+    url("../images/background/violet2.jpg");
+  background-size: cover;
+  background-position: center;
+  box-shadow: 0 4px 14px rgba(43, 42, 76, 0.3);
+}
+
+/* ---------- Kartu hutang / piutang ---------- */
+.debts-container .debt-card {
+  border: 1px solid var(--border-color);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.debts-container .debt-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(43, 42, 76, 0.18);
+}
+
+/* Kartu jatuh tempo: garis merah di kiri tetap ada */
+.debts-container .debt-card.overdue {
+  border-left: 4px solid #ef4444;
+}
+
+/* Header bergambar. Default violet; jenis piutang (orang berhutang ke saya) -> green.
+   Pemilihan jenis memakai :has() (didukung semua browser modern). */
+.debts-container .debt-card .debt-card-header {
+  position: relative;
+  isolation: isolate;
+  color: #fff;
+  background-color: #2b2a4c;
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/violet.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.debts-container .debt-card .debt-card-header:has(.debt-icon.debt) {
+  background-image:
+    linear-gradient(
+      135deg,
+      rgba(43, 42, 76, 0.8) 0%,
+      rgba(43, 42, 76, 0.45) 100%
+    ),
+    url("../images/background/green.jpg");
+}
+
+.debts-container .debt-card .debt-card-header::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 45%
+  );
+}
+
+.debts-container .debt-card .debt-party h3 {
+  color: #fff;
+}
+
+.debts-container .debt-card .debt-description {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+/* Ikon: chip putih, glyph tetap hijau/merah sesuai jenis */
+.debts-container .debt-card .debt-icon {
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* Badge jenis: glass putih */
+.debts-container .debt-card .debt-badge {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+/* Tombol aksi */
+.debts-container .debt-card .debt-actions .icon-btn {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.debts-container .debt-card .debt-actions .icon-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Isi kartu */
+.debts-container .debt-card .amount-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Progress "xx% lunas": sebelumnya tidak terlihat (style bar milik halaman lain) */
+.debts-container .debt-card .progress-bar-container {
+  height: 10px;
+  margin: 10px 0 0;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--border-color);
+}
+
+.debts-container .debt-card .progress-fill {
+  height: 100%;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  transition: width 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .debts-container .stats-row .stat-card-mini,
+  .debts-container .debt-card {
+    transition: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .debts-container .stats-row .stat-card-mini:hover,
+  .debts-container .debt-card:hover {
+    transform: none;
+  }
+}

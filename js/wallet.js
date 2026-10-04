@@ -97,12 +97,11 @@ export async function renderWalletsPage() {
             <!-- Total Balance Card -->
             <div class="total-balance-card card">
                 <div class="total-balance-header">
-                    <i class="fas fa-chart-line"></i>
                     <span>Total Seluruh Saldo</span>
                 </div>
                 <div class="total-balance-amount">${formatCurrency(totalBalance)}</div>
                 <div class="total-balance-footer">
-                    <span>📊 ${allWallets.length} Dompet Aktif</span>
+                    <span>${allWallets.length} Dompet Aktif</span>
                 </div>
             </div>
             
@@ -455,7 +454,8 @@ async function showWalletModal(walletId = null) {
     const type = typeInput.value;
     const icon = iconInput.value;
     const color = colorInput.value;
-    const balance = parseMoney(modal.querySelector("#wallet-balance").value) || 0;
+    const balance =
+      parseMoney(modal.querySelector("#wallet-balance").value) || 0;
 
     if (!name) {
       showToast("Nama dompet harus diisi", "error");
@@ -780,7 +780,8 @@ async function showTransferModal() {
 
     const fromId = fromSelect.value;
     const toId = toSelect.value;
-    const amount = parseMoney(modal.querySelector("#transfer-amount").value) || 0;
+    const amount =
+      parseMoney(modal.querySelector("#transfer-amount").value) || 0;
     const note = modal.querySelector("#transfer-note").value.trim();
     const date = modal.querySelector("#transfer-date").value || today;
 
