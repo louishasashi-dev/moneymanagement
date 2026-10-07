@@ -335,6 +335,14 @@ async function loadPage(page) {
         break;
       }
 
+      case "simulation": {
+        const { renderSimulationPage } = await import("./simulation.js");
+
+        await renderSimulationPage();
+
+        break;
+      }
+
       case "reports":
         try {
           const module = await import("./report.js");
