@@ -1447,11 +1447,12 @@ async function showTransactionModal(transactionId = null) {
 }
 
 // Modal untuk memilih tabungan tujuan (dipakai saat transaksi bertipe "saving")
-async function showSelectSavingGoalModal(
+export async function showSelectSavingGoalModal(
   amount,
   itemName,
   preselectedId,
   onConfirm,
+  helpText = "Nominal transaksi ini akan langsung ditambahkan ke tabungan yang dipilih.",
 ) {
   const savings = await getAllItems(STORES.SAVINGS);
 
@@ -1489,7 +1490,7 @@ async function showSelectSavingGoalModal(
               )
               .join("")}
           </select>
-          <small class="form-help">Nominal transaksi ini akan langsung ditambahkan ke tabungan yang dipilih.</small>
+          <small class="form-help">${helpText}</small>
         </div>
         <div class="modal-buttons">
           <button type="button" class="btn-secondary modal-close-btn">Batal</button>

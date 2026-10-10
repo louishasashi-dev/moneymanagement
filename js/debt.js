@@ -473,6 +473,21 @@ function renderDebtCard(debt) {
                     : ""
                 }
                 ${
+                  debt.isInstallment === true &&
+                  Array.isArray(debt.installments) &&
+                  debt.installments.length > 0
+                    ? `<details class="progress-text" style="margin-bottom:10px;">
+                        <summary><i class="fas fa-calendar-alt"></i> Diangsur: ${debt.installments.length} angsuran • total ${formatCurrency(debt.installments.reduce((s, it) => s + it.amount, 0))}</summary>
+                        ${debt.installments
+                          .map(
+                            (it, i) =>
+                              `<div>Angsuran ${i + 1}: ${formatCurrency(it.amount)} • jatuh tempo ${formatDate(it.dueDate, "dd/mm/yyyy")}</div>`,
+                          )
+                          .join("")}
+                       </details>`
+                    : ""
+                }
+                ${
                   progress > 0 && progress < 100
                     ? `
                     <div class="progress-bar-container">
@@ -618,7 +633,7 @@ async function showDebtModal(debtId = null) {
             </div>
             
             <div class="form-group">
-                <label>Nama <span class="required">*</span></label>
+                <label id="debt-party-label">Nama <span class="required">*</span></label>
                 <input type="text" id="debt-party" class="form-input" 
                        value="${isEdit ? escapeHtml(debt.partyName) : ""}" 
                        placeholder="Nama orang/toko/perusahaan" required>
@@ -629,6 +644,32 @@ async function showDebtModal(debtId = null) {
                 <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-amount" class="form-input" 
                        value="${isEdit ? formatMoneyInput(debt.amount) : ""}" 
                        placeholder="0" min="1" required>
+            </div>
+
+            <div class="form-group">
+                <label>Cara Pembayaran</label>
+                <select id="debt-installment-mode" class="form-input">
+                    <option value="once" ${!isEdit || debt.isInstallment !== true ? "selected" : ""}>Sekaligus / bebas</option>
+                    <option value="installment" ${isEdit && debt.isInstallment === true ? "selected" : ""}>Diangsur (cicilan)</option>
+                </select>
+            </div>
+
+            <div id="debt-installment-fields" style="display:none;">
+                <div class="form-group">
+                    <label>Tanggal Awal Peminjaman (Opsional)</label>
+                    <input type="date" id="debt-inst-start" class="form-input"
+                           value="${isEdit && debt.installmentStartDate ? debt.installmentStartDate : ""}">
+                </div>
+                <div class="multi-section-title">Daftar Angsuran</div>
+                <div id="debt-inst-list"></div>
+                <button type="button" class="btn-secondary multi-add-btn" id="debt-inst-add">
+                    <i class="fas fa-plus"></i> Tambah Angsuran
+                </button>
+                <div class="multi-total-row" style="margin-top:12px;">
+                    <span>Total Angsuran</span>
+                    <span id="debt-inst-total">${formatCurrency(0)}</span>
+                </div>
+                <small class="form-help">Nominal tiap angsuran tidak boleh melebihi nominal pinjaman</small>
             </div>
             
             <div class="form-group">
@@ -780,6 +821,116 @@ async function showDebtModal(debtId = null) {
   interestPeriodSelect.addEventListener("change", updateInterestPreview);
   updateInterestPreview();
 
+  // ===== Hutang/piutang diangsur: daftar angsuran diinput manual per angsuran =====
+  const installmentModeSelect = modal.querySelector("#debt-installment-mode");
+  const installmentFields = modal.querySelector("#debt-installment-fields");
+  const instList = modal.querySelector("#debt-inst-list");
+  const instTotalEl = modal.querySelector("#debt-inst-total");
+  const partyLabel = modal.querySelector("#debt-party-label");
+  const partyInput = modal.querySelector("#debt-party");
+
+  // Bentuk: [{ amount: "100.000", dueDate: "2027-01-01" }]
+  let installments =
+    isEdit && Array.isArray(debt.installments) && debt.installments.length > 0
+      ? debt.installments.map((it) => ({
+          amount: String(it.amount ?? ""),
+          dueDate: it.dueDate || "",
+        }))
+      : [{ amount: "", dueDate: "" }];
+
+  const updateInstallmentTotal = () => {
+    const total = installments.reduce(
+      (s, it) => s + (parseMoney(it.amount) || 0),
+      0,
+    );
+    instTotalEl.textContent = formatCurrency(total);
+  };
+
+  const renderInstallmentRows = () => {
+    instList.innerHTML = installments
+      .map(
+        (it, i) => `
+        <div class="multi-item" data-index="${i}">
+            <div class="multi-item-header">
+                <span class="multi-item-title">Angsuran ${i + 1}</span>
+                ${
+                  installments.length > 1
+                    ? `<button type="button" class="icon-btn debt-inst-remove" title="Hapus angsuran" aria-label="Hapus Angsuran ${i + 1}"><i class="fas fa-trash"></i></button>`
+                    : ""
+                }
+            </div>
+            <div class="multi-form-row">
+                <div class="form-group">
+                    <label>Nominal <span class="required">*</span></label>
+                    <input type="text" inputmode="numeric" autocomplete="off" data-money class="form-input debt-inst-amount" value="${formatMoneyInput(it.amount)}" placeholder="0">
+                </div>
+                <div class="form-group">
+                    <label>Tanggal Jatuh Tempo <span class="required">*</span></label>
+                    <input type="date" class="form-input debt-inst-due" value="${it.dueDate}">
+                </div>
+            </div>
+        </div>`,
+      )
+      .join("");
+    updateInstallmentTotal();
+  };
+
+  const onInstallmentInput = (e) => {
+    const block = e.target.closest(".multi-item");
+    if (!block) return;
+    const it = installments[Number(block.dataset.index)];
+    if (!it) return;
+    if (e.target.classList.contains("debt-inst-amount")) {
+      it.amount = e.target.value;
+      updateInstallmentTotal();
+    } else if (e.target.classList.contains("debt-inst-due")) {
+      it.dueDate = e.target.value;
+    }
+  };
+  instList.addEventListener("input", onInstallmentInput);
+  instList.addEventListener("change", onInstallmentInput);
+
+  instList.addEventListener("click", (e) => {
+    const removeBtn = e.target.closest(".debt-inst-remove");
+    if (!removeBtn || installments.length <= 1) return;
+    installments.splice(
+      Number(removeBtn.closest(".multi-item").dataset.index),
+      1,
+    );
+    renderInstallmentRows();
+  });
+
+  modal.querySelector("#debt-inst-add").addEventListener("click", () => {
+    installments.push({ amount: "", dueDate: "" });
+    renderInstallmentRows();
+    const blocks = instList.querySelectorAll(".multi-item");
+    const last = blocks[blocks.length - 1];
+    if (last) {
+      last.scrollIntoView({ block: "nearest" });
+      last.querySelector(".debt-inst-amount").focus();
+    }
+  });
+
+  // Tampilkan daftar angsuran hanya untuk mode "Diangsur"; label nama
+  // mengikuti tipe: piutang -> peminjam, hutang -> pihak pemberi pinjaman
+  const updateInstallmentUI = () => {
+    const on = installmentModeSelect.value === "installment";
+    installmentFields.style.display = on ? "" : "none";
+    const isOweType = typeInput.value === "owe";
+    partyLabel.innerHTML = `${
+      !on ? "Nama" : isOweType ? "Nama Pemberi Pinjaman" : "Nama Peminjam"
+    } <span class="required">*</span>`;
+    partyInput.placeholder = !on
+      ? "Nama orang/toko/perusahaan"
+      : isOweType
+        ? "Nama pihak yang memberi pinjaman"
+        : "Nama peminjam";
+  };
+  installmentModeSelect.addEventListener("change", updateInstallmentUI);
+  typeBtns.forEach((btn) => btn.addEventListener("click", updateInstallmentUI));
+  renderInstallmentRows();
+  updateInstallmentUI();
+
   // Handle form submission
   const form = modal.querySelector("#debt-form");
   form.addEventListener("submit", async (e) => {
@@ -810,6 +961,37 @@ async function showDebtModal(debtId = null) {
     if (interestRate < 0) {
       showToast("Persentase bunga tidak boleh negatif", "error");
       return;
+    }
+
+    // Hutang/piutang yang diangsur: tiap angsuran wajib valid, dan tidak boleh
+    // melebihi nominal pinjaman (total semua angsuran tidak dibatasi)
+    const isInstallment = installmentModeSelect.value === "installment";
+    const installmentStartDate = modal.querySelector("#debt-inst-start").value;
+    const installmentList = [];
+    if (isInstallment) {
+      for (let i = 0; i < installments.length; i++) {
+        const instAmount = parseMoney(installments[i].amount);
+        const instDue = installments[i].dueDate;
+        if (!instAmount || instAmount <= 0) {
+          showToast(`Nominal angsuran ${i + 1} harus lebih dari 0`, "error");
+          return;
+        }
+        if (instAmount > amount) {
+          showToast(
+            `Nominal angsuran ${i + 1} tidak boleh melebihi nominal pinjaman`,
+            "error",
+          );
+          return;
+        }
+        if (!instDue) {
+          showToast(
+            `Tanggal jatuh tempo angsuran ${i + 1} harus diisi`,
+            "error",
+          );
+          return;
+        }
+        installmentList.push({ amount: instAmount, dueDate: instDue });
+      }
     }
 
     // Handle remaining amount
@@ -851,6 +1033,11 @@ async function showDebtModal(debtId = null) {
       debt.interestRate = interestRate;
       debt.interestPeriod = interestPeriod;
       debt.interestType = interestType;
+      debt.isInstallment = isInstallment;
+      if (isInstallment) {
+        debt.installments = installmentList;
+        debt.installmentStartDate = installmentStartDate || "";
+      }
       debt.updatedAt = getCurrentDateTime().datetime;
 
       if (willHaveInterest && !wasInterestActive) {
@@ -878,6 +1065,13 @@ async function showDebtModal(debtId = null) {
         interestRate: interestRate,
         interestPeriod: interestPeriod,
         interestType: interestType,
+        isInstallment: isInstallment,
+        ...(isInstallment
+          ? {
+              installments: installmentList,
+              installmentStartDate: installmentStartDate || "",
+            }
+          : {}),
         lastInterestDate: willHaveInterest ? getCurrentDateTime().date : null,
         createdAt: getCurrentDateTime().datetime,
         updatedAt: getCurrentDateTime().datetime,

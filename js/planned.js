@@ -20,6 +20,8 @@ import {
   parseMoney,
   generateId,
 } from "./utils.js";
+import { getTemplatesByType } from "./template.js";
+import { showSelectSavingGoalModal } from "./transaction.js";
 
 const PLANNED_STORE = "planned_transactions";
 const PLAN_STORE = STORES.PLANNED_PLANS;
@@ -32,6 +34,10 @@ const LEGACY_PLAN_NAME = "Rencana Transaksi";
 
 // State navigasi in-page: null = daftar plan, string = detail plan.
 let currentPlanId = null;
+
+// Nama tabungan (id -> nama) untuk label item rencana bertipe tabungan.
+// Diisi saat render detail plan; hanya untuk tampilan.
+let savingNameById = new Map();
 
 // ───────────────────────────────────────────────
 // DB helpers (planned pakai localStorage sebagai
@@ -312,8 +318,25 @@ async function confirmPlanned(id) {
     return;
   }
 
-  // Cek saldo untuk pengeluaran
-  if (item.type === "expense" && wallet.balance < item.amount) {
+  // Tipe tabungan: tabungan tujuan (dipilih saat rencana dibuat) harus masih ada
+  const isSaving = item.type === "saving";
+  let saving = null;
+  if (isSaving) {
+    saving =
+      item.savingId != null
+        ? await getItem(STORES.SAVINGS, item.savingId)
+        : null;
+    if (!saving) {
+      showToast(
+        "Tabungan tujuan tidak ditemukan. Edit rencana dan pilih tabungan lagi.",
+        "error",
+      );
+      return;
+    }
+  }
+
+  // Cek saldo untuk pengeluaran & tabungan (sama-sama mengambil dari saldo dompet)
+  if ((item.type === "expense" || isSaving) && wallet.balance < item.amount) {
     showToast(
       `Saldo ${wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(wallet.balance)})`,
       "error",
@@ -325,7 +348,7 @@ async function confirmPlanned(id) {
   const confirmedAt = getCurrentDateTime();
 
   // Tambah ke transaksi aktual
-  await addItem(STORES.TRANSACTIONS, {
+  const txId = await addItem(STORES.TRANSACTIONS, {
     itemName: item.itemName,
     amount: item.amount, // sudah total (harga satuan × quantity), jangan dikalikan lagi
     quantity: item.quantity || 1, // data lama tanpa quantity = 1
@@ -333,6 +356,7 @@ async function confirmPlanned(id) {
     category: item.category,
     walletId: item.walletId,
     note: item.note || "",
+    savingId: isSaving ? item.savingId : null,
     date: confirmedAt.date,
     time: confirmedAt.time,
     createdAt: new Date().toISOString(),
@@ -345,6 +369,27 @@ async function confirmPlanned(id) {
     wallet.balance -= item.amount;
   }
   await updateItem(STORES.WALLETS, wallet);
+
+  // Tipe tabungan: tambahkan ke tabungan tujuan + catat riwayat (sama dengan transaction.js)
+  if (isSaving) {
+    const previousAmount = saving.currentAmount;
+    saving.currentAmount += item.amount;
+    saving.status =
+      saving.currentAmount >= saving.targetAmount ? "completed" : "active";
+    saving.updatedAt = confirmedAt.datetime;
+    if (!Array.isArray(saving.history)) saving.history = [];
+    saving.history.push({
+      type: "deposit",
+      amount: item.amount,
+      note: item.note || `Dari transaksi: ${item.itemName}`,
+      date: new Date().toISOString(),
+      previousAmount,
+      newAmount: saving.currentAmount,
+      source: "transaction",
+      transactionId: txId,
+    });
+    await updateItem(STORES.SAVINGS, saving);
+  }
 
   // Tandai planned sebagai confirmed
   item.status = "confirmed";
@@ -514,26 +559,33 @@ async function showPlanNameModal(planId = null) {
     if (e.target === modal) modal.remove();
   });
 
-  modal.querySelector("#plan-name-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const name = modal.querySelector("#plan-name").value.trim();
-    if (!name) {
-      showToast("Nama rencana harus diisi", "error");
-      return;
-    }
+  modal
+    .querySelector("#plan-name-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = modal.querySelector("#plan-name").value.trim();
+      if (!name) {
+        showToast("Nama rencana harus diisi", "error");
+        return;
+      }
 
-    if (isEdit) {
-      await planPut({ ...plan, name, updatedAt: new Date().toISOString() });
-      showToast("Nama rencana diperbarui", "success");
-    } else {
-      const now = new Date().toISOString();
-      await planPut({ id: generateId(), name, createdAt: now, updatedAt: now });
-      showToast("Rencana dibuat", "success");
-    }
+      if (isEdit) {
+        await planPut({ ...plan, name, updatedAt: new Date().toISOString() });
+        showToast("Nama rencana diperbarui", "success");
+      } else {
+        const now = new Date().toISOString();
+        await planPut({
+          id: generateId(),
+          name,
+          createdAt: now,
+          updatedAt: now,
+        });
+        showToast("Rencana dibuat", "success");
+      }
 
-    modal.remove();
-    await renderPlannedView();
-  });
+      modal.remove();
+      await renderPlannedView();
+    });
 }
 
 // ───────────────────────────────────────────────
@@ -588,6 +640,9 @@ async function renderPlanDetail() {
     (i) => planIdOf(i) === currentPlanId,
   );
   items.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  savingNameById = new Map(
+    (await getAllItems(STORES.SAVINGS)).map((s) => [s.id, s.name]),
+  );
 
   const pending = items.filter((i) => i.status === "pending");
   const confirmed = items.filter((i) => i.status === "confirmed");
@@ -874,10 +929,13 @@ function renderWalletUsageStats(allItems, wallets) {
 
 function renderPlannedItem(item, isConfirmed = false) {
   const isIncome = item.type === "income";
+  const isSaving = item.type === "saving";
   const quantity = item.quantity || 1;
   const amountColor = isIncome
     ? "var(--success,#10b981)"
-    : "var(--danger,#ef4444)";
+    : isSaving
+      ? "var(--primary,#6366f1)"
+      : "var(--danger,#ef4444)";
   const amountSign = isIncome ? "+" : "-";
 
   return `
@@ -889,18 +947,18 @@ function renderPlannedItem(item, isConfirmed = false) {
     ">
       <div style="
         width:40px;height:40px;border-radius:50%;flex-shrink:0;
-        background:${isIncome ? "rgba(16,185,129,.15)" : "rgba(239,68,68,.15)"};
+        background:${isIncome ? "rgba(16,185,129,.15)" : isSaving ? "rgba(99,102,241,.15)" : "rgba(239,68,68,.15)"};
         display:flex;align-items:center;justify-content:center;
         font-size:1.1rem;
       ">
-        <i class="fas ${isIncome ? "fa-arrow-down" : "fa-arrow-up"}" style="color:${amountColor};"></i>
+        <i class="fas ${isIncome ? "fa-arrow-down" : isSaving ? "fa-piggy-bank" : "fa-arrow-up"}" style="color:${amountColor};"></i>
       </div>
       <div style="flex:1;min-width:0;">
         <div style="font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           ${escapeHtml(item.itemName)}
         </div>
         <div style="font-size:.78rem;color:var(--text-secondary);margin-top:2px;">
-          ${item.category || "-"}${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
+          ${item.category || "-"}${isSaving && savingNameById.get(item.savingId) ? ` • ke ${escapeHtml(savingNameById.get(item.savingId))}` : ""}${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
           ${item.note ? `<br><span style="font-style:italic;">${escapeHtml(item.note)}</span>` : ""}
         </div>
       </div>
@@ -1014,8 +1072,18 @@ async function showPlannedModal(plannedId = null) {
               <button type="button" class="type-btn ${isEdit && item.type === "income" ? "active" : ""}" data-type="income">
                 <i class="fas fa-arrow-down"></i> Pemasukan
               </button>
+              <button type="button" class="type-btn ${isEdit && item.type === "saving" ? "active" : ""}" data-type="saving">
+                <i class="fas fa-piggy-bank"></i> Tabungan
+              </button>
             </div>
             <input type="hidden" id="planned-type" value="${isEdit ? item.type : "expense"}">
+          </div>
+
+          <div class="form-group" id="planned-template-group">
+            <label>Template (Opsional)</label>
+            <select id="planned-template" class="form-input">
+              <option value="">Tanpa Template</option>
+            </select>
           </div>
 
           <div class="form-group">
@@ -1047,7 +1115,7 @@ async function showPlannedModal(plannedId = null) {
             <input type="hidden" id="planned-quantity" value="${isEdit ? item.quantity || 1 : 1}">
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="planned-category-group">
             <label>Kategori</label>
             <select id="planned-category" class="form-input">
               <option value="">Pilih Kategori</option>
@@ -1077,7 +1145,7 @@ async function showPlannedModal(plannedId = null) {
             <button type="button" class="btn-secondary modal-close-btn">Batal</button>
             <button type="submit" class="btn-primary">
               <i class="fas fa-save"></i>
-              ${isEdit ? "Simpan Perubahan" : "Simpan Rencana"}
+              <span id="planned-submit-label">${isEdit ? "Simpan Perubahan" : "Simpan Rencana"}</span>
             </button>
           </div>
         </form>
@@ -1095,7 +1163,83 @@ async function showPlannedModal(plannedId = null) {
       typeBtns.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       typeInput.value = btn.dataset.type;
+      updateTypeUI();
     });
+  });
+
+  // Tipe Tabungan: tanpa jumlah/kategori/template (kategori otomatis "Tabungan").
+  // Template hanya untuk Pengeluaran/Pemasukan (pola sama dengan transaction.js).
+  const templateSelect = modal.querySelector("#planned-template");
+  async function updateTypeUI() {
+    const t = typeInput.value;
+    const isSavingType = t === "saving";
+    modal.querySelector("#planned-quantity-group").style.display = isSavingType
+      ? "none"
+      : "";
+    modal.querySelector("#planned-category-group").style.display = isSavingType
+      ? "none"
+      : "";
+    modal.querySelector("#planned-template-group").style.display = isSavingType
+      ? "none"
+      : "";
+    modal.querySelector("#planned-submit-label").textContent = isEdit
+      ? "Simpan Perubahan"
+      : isSavingType
+        ? "Tambah Rencana Tabungan"
+        : "Simpan Rencana";
+    if (isSavingType) {
+      templateSelect.value = "";
+      return;
+    }
+    let templates = [];
+    try {
+      templates = await getTemplatesByType(t);
+    } catch (err) {
+      console.error("Gagal memuat template:", err);
+    }
+    templateSelect.innerHTML =
+      `<option value="">Tanpa Template</option>` +
+      templates
+        .map(
+          (tpl) => `<option value="${tpl.id}">${escapeHtml(tpl.name)}</option>`,
+        )
+        .join("");
+  }
+
+  // Pilih template = autofill form saja, TIDAK membuat rencana
+  templateSelect.addEventListener("change", async () => {
+    const templateId = Number(templateSelect.value);
+    if (!templateId) return;
+    let templates = [];
+    try {
+      templates = await getTemplatesByType(typeInput.value);
+    } catch (err) {
+      console.error("Gagal memuat template:", err);
+      return;
+    }
+    const tpl = templates.find((x) => x.id === templateId);
+    if (!tpl) return;
+
+    modal.querySelector("#planned-name").value = tpl.name;
+    modal.querySelector("#planned-amount").value = formatMoneyInput(tpl.amount);
+    setQuantitySelection(tpl.quantity || 1);
+
+    // Kategori/dompet: isi hanya kalau masih tersedia
+    const categorySelect = modal.querySelector("#planned-category");
+    if (
+      tpl.category &&
+      Array.from(categorySelect.options).some((o) => o.value === tpl.category)
+    ) {
+      categorySelect.value = tpl.category;
+    }
+    const walletSelect = modal.querySelector("#planned-wallet");
+    if (
+      tpl.walletId &&
+      Array.from(walletSelect.options).some((o) => o.value === tpl.walletId)
+    ) {
+      walletSelect.value = tpl.walletId;
+    }
+    if (tpl.note) modal.querySelector("#planned-note").value = tpl.note;
   });
 
   // Quantity selector (pola sama dengan transaction.js)
@@ -1113,7 +1257,8 @@ async function showPlannedModal(plannedId = null) {
     });
     quantityCustomInput.style.display = isPreset ? "none" : "";
     // Tampilan custom diformat ribuan; nilai hidden tetap angka murni
-    if (!isPreset) quantityCustomInput.value = qty > 0 ? formatMoneyInput(qty) : "";
+    if (!isPreset)
+      quantityCustomInput.value = qty > 0 ? formatMoneyInput(qty) : "";
     quantityInput.value = qty;
   }
 
@@ -1139,6 +1284,7 @@ async function showPlannedModal(plannedId = null) {
 
   // State awal (edit: quantity lama; data lama tanpa quantity = 1)
   setQuantitySelection(isEdit ? item.quantity || 1 : 1);
+  updateTypeUI();
 
   // Close handlers
   modal.querySelectorAll(".modal-close-btn, .modal-close-x").forEach((btn) => {
@@ -1153,9 +1299,12 @@ async function showPlannedModal(plannedId = null) {
     e.preventDefault();
 
     const name = modal.querySelector("#planned-name").value.trim();
-    const unitPrice = parseMoney(modal.querySelector("#planned-amount").value, 10);
-    const quantity = parseInt(quantityInput.value, 10);
+    const unitPrice = parseMoney(
+      modal.querySelector("#planned-amount").value,
+      10,
+    );
     const type = typeInput.value;
+    const quantity = type === "saving" ? 1 : parseInt(quantityInput.value, 10);
     let category = modal.querySelector("#planned-category").value;
     const walletId = modal.querySelector("#planned-wallet").value;
     const note = modal.querySelector("#planned-note").value;
@@ -1178,41 +1327,62 @@ async function showPlannedModal(plannedId = null) {
       showToast("Pilih dompet", "error");
       return;
     }
-    if (!category) category = type === "income" ? "Lainnya" : "Lainnya";
+    if (type === "saving") category = "Tabungan";
+    else if (!category) category = "Lainnya";
 
-    const data = {
-      itemName: capitalize(name),
-      amount,
-      quantity,
-      type,
-      category,
-      walletId,
-      note,
-      // Multi-plan: create => plan yang sedang dibuka; edit => pertahankan plan
-      // item (item lama tanpa planId tetap dianggap plan legacy, tidak ditulis ulang)
-      ...(isEdit
-        ? item.planId
-          ? { planId: item.planId }
-          : {}
-        : { planId: currentPlanId }),
-      // Data lama: pertahankan tanggal/jam lama saat diedit (tidak dipakai sebagai tanggal transaksi aktual)
-      ...(isEdit && item.date ? { date: item.date, time: item.time } : {}),
-      status: "pending",
-      createdAt: isEdit ? item.createdAt : new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const savePlanned = async (savingId = null) => {
+      const data = {
+        itemName: capitalize(name),
+        amount,
+        quantity,
+        type,
+        category,
+        walletId,
+        note,
+        // Tipe tabungan: tabungan tujuan hanya DISIMPAN di rencana; saldo tabungan
+        // baru berubah saat rencana dikonfirmasi (confirmPlanned)
+        ...(type === "saving" ? { savingId } : {}),
+        // Multi-plan: create => plan yang sedang dibuka; edit => pertahankan plan
+        // item (item lama tanpa planId tetap dianggap plan legacy, tidak ditulis ulang)
+        ...(isEdit
+          ? item.planId
+            ? { planId: item.planId }
+            : {}
+          : { planId: currentPlanId }),
+        // Data lama: pertahankan tanggal/jam lama saat diedit (tidak dipakai sebagai tanggal transaksi aktual)
+        ...(isEdit && item.date ? { date: item.date, time: item.time } : {}),
+        status: "pending",
+        createdAt: isEdit ? item.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (isEdit) {
+        data.id = item.id;
+        await plannedUpdate(data);
+        showToast("Rencana transaksi diperbarui", "success");
+      } else {
+        await plannedAdd(data);
+        showToast("Rencana transaksi disimpan!", "success");
+      }
+
+      modal.remove();
+      await renderPlannedView();
     };
 
-    if (isEdit) {
-      data.id = item.id;
-      await plannedUpdate(data);
-      showToast("Rencana transaksi diperbarui", "success");
+    // Tipe Tabungan: pilih tabungan tujuan dulu, baru rencana disimpan (pending)
+    if (type === "saving") {
+      await showSelectSavingGoalModal(
+        amount,
+        capitalize(name),
+        isEdit ? item.savingId : null,
+        async (savingId) => {
+          await savePlanned(savingId);
+        },
+        "Hanya rencana: tabungan baru bertambah setelah rencana ini dikonfirmasi.",
+      );
     } else {
-      await plannedAdd(data);
-      showToast("Rencana transaksi disimpan!", "success");
+      await savePlanned();
     }
-
-    modal.remove();
-    await renderPlannedView();
   });
 }
 
