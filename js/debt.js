@@ -865,7 +865,7 @@ async function showDebtModal(debtId = null) {
                     <input type="text" inputmode="numeric" autocomplete="off" data-money class="form-input debt-inst-amount" value="${formatMoneyInput(it.amount)}" placeholder="0">
                 </div>
                 <div class="form-group">
-                    <label>Tanggal Jatuh Tempo <span class="required">*</span></label>
+                    <label>Tanggal Jatuh Tempo</label>
                     <input type="date" class="form-input debt-inst-due" value="${it.dueDate}">
                 </div>
             </div>

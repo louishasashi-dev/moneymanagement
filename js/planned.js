@@ -189,9 +189,9 @@ function summarizePlan(items) {
     (s, i) => s + (i.type === "income" ? i.amount : -i.amount),
     0,
   );
-  const income = items
-    .filter((i) => i.type === "income")
-    .reduce((s, i) => s + i.amount, 0);
+  const income =
+    items.filter((i) => i.type === "income").reduce((s, i) => s + i.amount, 0) -
+    items.filter((i) => i.type === "saving").reduce((s, i) => s + i.amount, 0);
   const expense = items
     .filter((i) => i.type === "expense")
     .reduce((s, i) => s + i.amount, 0);
@@ -723,18 +723,15 @@ async function renderPlanDetail() {
 
       <!-- Statistik rencana transaksi -->
       ${(() => {
-        const totalPemasukan = allItems
-          .filter((i) => i.type === "income")
-          .reduce((s, i) => s + i.amount, 0);
-        const totalPengeluaran = allItems
-          .filter((i) => i.type === "expense")
-          .reduce((s, i) => s + i.amount, 0);
-        const pendingPemasukan = pending
-          .filter((i) => i.type === "income")
-          .reduce((s, i) => s + i.amount, 0);
-        const pendingPengeluaran = pending
-          .filter((i) => i.type === "expense")
-          .reduce((s, i) => s + i.amount, 0);
+        // Rencana tipe "saving" mengurangi uang masuk (dana dialihkan ke tabungan)
+        const sumBy = (list, type) =>
+          list.filter((i) => i.type === type).reduce((s, i) => s + i.amount, 0);
+        const totalPemasukan =
+          sumBy(allItems, "income") - sumBy(allItems, "saving");
+        const totalPengeluaran = sumBy(allItems, "expense");
+        const pendingPemasukan =
+          sumBy(pending, "income") - sumBy(pending, "saving");
+        const pendingPengeluaran = sumBy(pending, "expense");
         const selisih = totalPemasukan - totalPengeluaran;
         return `
       <div class="card" style="margin-bottom:16px;padding:16px;">
@@ -749,7 +746,7 @@ async function renderPlanDetail() {
             border-left:3px solid #10b981;
           ">
             <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">
-              <i class="fas fa-arrow-down" style="color:#10b981;"></i> Total Pemasukan
+              <i class="fas fa-arrow-down" style="color:#10b981;"></i> Total Pemasukan <span style="opacity:.7;">(setelah tabungan)</span>
             </div>
             <div style="font-weight:700;color:#10b981;font-size:1.05rem;">${formatCurrency(totalPemasukan)}</div>
             <div style="font-size:.7rem;color:var(--text-secondary);margin-top:4px;">
