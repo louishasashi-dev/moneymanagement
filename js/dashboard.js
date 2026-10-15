@@ -38,6 +38,19 @@ export async function renderDashboard() {
   );
   const allWallets = await getAllItems(STORES.WALLETS);
   const stats = calculateStats(monthlyTransactions);
+
+  // Data untuk ring statistik bulan ini (+ pembanding bulan lalu)
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevPrefix = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, "0")}`;
+  const prevMonthTransactions = await getTransactionsByDateRange(
+    `${prevPrefix}-01`,
+    `${prevPrefix}-${new Date(prevMonthDate.getFullYear(), prevMonthDate.getMonth() + 1, 0).getDate()}`,
+  );
+  const monthRingsHTML = renderMonthlyRings(
+    sumByType(monthlyTransactions),
+    sumByType(prevMonthTransactions),
+    now,
+  );
   const totalWalletBalance = allWallets.reduce(
     (sum, w) => sum + (w.balance || 0),
     0,
@@ -141,21 +154,13 @@ export async function renderDashboard() {
                 </div>
             </div>
             
-            <!-- Chart Section -->
-            <div class="card chart-card" id="chart-card">
+            <!-- Statistik Bulan Ini (ring) -->
+            <div class="card month-rings-card" id="chart-card">
                 <div class="card-header">
-                    <h3><i class="fas fa-chart-line"></i> Statistik Bulan Ini</h3>
-                    <select id="chart-type">
-                        <option value="bar">Bar Chart</option>
-                        <option value="line">Line Chart</option>
-                    </select>
+                    <h3><i class="fas fa-chart-pie"></i> Statistik Bulan Ini</h3>
+                    <span class="month-rings-period">${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</span>
                 </div>
-                <div class="chart-canvas-wrapper" id="chart-canvas-wrapper">
-                    <canvas id="monthly-chart"></canvas>
-                </div>
-                <div class="chart-resize-handle" id="chart-resize-handle" title="Seret untuk mengubah ukuran grafik">
-                    <i class="fas fa-up-right-and-down-left-from-center"></i>
-                </div>
+                ${monthRingsHTML}
             </div>
             
             <!-- Wallet Summary -->
@@ -188,8 +193,8 @@ export async function renderDashboard() {
   // Terapkan tinggi grafik tersimpan (kalau user pernah resize sebelumnya)
   applyStoredChartHeight();
 
-  // Initialize chart
-  await initMonthlyChart(monthlyTransactions);
+  // Animasikan ring statistik bulan ini
+  animateMonthlyRings();
 
   // Aktifkan fitur seret untuk mengubah ukuran grafik (desktop & mobile)
   setupChartResize();
@@ -264,6 +269,148 @@ function renderTransactionsList(transactions) {
     `,
     )
     .join("");
+}
+
+// ───────────────────────────────────────────────
+// Statistik bulan ini: 3 ring (Pemasukan, Pengeluaran, Tabungan)
+// ───────────────────────────────────────────────
+function sumByType(transactions) {
+  const r = { income: 0, expense: 0, saving: 0 };
+  (transactions || []).forEach((t) => {
+    if (r[t.type] !== undefined) r[t.type] += t.amount || 0;
+  });
+  return r;
+}
+
+// Nominal ringkas untuk di tengah ring: Rp 3,5 jt / Rp 750 rb
+function compactRupiah(n) {
+  const fmt = (v) => (Math.round(v * 10) / 10).toString().replace(".", ",");
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `Rp ${fmt(n / 1e9)} M`;
+  if (abs >= 1e6) return `Rp ${fmt(n / 1e6)} jt`;
+  if (abs >= 1e3) return `Rp ${fmt(n / 1e3)} rb`;
+  return `Rp ${Math.round(n)}`;
+}
+
+// Perubahan dibanding bulan lalu. goodWhenUp: naik = bagus (hijau)
+function monthDeltaHTML(cur, prev, goodWhenUp) {
+  if (prev > 0) {
+    const pct = Math.round(((cur - prev) / prev) * 100);
+    if (pct === 0)
+      return `<span class="ring-delta">= sama dgn bulan lalu</span>`;
+    const up = pct > 0;
+    const good = up === goodWhenUp;
+    return `<span class="ring-delta ${good ? "good" : "bad"}">${up ? "▲" : "▼"} ${Math.abs(pct)}% vs bulan lalu</span>`;
+  }
+  return cur > 0
+    ? `<span class="ring-delta">Belum ada data bulan lalu</span>`
+    : `<span class="ring-delta">-</span>`;
+}
+
+function renderMonthlyRings(cur, prev) {
+  const R = 46;
+  const C = 2 * Math.PI * R;
+  const rest = cur.income - cur.expense - cur.saving;
+
+  const pctOfIncome = (v) =>
+    cur.income > 0 ? Math.round((v / cur.income) * 100) : 0;
+
+  const rings = [
+    {
+      key: "income",
+      label: "Pemasukan",
+      color: "#10b981",
+      value: cur.income,
+      // Pemasukan = basis 100%; ring penuh jika ada pemasukan
+      fill: cur.income > 0 ? 100 : 0,
+      sub: "Total uang masuk",
+      delta: monthDeltaHTML(cur.income, prev.income, true),
+    },
+    {
+      key: "expense",
+      label: "Pengeluaran",
+      color: "#ef4444",
+      value: cur.expense,
+      fill:
+        cur.income > 0
+          ? Math.min(100, (cur.expense / cur.income) * 100)
+          : cur.expense > 0
+            ? 100
+            : 0,
+      sub:
+        cur.income > 0
+          ? `${pctOfIncome(cur.expense)}% dari pemasukan`
+          : "Belum ada pemasukan",
+      delta: monthDeltaHTML(cur.expense, prev.expense, false),
+    },
+    {
+      key: "saving",
+      label: "Tabungan",
+      color: "#8b5cf6",
+      value: cur.saving,
+      fill:
+        cur.income > 0
+          ? Math.min(100, (cur.saving / cur.income) * 100)
+          : cur.saving > 0
+            ? 100
+            : 0,
+      sub:
+        cur.income > 0
+          ? `${pctOfIncome(cur.saving)}% dari pemasukan`
+          : "Belum ada pemasukan",
+      delta: monthDeltaHTML(cur.saving, prev.saving, true),
+    },
+  ];
+
+  const ringsHTML = rings
+    .map((r) => {
+      // Biar ring tetap terlihat (bulat kecil) kalau nilainya sangat kecil
+      const fill = r.value > 0 ? Math.max(r.fill, 1.5) : 0;
+      const offset = C * (1 - fill / 100);
+      const over =
+        r.key === "expense" && cur.income > 0 && cur.expense > cur.income;
+      return `
+      <div class="month-ring">
+        <div class="month-ring-graphic">
+          <svg viewBox="0 0 120 120" aria-hidden="true">
+            <circle cx="60" cy="60" r="${R}" fill="none" stroke="${r.color}" stroke-opacity=".15" stroke-width="12"></circle>
+            <circle class="ring-progress" cx="60" cy="60" r="${R}" fill="none"
+                    stroke="${r.color}" stroke-width="12" stroke-linecap="round"
+                    stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${C.toFixed(2)}"
+                    data-offset="${offset.toFixed(2)}"
+                    transform="rotate(-90 60 60)"></circle>
+          </svg>
+          <div class="month-ring-center">
+            <strong style="color:${r.color};">${compactRupiah(r.value)}</strong>
+          </div>
+        </div>
+        <div class="month-ring-label">${r.label}</div>
+        <div class="month-ring-amount">${formatCurrency(r.value)}</div>
+        <div class="month-ring-sub">${over ? "⚠️ Melebihi pemasukan" : r.sub}</div>
+        ${r.delta}
+      </div>`;
+    })
+    .join("");
+
+  return `
+    <div class="month-rings">${ringsHTML}</div>
+    <div class="month-rings-rest">
+      <span>Sisa uang bulan ini <small>(pemasukan − pengeluaran − tabungan)</small></span>
+      <strong class="${rest >= 0 ? "positive" : "negative"}">${rest >= 0 ? "" : "-"}${formatCurrency(Math.abs(rest))}</strong>
+    </div>`;
+}
+
+// Animasi ring terisi (dijalankan setelah HTML masuk ke DOM)
+function animateMonthlyRings() {
+  const els = document.querySelectorAll(".month-ring .ring-progress");
+  if (!els.length) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      els.forEach((el) => {
+        el.style.strokeDashoffset = el.dataset.offset;
+      });
+    });
+  });
 }
 
 // Initialize monthly chart
@@ -614,7 +761,9 @@ async function showManageBudgetModal() {
   // Tambah anggaran
   modal.querySelector("#add-budget-btn").addEventListener("click", async () => {
     const cat = modal.querySelector("#budget-cat-select").value;
-    const amount = parseMoney(modal.querySelector("#budget-amount-input").value);
+    const amount = parseMoney(
+      modal.querySelector("#budget-amount-input").value,
+    );
     if (!cat) {
       showToast("Pilih kategori dulu", "error");
       return;
@@ -787,6 +936,90 @@ function addDashboardStyles() {
         }
 
         /* Grafik yang bisa di-resize manual oleh user (desktop & mobile) */
+        .month-rings-period {
+            font-size: .8rem;
+            color: var(--text-secondary);
+        }
+        .month-rings {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            padding: 8px 0 4px;
+        }
+        .month-ring {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            min-width: 0;
+            gap: 2px;
+        }
+        .month-ring-graphic {
+            position: relative;
+            width: 100%;
+            max-width: 150px;
+            aspect-ratio: 1 / 1;
+        }
+        .month-ring-graphic svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .ring-progress {
+            transition: stroke-dashoffset 1s cubic-bezier(.4, 0, .2, 1);
+        }
+        .month-ring-center {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 18%;
+        }
+        .month-ring-center strong {
+            font-size: clamp(.68rem, 2.6vw, .98rem);
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+        .month-ring-label {
+            margin-top: 8px;
+            font-weight: 600;
+            font-size: .85rem;
+        }
+        .month-ring-amount {
+            font-size: .78rem;
+            color: var(--text-secondary);
+            word-break: break-word;
+        }
+        .month-ring-sub {
+            font-size: .7rem;
+            color: var(--text-secondary);
+        }
+        .ring-delta {
+            font-size: .68rem;
+            color: var(--text-secondary);
+        }
+        .ring-delta.good { color: #10b981; }
+        .ring-delta.bad { color: #ef4444; }
+        .month-rings-rest {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: var(--bg-primary);
+            font-size: .82rem;
+            color: var(--text-secondary);
+        }
+        .month-rings-rest small { opacity: .75; }
+        .month-rings-rest strong.positive { color: #10b981; }
+        .month-rings-rest strong.negative { color: #ef4444; }
+        @media (max-width: 480px) {
+            .month-rings { gap: 6px; }
+            .month-rings-rest { flex-direction: column; align-items: flex-start; }
+        }
         .chart-card {
             position: relative;
             padding-bottom: 30px;

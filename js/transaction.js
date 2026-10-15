@@ -1000,6 +1000,17 @@ async function showTransactionModal(transactionId = null) {
                 </div>
             </div>
             
+            ${
+              isEdit
+                ? ""
+                : `<div class="form-group" id="transaction-save-template-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+                    <input type="checkbox" id="transaction-save-template" style="width:auto;margin:0;">
+                    Jadikan transaksi ini template
+                </label>
+            </div>`
+            }
+
             <div class="modal-buttons">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">${isEdit ? "Simpan Perubahan" : "Tambah Transaksi"}</button>
@@ -1115,6 +1126,17 @@ async function showTransactionModal(transactionId = null) {
   // Template hanya berlaku untuk Pengeluaran/Pemasukan (bukan Tabungan)
   async function updateTemplateOptions() {
     const currentType = typeInput.value;
+
+    const saveTplGroup = modal.querySelector(
+      "#transaction-save-template-group",
+    );
+    if (saveTplGroup) {
+      const canTemplate = currentType === "income" || currentType === "expense";
+      saveTplGroup.style.display = canTemplate ? "" : "none";
+      if (!canTemplate) {
+        modal.querySelector("#transaction-save-template").checked = false;
+      }
+    }
 
     if (currentType !== "income" && currentType !== "expense") {
       templateGroup.style.display = "none";
@@ -1242,6 +1264,10 @@ async function showTransactionModal(transactionId = null) {
     const note = modal.querySelector("#transaction-note").value;
     const date = modal.querySelector("#transaction-date").value;
     const time = modal.querySelector("#transaction-time").value;
+    const saveAsTemplate =
+      !isEdit &&
+      (type === "income" || type === "expense") &&
+      !!modal.querySelector("#transaction-save-template")?.checked;
 
     // Validasi
     if (!name) {
@@ -1399,10 +1425,45 @@ async function showTransactionModal(transactionId = null) {
         }
       }
 
+      // Opsional: jadikan transaksi ini template (tanpa duplikat)
+      let templateSaved = false;
+      if (saveAsTemplate) {
+        try {
+          const tplName = capitalize(name);
+          const existing = await getTemplatesByType(type);
+          const isDuplicate = existing.some(
+            (t) =>
+              (t.name || "").toLowerCase() === tplName.toLowerCase() &&
+              t.amount === unitPrice &&
+              t.category === category &&
+              t.walletId === walletId,
+          );
+          if (!isDuplicate) {
+            const nowIso = new Date().toISOString();
+            await addItem(STORES.TEMPLATES, {
+              name: tplName,
+              amount: unitPrice,
+              quantity,
+              type,
+              category,
+              walletId,
+              note,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            });
+            templateSaved = true;
+          }
+        } catch (err) {
+          console.error("Gagal menyimpan template:", err);
+        }
+      }
+
       showToast(
         isEdit
           ? "Transaksi berhasil diupdate"
-          : "Transaksi berhasil ditambahkan",
+          : templateSaved
+            ? "Transaksi ditambahkan & disimpan sebagai template"
+            : "Transaksi berhasil ditambahkan",
         "success",
       );
 

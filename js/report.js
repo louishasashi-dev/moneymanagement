@@ -267,6 +267,15 @@ async function loadReportData() {
   reportData.transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+// Transaksi banyak (isMultiItem): kembalikan daftar barang, selain itu null.
+// Item: { itemName, amount (harga satuan), quantity, category }
+function getMultiItems(t) {
+  if (t && t.isMultiItem === true && Array.isArray(t.items) && t.items.length) {
+    return t.items;
+  }
+  return null;
+}
+
 // Render all report data
 async function renderReportData() {
   const transactions = reportData.transactions;
@@ -311,6 +320,16 @@ async function renderCategoryChart(transactions) {
 
   const categoryTotals = {};
   expenseTransactions.forEach((t) => {
+    const multi = getMultiItems(t);
+    if (multi) {
+      // Transaksi banyak: hitung per kategori barang, bukan satu kategori induk
+      multi.forEach((it) => {
+        const category = it.category || "Lainnya";
+        categoryTotals[category] =
+          (categoryTotals[category] || 0) + it.amount * it.quantity;
+      });
+      return;
+    }
     const category = t.category || "Lainnya";
     categoryTotals[category] = (categoryTotals[category] || 0) + t.amount;
   });
@@ -461,18 +480,31 @@ function renderTransactionTable(transactions) {
 
   tbody.innerHTML = transactions
     .slice(0, 50)
-    .map(
-      (t) => `
+    .map((t) => {
+      const multi = getMultiItems(t);
+      const itemRows = multi
+        ? multi
+            .map(
+              (it) => `
+        <tr class="report-item-row">
+            <td></td>
+            <td style="padding-left:20px;font-size:.85em;opacity:.85;">↳ ${escapeHtml(it.itemName)} <span style="opacity:.7;">(${it.quantity} × ${formatCurrency(it.amount)})</span></td>
+            <td style="font-size:.85em;opacity:.85;">${escapeHtml(it.category || "-")}</td>
+            <td style="font-size:.85em;opacity:.85;">${formatCurrency(it.amount * it.quantity)}</td>
+        </tr>`,
+            )
+            .join("")
+        : "";
+      return `
         <tr class="${t.type === "income" ? "income-row" : t.type === "saving" ? "saving-row" : "expense-row"}">
             <td>${formatDate(t.date)}</td>
-            <td>${escapeHtml(t.itemName)}</td>
-            <td>${escapeHtml(t.category || "-")}</td>
+            <td>${multi ? "🧺 " : ""}${escapeHtml(t.itemName)}${multi ? ` <span style="opacity:.7;font-size:.85em;">(${multi.length} barang)</span>` : ""}</td>
+            <td>${escapeHtml(multi ? "Beberapa kategori" : t.category || "-")}</td>
             <td class="${t.type === "income" ? "income-text" : t.type === "saving" ? "saving-text" : "expense-text"}">
                 ${t.type === "income" ? "+" : t.type === "saving" ? "🐷" : "-"} ${formatCurrency(t.amount)}
             </td>
-        </tr>
-    `,
-    )
+        </tr>${itemRows}`;
+    })
     .join("");
 }
 
@@ -719,10 +751,15 @@ async function exportToPDF() {
         doc.setFont("helvetica", "normal");
       }
       const mainRowHeight = 6.5;
+      const multiItems = getMultiItems(t);
+      const itemLineHeight = 4.2;
+      const itemBlockHeight = multiItems
+        ? multiItems.length * itemLineHeight + 1
+        : 0;
       const noteBlockHeight = noteLines.length
         ? noteLines.length * noteLineHeight + 2
         : 0;
-      const totalRowHeight = mainRowHeight + noteBlockHeight;
+      const totalRowHeight = mainRowHeight + itemBlockHeight + noteBlockHeight;
 
       if (y + totalRowHeight > 280) {
         doc.addPage();
@@ -747,7 +784,7 @@ async function exportToPDF() {
       // Zebra stripe (mencakup baris utama + baris catatan kalau ada)
       if (idx % 2 === 0) {
         doc.setFillColor(248, 249, 252);
-        doc.rect(ML, y - 1, CW, mainRowHeight + noteBlockHeight, "F");
+        doc.rect(ML, y - 1, CW, totalRowHeight, "F");
       }
 
       doc.setFontSize(7);
@@ -771,7 +808,10 @@ async function exportToPDF() {
       doc.text(nameTrunc, cols.name.x + 1, y + 3.5);
 
       // Kategori
-      const catStr = (t.category || "-").substring(0, 14);
+      const catStr = (multiItems ? "Beberapa" : t.category || "-").substring(
+        0,
+        14,
+      );
       doc.text(catStr, cols.cat.x + 1, y + 3.5);
 
       // Dompet / sumber uang
@@ -789,6 +829,45 @@ async function exportToPDF() {
       });
 
       y += mainRowHeight;
+
+      // Transaksi banyak: rincian tiap barang (nama, kategori, jumlah × harga, subtotal)
+      if (multiItems) {
+        doc.setFontSize(6.5);
+        doc.setFont("helvetica", "normal");
+        multiItems.forEach((it) => {
+          doc.setTextColor(90, 90, 110);
+          let itemName = `- ${it.itemName || "-"}`;
+          const maxW = cols.name.w - 4;
+          if (doc.getTextWidth(itemName) > maxW) {
+            itemName =
+              itemName.substring(
+                0,
+                Math.floor(
+                  maxW / (doc.getTextWidth(itemName) / itemName.length),
+                ) - 1,
+              ) + "…";
+          }
+          doc.text(itemName, cols.name.x + 4, y + 2);
+          doc.text(
+            (it.category || "-").substring(0, 14),
+            cols.cat.x + 1,
+            y + 2,
+          );
+          doc.text(
+            `${it.quantity} x ${formatCurrency(it.amount)}`,
+            cols.wallet.x + 1,
+            y + 2,
+          );
+          doc.text(
+            formatCurrency(it.amount * it.quantity),
+            cols.amount.x + cols.amount.w - 1,
+            y + 2,
+            { align: "right" },
+          );
+          y += itemLineHeight;
+        });
+        y += 1;
+      }
 
       // Catatan transaksi: ditampilkan sebagai baris tambahan di bawah baris
       // utama, teks panjang otomatis di-split ke beberapa baris & rata
