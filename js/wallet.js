@@ -78,18 +78,19 @@ export async function renderWalletsPage() {
   // HTML Template
   container.innerHTML = `
         <div class="wallets-container">
+          <div class="wallet-desktop">
             <!-- Header -->
             <div class="page-header">
                 <h1><i class="fas fa-wallet"></i> Dompet Saya</h1>
                 <div class="wallet-header-actions">
                     <button class="btn-secondary" id="transfer-history-btn" title="Riwayat Transfer">
-                        <i class="fas fa-clock-rotate-left"></i> Riwayat Transfer
+                        <i class="fas fa-clock-rotate-left"></i> Riwayat
                     </button>
                     <button class="btn-secondary" id="transfer-wallet-btn" title="Transfer Saldo">
-                        <i class="fas fa-right-left"></i> Transfer Saldo
+                        <i class="fas fa-right-left"></i> Transfer
                     </button>
                     <button class="btn-primary btn-add-wallet" id="add-wallet-btn">
-                        <i class="fas fa-plus"></i> Tambah Dompet
+                        <i class="fas fa-plus"></i> Tambah
                     </button>
                 </div>
             </div>
@@ -109,6 +110,10 @@ export async function renderWalletsPage() {
             <div class="wallets-grid" id="wallets-grid">
                 ${renderWalletsGrid()}
             </div>
+          </div>
+
+          <!-- Tampilan khusus mobile (<= 768px) -->
+          ${renderMobileWallets(totalBalance)}
         </div>
     `;
 
@@ -117,6 +122,8 @@ export async function renderWalletsPage() {
 
   // Add styles if not exists
   addWalletStyles();
+  addWalletMobileStyles();
+  scheduleWalletFullBleed();
 }
 
 // Load semua dompet dari database
@@ -129,6 +136,17 @@ async function loadWallets() {
     if (aIsDefault && !bIsDefault) return -1;
     if (!aIsDefault && bIsDefault) return 1;
     return a.name.localeCompare(b.name);
+  });
+}
+
+// Urutan tampilan: dompet Tunai paling atas, sisanya dari saldo terbesar ke terkecil
+function getSortedWalletsForDisplay() {
+  return [...allWallets].sort((a, b) => {
+    const aCash = a.type === "cash";
+    const bCash = b.type === "cash";
+    if (aCash !== bCash) return aCash ? -1 : 1;
+    const diff = (b.balance || 0) - (a.balance || 0);
+    return diff !== 0 ? diff : a.name.localeCompare(b.name);
   });
 }
 
@@ -145,9 +163,10 @@ function renderWalletsGrid() {
   }
 
   // Group wallets by type
-  const cashWallets = allWallets.filter((w) => w.type === "cash");
-  const ewalletWallets = allWallets.filter((w) => w.type === "ewallet");
-  const bankWallets = allWallets.filter((w) => w.type === "bank");
+  const sortedWallets = getSortedWalletsForDisplay();
+  const cashWallets = sortedWallets.filter((w) => w.type === "cash");
+  const ewalletWallets = sortedWallets.filter((w) => w.type === "ewallet");
+  const bankWallets = sortedWallets.filter((w) => w.type === "bank");
 
   let html = "";
 
@@ -210,8 +229,12 @@ function renderWalletCard(wallet) {
   return `
         <div class="wallet-card" data-id="${wallet.id}">
             <div class="wallet-card-header" style="background: ${wallet.color}15; border-left: 4px solid ${wallet.color}">
-                <div class="wallet-card-icon" style="color: ${wallet.color}">
-                    <i class="fas ${wallet.icon || "fa-wallet"}"></i>
+                <div class="wallet-card-icon ${wallet.photo ? "has-photo" : ""}" style="color: ${wallet.color}">
+                    ${
+                      wallet.photo
+                        ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
+                        : `<i class="fas ${wallet.icon || "fa-wallet"}"></i>`
+                    }
                 </div>
                 <div class="wallet-card-info">
                     <div class="wallet-name-row">
@@ -244,6 +267,150 @@ function renderWalletCard(wallet) {
                 </button>
             </div>
             </div>
+        </div>
+    `;
+}
+
+// ===== TAMPILAN MOBILE =====
+
+// Singkat nominal besar: 894.849.000 -> "Rp 894,8 jt", 1,2 M (miliar), 1 T (triliun)
+function formatCompactCurrency(value) {
+  const n = Number(value) || 0;
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  const units = [
+    [1e12, "T"],
+    [1e9, "M"],
+    [1e6, "jt"],
+  ];
+  for (const [size, label] of units) {
+    if (abs >= size) {
+      const v = Math.floor((abs / size) * 10) / 10;
+      const text = v.toFixed(1).replace(".", ",").replace(/,0$/, "");
+      return `${sign}Rp ${text} ${label}`;
+    }
+  }
+  return formatCurrency(n);
+}
+
+// Buat header mobile benar-benar full (menembus padding #page-content)
+function fitWalletMobileFullBleed() {
+  const el = document.querySelector(".wallet-mobile");
+  if (!el || getComputedStyle(el).display === "none") return;
+  const hero = el.querySelector(".wm-hero");
+  if (!hero) return;
+
+  // Jarak hero ke tepi kiri/kanan layar
+  const rect = hero.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth;
+
+  // Total padding atas semua parent (agar background naik sampai tepi atas)
+  let top = 0;
+  for (
+    let n = el.parentElement;
+    n && n !== document.documentElement;
+    n = n.parentElement
+  ) {
+    top += parseFloat(getComputedStyle(n).paddingTop) || 0;
+  }
+
+  el.style.setProperty("--wm-bleed-l", `${Math.max(0, rect.left)}px`);
+  el.style.setProperty("--wm-bleed-r", `${Math.max(0, vw - rect.right)}px`);
+  el.style.setProperty("--wm-bleed-t", `${top}px`);
+}
+
+// Jalankan ulang setelah layout/font selesai agar ukuran bleed akurat
+function scheduleWalletFullBleed() {
+  fitWalletMobileFullBleed();
+  requestAnimationFrame(fitWalletMobileFullBleed);
+  setTimeout(fitWalletMobileFullBleed, 150);
+  setTimeout(fitWalletMobileFullBleed, 500);
+}
+
+if (!window.__walletFullBleedBound) {
+  window.__walletFullBleedBound = true;
+  window.addEventListener("resize", fitWalletMobileFullBleed);
+}
+
+function renderMobileWallets(totalBalance) {
+  const totalText = formatCurrency(totalBalance);
+  return `
+        <div class="wallet-mobile">
+            <div class="wm-hero">
+                <span class="wm-total-label">Total Seluruh Saldo</span>
+                <div class="wm-total-amount" style="--wm-chars: ${totalText.length}">${totalText}</div>
+                <div class="wm-count-pill">
+                    <i class="fas fa-wallet"></i>
+                    <span>${allWallets.length} Dompet Aktif</span>
+                </div>
+            </div>
+
+            <div class="wm-actions">
+                <button class="wm-action" id="wm-history-btn" type="button">
+                    <span class="wm-action-icon"><i class="fas fa-clock-rotate-left"></i></span>
+                    <span class="wm-action-label">Riwayat</span>
+                </button>
+                <button class="wm-action" id="wm-transfer-btn" type="button">
+                    <span class="wm-action-icon"><i class="fas fa-right-left"></i></span>
+                    <span class="wm-action-label">Transfer</span>
+                </button>
+                <button class="wm-action" id="wm-add-btn" type="button">
+                    <span class="wm-action-icon"><i class="fas fa-plus"></i></span>
+                    <span class="wm-action-label">Tambah</span>
+                </button>
+            </div>
+
+            <div class="wm-section-title">
+                <i class="fas fa-wallet"></i>
+                <h3>Dompet Saya</h3>
+            </div>
+
+            ${
+              allWallets.length === 0
+                ? `<div class="wm-empty">
+                        <i class="fas fa-wallet"></i>
+                        <p>Belum ada dompet</p>
+                        <button class="wm-empty-btn" id="wm-empty-add-btn" type="button">Tambah Dompet Sekarang</button>
+                   </div>`
+                : `<div class="wm-grid">
+                        ${getSortedWalletsForDisplay()
+                          .map((w) => renderMobileWalletCard(w))
+                          .join("")}
+                   </div>`
+            }
+        </div>
+    `;
+}
+
+function renderMobileWalletCard(wallet) {
+  const isDefault = DEFAULT_WALLET_IDS.includes(wallet.id);
+  const color = wallet.color || "#3b82f6";
+  const negative = wallet.balance < 0;
+
+  return `
+        <div class="wm-card" data-id="${wallet.id}" style="--wm-color: ${color}">
+            <div class="wm-card-icon ${wallet.photo ? "has-photo" : ""}">
+                ${
+                  wallet.photo
+                    ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
+                    : `<i class="fas ${wallet.icon || "fa-wallet"}"></i>`
+                }
+            </div>
+            ${
+              !isDefault
+                ? `<button class="wm-tool wm-tool-left delete-wallet" data-id="${wallet.id}" type="button" title="Hapus Dompet">
+                        <i class="fas fa-trash"></i>
+                   </button>`
+                : ""
+            }
+            <button class="wm-tool wm-tool-right edit-wallet" data-id="${wallet.id}" type="button" title="Edit Dompet">
+                <i class="fas fa-pen-to-square"></i>
+            </button>
+            <span class="wm-card-name">${escapeHtml(wallet.name)}</span>
+            <span class="wm-balance-amount ${negative ? "negative" : ""}" title="${formatCurrency(wallet.balance)}">${formatCompactCurrency(wallet.balance)}</span>
+            <button class="wm-pill btn-edit-balance" data-id="${wallet.id}" type="button">
+                Edit Saldo
+            </button>
         </div>
     `;
 }
@@ -291,6 +458,18 @@ function setupWalletEventListeners() {
     historyBtn.parentNode.replaceChild(newHistoryBtn, historyBtn);
     newHistoryBtn.addEventListener("click", () => showTransferHistoryModal());
   }
+
+  // Tombol-tombol tampilan mobile
+  const wmHistory = document.getElementById("wm-history-btn");
+  if (wmHistory)
+    wmHistory.addEventListener("click", () => showTransferHistoryModal());
+  const wmTransfer = document.getElementById("wm-transfer-btn");
+  if (wmTransfer)
+    wmTransfer.addEventListener("click", () => showTransferModal());
+  const wmAdd = document.getElementById("wm-add-btn");
+  if (wmAdd) wmAdd.addEventListener("click", () => showWalletModal());
+  const wmEmptyAdd = document.getElementById("wm-empty-add-btn");
+  if (wmEmptyAdd) wmEmptyAdd.addEventListener("click", () => showWalletModal());
 
   // Edit wallet buttons
   document.querySelectorAll(".edit-wallet").forEach((btn) => {
@@ -367,6 +546,23 @@ async function showWalletModal(walletId = null) {
             </div>
             
             <div class="form-group">
+                <label>Foto Dompet <span style="font-weight:400">(opsional)</span></label>
+                <div class="photo-upload">
+                    <div class="photo-preview" id="wallet-photo-preview"></div>
+                    <div class="photo-actions">
+                        <button type="button" class="btn-secondary" id="wallet-photo-pick">
+                            <i class="fas fa-image"></i> Pilih Foto
+                        </button>
+                        <button type="button" class="btn-secondary" id="wallet-photo-remove" hidden>
+                            <i class="fas fa-trash"></i> Hapus Foto
+                        </button>
+                    </div>
+                    <input type="file" id="wallet-photo-input" accept="image/*" hidden>
+                </div>
+                <small class="form-help">Foto otomatis diubah ke WebP dan menggantikan icon di card dompet.</small>
+            </div>
+
+            <div class="form-group">
                 <label>Warna</label>
                 <div class="color-selector" id="color-selector">
                     ${generateColorOptions(isEdit ? wallet.color : "#3b82f6")}
@@ -433,6 +629,43 @@ async function showWalletModal(walletId = null) {
     });
   });
 
+  // Setup foto dompet
+  let photoData = isEdit && wallet.photo ? wallet.photo : "";
+  const photoPreview = modal.querySelector("#wallet-photo-preview");
+  const photoInput = modal.querySelector("#wallet-photo-input");
+  const photoPickBtn = modal.querySelector("#wallet-photo-pick");
+  const photoRemoveBtn = modal.querySelector("#wallet-photo-remove");
+
+  const renderPhotoPreview = () => {
+    photoPreview.innerHTML = photoData
+      ? `<img src="${photoData}" alt="Foto dompet">`
+      : `<i class="fas fa-image"></i>`;
+    photoRemoveBtn.hidden = !photoData;
+    photoPickBtn.innerHTML = `<i class="fas fa-image"></i> ${photoData ? "Ganti Foto" : "Pilih Foto"}`;
+  };
+  renderPhotoPreview();
+
+  photoPickBtn.addEventListener("click", () => photoInput.click());
+  photoRemoveBtn.addEventListener("click", () => {
+    photoData = "";
+    photoInput.value = "";
+    renderPhotoPreview();
+  });
+  photoInput.addEventListener("change", async () => {
+    const file = photoInput.files && photoInput.files[0];
+    if (!file) return;
+    photoPickBtn.disabled = true;
+    try {
+      photoData = await convertImageToWebp(file);
+      renderPhotoPreview();
+    } catch (err) {
+      showToast(err.message || "Gagal memproses foto", "error");
+    } finally {
+      photoPickBtn.disabled = false;
+      photoInput.value = "";
+    }
+  });
+
   // Setup color selector
   const colorBtns = modal.querySelectorAll(".color-option");
   const colorInput = modal.querySelector("#wallet-color");
@@ -479,6 +712,8 @@ async function showWalletModal(walletId = null) {
       wallet.name = capitalize(name);
       wallet.icon = icon;
       wallet.color = color;
+      if (photoData) wallet.photo = photoData;
+      else delete wallet.photo;
       // Don't update type and balance for existing wallets to maintain data integrity
 
       await updateItem(STORES.WALLETS, wallet);
@@ -501,6 +736,7 @@ async function showWalletModal(walletId = null) {
         icon: icon,
         color: color,
         balance: balance,
+        ...(photoData ? { photo: photoData } : {}),
       };
 
       await addItem(STORES.WALLETS, newWallet);
@@ -1249,6 +1485,323 @@ function addWalletStyles() {
   document.head.appendChild(style);
 }
 
+// Styles khusus tampilan mobile halaman dompet
+function addWalletMobileStyles() {
+  if (document.getElementById("wallet-mobile-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "wallet-mobile-styles";
+  style.textContent = `
+        /* Foto custom pengganti icon dompet */
+        .wallet-card-icon.has-photo,
+        .wm-card-icon.has-photo {
+            overflow: hidden;
+            padding: 0;
+            border-radius: 14px;
+        }
+        .wallet-card-icon.has-photo img,
+        .wm-card-icon.has-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;   /* foto tampil utuh, tidak ter-crop */
+            display: block;
+        }
+
+        /* Desktop: sembunyikan tampilan mobile */
+        .wallet-mobile { display: none; }
+
+        @media (max-width: 768px) {
+            .wallet-desktop { display: none !important; }
+
+            /* Hilangkan padding halaman agar header bisa full ke tepi */
+            #page-content:has(.wallet-mobile),
+            body *:has(.wallet-mobile) {
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                padding-top: 0 !important;
+                border-top-left-radius: 0 !important;
+                border-top-right-radius: 0 !important;
+            }
+            html:has(.wallet-mobile),
+            body:has(.wallet-mobile) { overflow-x: hidden; }
+
+            .wallet-mobile {
+                display: block;
+                --wm-navy: #0b1b4d;
+                /* margin full-bleed diatur otomatis oleh fitWalletMobileFullBleed() */
+                padding-bottom: 110px; /* ruang untuk bottom navigation */
+            }
+
+            /* ===== Hero / Total saldo ===== */
+            .wm-hero {
+                position: relative;
+                z-index: 0;
+                text-align: center;
+                padding: 32px 16px 78px;
+            }
+
+            .wm-hero::before {
+                content: "";
+                position: absolute;
+                z-index: -1;
+                /* overshoot 2px agar tidak ada celah putih (sub-pixel) di tepi */
+                top: calc(var(--wm-bleed-t, 0px) * -1 - 2px);
+                left: calc(var(--wm-bleed-l, 0px) * -1 - 2px);
+                right: calc(var(--wm-bleed-r, 0px) * -1 - 2px);
+                bottom: 0;
+                background:
+                    linear-gradient(180deg, rgba(10,5,35,0.25) 0%, rgba(10,5,35,0.55) 100%),
+                    url("assets/background/violet.jpg") center / cover no-repeat,
+                    #5b21b6;
+                border-radius: 0;
+            }
+
+            .wm-total-label {
+                display: inline-block;
+                padding: 8px 22px;
+                border-radius: 999px;
+                background: rgba(10, 5, 35, 0.55);
+                border: 1px solid rgba(255,255,255,0.35);
+                color: #fff;
+                text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+                font-size: 0.8rem;
+                font-weight: 600;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+            }
+
+            .wm-total-amount {
+                margin: 14px 0 16px;
+                /* otomatis mengecil sesuai jumlah karakter agar selalu 1 baris */
+                font-size: min(2.4rem, calc((100vw - 40px) / (var(--wm-chars, 12) * 0.62)));
+                font-weight: 800;
+                line-height: 1.15;
+                color: #fff;
+                text-shadow: 0 2px 6px rgba(0,0,0,0.65), 0 0 2px rgba(0,0,0,0.6);
+                white-space: nowrap;
+            }
+
+            .wm-count-pill {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 9px 20px;
+                border-radius: 999px;
+                /* glass style */
+                background: linear-gradient(135deg, rgba(255,255,255,0.28), rgba(255,255,255,0.08));
+                -webkit-backdrop-filter: blur(14px) saturate(160%);
+                backdrop-filter: blur(14px) saturate(160%);
+                border: 1px solid rgba(255,255,255,0.45);
+                color: #fff;
+                text-shadow: 0 1px 3px rgba(0,0,0,0.45);
+                font-size: 0.85rem;
+                font-weight: 700;
+                box-shadow:
+                    0 8px 24px rgba(10, 5, 35, 0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.5);
+            }
+
+            .wm-count-pill i { color: #fff; }
+
+            /* ===== Aksi cepat ===== */
+            .wm-actions {
+                position: relative;
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                margin: -52px 16px 0;
+                padding: 18px 4px 16px;
+                background: #fff;
+                border-radius: 22px;
+                box-shadow: 0 10px 30px rgba(11, 27, 77, 0.12);
+            }
+
+            .wm-action {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+                padding: 0 6px;
+                background: none;
+                border: none;
+                cursor: pointer;
+                font-family: inherit;
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            .wm-action + .wm-action { border-left: 1px solid #e6ecf3; }
+
+            .wm-action-icon {
+                width: 54px;
+                height: 54px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #3eeed4;
+                color: #0b4a4a;
+                font-size: 1.3rem;
+                transition: transform 0.15s ease;
+            }
+
+            .wm-action:active .wm-action-icon { transform: scale(0.92); }
+
+            .wm-action-label {
+                font-size: 0.78rem;
+                font-weight: 700;
+                color: var(--wm-navy);
+                text-align: center;
+                line-height: 1.2;
+            }
+
+            /* ===== Judul seksi ===== */
+            .wm-section-title {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin: 24px 16px 14px;
+            }
+
+            .wm-section-title i { font-size: 1.3rem; color: #51698f; }
+
+            .wm-section-title h3 {
+                margin: 0;
+                font-size: 1.15rem;
+                font-weight: 800;
+                color: var(--wm-navy);
+            }
+
+            /* ===== Grid kartu dompet ===== */
+            .wm-grid {
+                display: flex;
+                flex-direction: column;        /* kartu tersusun ke bawah semua */
+                gap: 44px;                     /* ruang untuk ikon yang keluar kartu */
+                padding: 32px 16px 0;
+            }
+
+            .wm-card {
+                position: relative;
+                width: 100%;
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+                gap: 6px;
+                padding: 40px 10px 14px;
+                border-radius: 18px;
+                color: #fff;
+                /* white.jpg diwarnai sesuai warna dompet (multiply) lalu digelapkan */
+                background-color: var(--wm-color);
+                background-image:
+                    linear-gradient(rgba(0,0,0,0.32), rgba(0,0,0,0.32)),
+                    linear-gradient(var(--wm-color), var(--wm-color)),
+                    url("assets/background/white.jpg");
+                background-size: cover, cover, cover;
+                background-position: center;
+                background-repeat: no-repeat;
+                background-blend-mode: normal, multiply, normal;
+                box-shadow: 0 6px 16px rgba(11, 27, 77, 0.15);
+            }
+
+            /* Ikon: 50% di luar kartu, 50% di dalam */
+            .wm-card-icon {
+                position: absolute;
+                top: -28px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: 56px;
+                height: 56px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #fff;
+                color: var(--wm-color);
+                font-size: 1.35rem;
+                box-shadow: 0 0 0 4px rgba(255,255,255,0.9), 0 6px 12px rgba(0,0,0,0.18);
+            }
+
+            .wm-tool {
+                position: absolute;
+                top: 8px;
+                width: 26px;
+                height: 26px;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: none;
+                border: none;
+                color: rgba(255,255,255,0.9);
+                font-size: 0.85rem;
+                cursor: pointer;
+            }
+
+            .wm-tool-left { left: 8px; }
+            .wm-tool-right { right: 8px; }
+
+            .wm-card-name {
+                max-width: 100%;
+                font-size: 0.9rem;
+                font-weight: 700;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+            }
+
+            .wm-balance-amount {
+                max-width: 100%;
+                font-size: 1.15rem;
+                font-weight: 800;
+                line-height: 1.2;
+                white-space: nowrap;
+                text-shadow: 0 1px 4px rgba(0,0,0,0.65);
+            }
+
+            .wm-balance-amount.negative { color: #ffd6d6; }
+
+            .wm-pill {
+                margin-top: auto;
+                padding: 5px 14px;
+                border-radius: 999px;
+                border: 1px solid rgba(255,255,255,0.35);
+                background: rgba(255,255,255,0.16);
+                color: #fff;
+                font-family: inherit;
+                font-size: 0.68rem;
+                font-weight: 600;
+                cursor: pointer;
+            }
+
+            /* ===== Empty state ===== */
+            .wm-empty {
+                margin: 0 16px;
+                padding: 32px 16px;
+                text-align: center;
+                border-radius: 18px;
+                background: var(--bg-secondary, #fff);
+                color: var(--text-secondary, #64748b);
+            }
+
+            .wm-empty i { font-size: 2.2rem; margin-bottom: 8px; }
+
+            .wm-empty-btn {
+                margin-top: 8px;
+                padding: 10px 18px;
+                border: none;
+                border-radius: 999px;
+                background: #3eeed4;
+                color: #0b4a4a;
+                font-weight: 700;
+                cursor: pointer;
+            }
+        }
+    `;
+
+  document.head.appendChild(style);
+}
+
 // Add modal styles
 function addWalletModalStyles() {
   if (document.getElementById("wallet-modal-styles")) return;
@@ -1345,6 +1898,47 @@ function addWalletModalStyles() {
             border-color: var(--info);
         }
         
+        .photo-upload {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-top: 8px;
+        }
+
+        .photo-preview {
+            width: 64px;
+            height: 64px;
+            flex-shrink: 0;
+            border-radius: 14px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px dashed var(--border-color);
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font-size: 1.4rem;
+        }
+
+        .photo-preview img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .photo-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .photo-actions button {
+            padding: 8px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
         .modal-buttons {
             display: flex;
             gap: 12px;
@@ -1362,6 +1956,48 @@ function addWalletModalStyles() {
     `;
 
   document.head.appendChild(style);
+}
+
+// Ubah gambar apapun (jpg/png/gif/heic yang didukung browser, dll) menjadi WebP.
+// Rasio asli dipertahankan (tidak di-crop), hanya diperkecil jika terlalu besar.
+// Hasil berupa data URL agar bisa disimpan langsung di database bersama data dompet.
+async function convertImageToWebp(file, maxSize = 320, quality = 0.85) {
+  if (!file || !file.type.startsWith("image/")) {
+    throw new Error("File yang dipilih bukan gambar");
+  }
+
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = () => reject(new Error("Gambar tidak dapat dibaca"));
+      im.src = url;
+    });
+
+    // Perkecil proporsional (tanpa crop), jangan diperbesar
+    const scale = Math.min(
+      1,
+      maxSize / Math.max(img.naturalWidth, img.naturalHeight),
+    );
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const dataUrl = canvas.toDataURL("image/webp", quality);
+    if (!dataUrl.startsWith("data:image/webp")) {
+      throw new Error("Browser ini tidak mendukung konversi ke WebP");
+    }
+    return dataUrl;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 // Helper function
