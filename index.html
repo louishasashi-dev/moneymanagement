@@ -35,6 +35,173 @@
     <!-- CSS Files -->
     <link rel="stylesheet" href="css/style.css" />
 
+    <!-- Bottom bar mobile: mengambang + indikator "bulan" yang bergeser antar halaman.
+         Ditaruh setelah style.css supaya menimpa gaya bottom-nav lama. -->
+    <style id="floating-bottom-nav">
+      @property --notch-x {
+        syntax: "<length>";
+        inherits: true;
+        initial-value: -200px;
+      }
+
+      .bottom-nav-bubble {
+        display: none;
+      }
+
+      @media (max-width: 768px) {
+        body .bottom-nav {
+          --notch-x: -200px;
+          position: fixed !important;
+          left: 12px !important;
+          right: 12px !important;
+          bottom: calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+          width: auto !important;
+          height: 66px !important;
+          margin: 0 !important;
+          padding: 0 6px !important;
+          display: flex !important;
+          align-items: stretch;
+          justify-content: space-between;
+          background: transparent !important;
+          border: 0 !important;
+          border-radius: 28px !important;
+          box-shadow: none !important;
+          -webkit-backdrop-filter: none !important;
+          backdrop-filter: none !important;
+          filter: drop-shadow(0 8px 18px rgba(30, 40, 90, 0.2));
+          overflow: visible !important;
+        }
+        body .bottom-nav.nav-ready {
+          transition: --notch-x 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Badan bar: putih, dengan lubang melingkar di atas item aktif */
+        body .bottom-nav::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          border-radius: 28px;
+          background: #fff;
+          pointer-events: none;
+          -webkit-mask-image: radial-gradient(
+            circle 35px at var(--notch-x) 4px,
+            transparent 34px,
+            #000 35px
+          );
+          mask-image: radial-gradient(
+            circle 35px at var(--notch-x) 4px,
+            transparent 34px,
+            #000 35px
+          );
+        }
+        [data-theme="dark"] body .bottom-nav::before {
+          background: #1e2235;
+        }
+
+        /* Item */
+        body .bottom-nav .bottom-nav-item {
+          position: relative;
+          z-index: 1;
+          flex: 1 1 0 !important;
+          min-width: 0;
+          margin: 0 !important;
+          padding: 0 0 9px !important;
+          display: flex !important;
+          flex-direction: column;
+          align-items: center;
+          justify-content: flex-end;
+          gap: 4px;
+          background: none !important;
+          border: 0 !important;
+          border-radius: 0 !important;
+          box-shadow: none !important;
+          -webkit-tap-highlight-color: transparent;
+        }
+        body .bottom-nav .bottom-nav-item i {
+          font-size: 20px;
+          transition:
+            transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+            color 0.3s ease;
+        }
+        body .bottom-nav .bottom-nav-item span {
+          max-width: 100%;
+          font-size: 11px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* Aktif: ikon naik ke dalam bulan, label menyala */
+        body .bottom-nav .bottom-nav-item.active i {
+          transform: translateY(-29px) scale(1.05);
+          color: #fff !important;
+          animation: navIconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        body .bottom-nav .bottom-nav-item.active span {
+          font-weight: 700;
+          animation: navLabelIn 0.4s ease both;
+        }
+
+        /* Bulan (lingkaran) yang bergeser mengikuti item aktif */
+        .bottom-nav-bubble {
+          display: block;
+          position: absolute;
+          top: -23px;
+          left: 0;
+          z-index: 0;
+          width: 54px;
+          height: 54px;
+          border-radius: 50%;
+          background: var(--bubble-color, #3b82f6);
+          box-shadow: 0 6px 14px rgba(0, 0, 0, 0.18);
+          opacity: 0;
+          transform: translateX(-100px);
+          pointer-events: none;
+        }
+        body .bottom-nav.nav-ready .bottom-nav-bubble {
+          transition:
+            transform 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+            background-color 0.3s ease,
+            opacity 0.2s ease;
+        }
+      }
+
+      @keyframes navIconPop {
+        0% {
+          transform: translateY(0) scale(0.6);
+        }
+        60% {
+          transform: translateY(-34px) scale(1.2);
+        }
+        100% {
+          transform: translateY(-29px) scale(1.05);
+        }
+      }
+      @keyframes navLabelIn {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        body .bottom-nav,
+        body .bottom-nav .bottom-nav-item i,
+        .bottom-nav-bubble {
+          transition: none !important;
+          animation: none !important;
+        }
+        body .bottom-nav .bottom-nav-item.active i,
+        body .bottom-nav .bottom-nav-item.active span {
+          animation: none !important;
+        }
+      }
+    </style>
+
     <!-- Di dalam <head> setelah CSS -->
     <script>
       // Apply theme from localStorage immediately
@@ -272,6 +439,74 @@
         </button>
       </div>
     </div>
+
+    <!-- Bottom bar mengambang: posisikan "bulan" + lubang di item aktif.
+         Hanya memantau class .active, jadi tidak bergantung pada app.js. -->
+    <script>
+      (function () {
+        const nav = document.querySelector(".bottom-nav");
+        if (!nav) return;
+
+        const SIZE = 54;
+        const bubble = document.createElement("div");
+        bubble.className = "bottom-nav-bubble";
+        bubble.setAttribute("aria-hidden", "true");
+        nav.appendChild(bubble);
+
+        function place() {
+          let active = nav.querySelector(".bottom-nav-item.active");
+          // Halaman dari drawer "Lainnya" tidak punya tombol sendiri di bar:
+          // tandai "Lainnya" sebagai aktif. navigateTo() di app.js otomatis
+          // melepasnya lagi saat user pindah ke halaman utama.
+          if (!active) {
+            const more = document.getElementById("bottom-nav-more");
+            if (more) {
+              more.classList.add("active");
+              active = more;
+            }
+          }
+          if (!active || getComputedStyle(bubble).display === "none") {
+            nav.style.setProperty("--notch-x", "-200px");
+            bubble.style.opacity = "0";
+            return;
+          }
+          const cx = active.offsetLeft + active.offsetWidth / 2;
+          nav.style.setProperty("--notch-x", cx + "px");
+          bubble.style.transform = "translateX(" + (cx - SIZE / 2) + "px)";
+          bubble.style.opacity = "1";
+          // Warna bulan mengikuti warna aktif bawaan (warna label item aktif)
+          const label = active.querySelector("span") || active;
+          bubble.style.setProperty(
+            "--bubble-color",
+            getComputedStyle(label).color,
+          );
+        }
+
+        const observer = new MutationObserver(function () {
+          place();
+          setTimeout(place, 350); // ambil ulang warna setelah transisi warna bawaan selesai
+        });
+        nav.querySelectorAll(".bottom-nav-item").forEach(function (btn) {
+          observer.observe(btn, {
+            attributes: true,
+            attributeFilter: ["class"],
+          });
+        });
+
+        window.addEventListener("resize", place);
+        window.addEventListener("orientationchange", place);
+        window.addEventListener("load", place);
+
+        place();
+        setTimeout(place, 400);
+        // Aktifkan transisi setelah posisi awal terpasang (supaya tidak "meluncur" saat load)
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            nav.classList.add("nav-ready");
+          });
+        });
+      })();
+    </script>
 
     <!-- JavaScript Modules -->
     <script type="module" src="js/app.js"></script>

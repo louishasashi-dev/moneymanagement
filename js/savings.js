@@ -22,10 +22,69 @@ import {
 // State
 let allSavings = [];
 
+// ==================== HELPER KHUSUS MOBILE ====================
+// Nominal >= batas ini ditampilkan ringkas di kartu mobile (contoh: Rp 18jt).
+// Isi Infinity untuk selalu menampilkan angka penuh.
+const SV_COMPACT_FROM = 10_000_000;
+
+function formatSavingCompact(n, force = false) {
+  const abs = Math.abs(n);
+  if (!force && abs < SV_COMPACT_FROM) return formatCurrency(n);
+  const sign = n < 0 ? "-" : "";
+  const units = [
+    [1e12, "T"],
+    [1e9, "M"],
+    [1e6, "jt"],
+  ];
+  for (const [size, label] of units) {
+    if (abs >= size) {
+      const v = Math.floor((abs / size) * 10) / 10;
+      const text = v.toLocaleString("id-ID", { maximumFractionDigits: 1 });
+      return `${sign}Rp ${text}${label}`;
+    }
+  }
+  return formatCurrency(n);
+}
+
+// Hero mobile menembus padding #page-content (pola yang sama dengan halaman Dompet/Transaksi)
+function fitSavingsFullBleed() {
+  const hero = document.querySelector(".sv-hero");
+  const box = document.querySelector(".savings-container");
+  if (!hero || !box || getComputedStyle(hero).display === "none") return;
+  const rect = hero.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth;
+  let top = 0;
+  for (
+    let n = box.parentElement;
+    n && n !== document.documentElement;
+    n = n.parentElement
+  ) {
+    top += parseFloat(getComputedStyle(n).paddingTop) || 0;
+  }
+  box.style.setProperty("--sv-bleed-l", `${Math.max(0, rect.left)}px`);
+  box.style.setProperty("--sv-bleed-r", `${Math.max(0, vw - rect.right)}px`);
+  box.style.setProperty("--sv-bleed-t", `${top}px`);
+}
+
+function scheduleSavingsFullBleed() {
+  fitSavingsFullBleed();
+  requestAnimationFrame(fitSavingsFullBleed);
+  setTimeout(fitSavingsFullBleed, 150);
+  setTimeout(fitSavingsFullBleed, 500);
+}
+
+if (!window.__svFullBleedBound) {
+  window.__svFullBleedBound = true;
+  window.addEventListener("resize", fitSavingsFullBleed);
+}
+
 // Render halaman tabungan utama
 export async function renderSavingsPage() {
   const container = document.getElementById("page-content");
   if (!container) return;
+
+  // Style harus ada SEBELUM markup dirender (elemen khusus mobile disembunyikan lewat CSS)
+  addSavingsStyles();
 
   // Load semua tabungan
   await loadSavings();
@@ -36,9 +95,35 @@ export async function renderSavingsPage() {
   const overallProgress =
     totalTarget > 0 ? (totalSaved / totalTarget) * 100 : 0;
 
+  const heroText = (n) => {
+    const full = formatCurrency(n);
+    return full.length > 16 ? formatSavingCompact(n, true) : full;
+  };
+  const targetText = heroText(totalTarget);
+  const savedText = heroText(totalSaved);
+
   // HTML Template
   container.innerHTML = `
         <div class="savings-container">
+            <!-- Hero khusus mobile -->
+            <div class="m-only sv-hero">
+                <div class="sv-hero-title">Tabungan</div>
+                <div class="sv-hero-label">Progress Keseluruhan</div>
+                <div class="sv-hero-stats">
+                    <div class="sv-hero-stat">
+                        <span class="sv-hero-stat-label">Total Target</span>
+                        <span class="sv-hero-stat-value" style="--chars: ${targetText.length}">${targetText}</span>
+                    </div>
+                    <div class="sv-hero-stat">
+                        <span class="sv-hero-stat-label">Terkumpul</span>
+                        <span class="sv-hero-stat-value" style="--chars: ${savedText.length}">${savedText}</span>
+                    </div>
+                </div>
+                <button type="button" class="sv-hero-add" id="sv-add-btn" aria-label="Target Baru" title="Target Baru">
+                    <i class="fas fa-plus"></i>
+                </button>
+            </div>
+
             <!-- Header -->
             <div class="page-header">
                 <h1><i class="fas fa-piggy-bank"></i> Tabungan</h1>
@@ -78,9 +163,7 @@ export async function renderSavingsPage() {
 
   // Setup event listeners
   setupSavingsEventListeners();
-
-  // Add styles
-  addSavingsStyles();
+  scheduleSavingsFullBleed();
 }
 
 // Load semua tabungan dari database
@@ -112,8 +195,48 @@ function renderSavingsList() {
       const isCompleted = progress >= 100;
       const daysLeft = getDaysLeft(saving.deadline);
 
+      const mAmount = (label, value, extra = "") => `
+                        <div class="sv-amount">
+                            <span class="sv-amount-label">${label}</span>
+                            <span class="sv-amount-value ${extra}" title="${formatCurrency(value)}" style="--chars: ${formatSavingCompact(value).length}">${formatSavingCompact(value)}</span>
+                        </div>`;
+      const mDeadline = saving.deadline
+        ? `<div class="sv-deadline ${daysLeft < 0 ? "expired" : daysLeft < 7 ? "urgent" : ""}">
+                            <i class="far fa-calendar-alt"></i>
+                            ${daysLeft < 0 ? "Melewati deadline" : `${daysLeft} hari lagi`}
+                        </div>`
+        : "";
+
       return `
             <div class="saving-card" data-id="${saving.id}">
+                <!-- Tampilan khusus mobile -->
+                <div class="m-only sv-card">
+                    <div class="sv-top">
+                        <div class="sv-thumb ${saving.photo ? "has-photo" : ""}">
+                            ${saving.photo ? `<img src="${saving.photo}" alt="${escapeHtml(saving.name)}" class="saving-photo-thumb">` : ""}
+                        </div>
+                        <div class="sv-main">
+                            <div class="sv-name">${escapeHtml(saving.name)}</div>
+                            <div class="sv-desc">${escapeHtml(saving.description || "Tidak ada deskripsi")}</div>
+                            <div class="sv-actions">
+                                <button class="icon-btn add-saving-money" data-id="${saving.id}" title="Tambah Tabungan" type="button"><i class="fas fa-plus"></i></button>
+                                <button class="icon-btn withdraw-saving" data-id="${saving.id}" title="Ambil Tabungan" type="button"><i class="fas fa-minus"></i></button>
+                                <button class="icon-btn view-history" data-id="${saving.id}" title="Lihat Riwayat" type="button"><i class="fas fa-list-ul"></i></button>
+                                <button class="icon-btn edit-saving" data-id="${saving.id}" title="Edit" type="button"><i class="fas fa-edit"></i></button>
+                                <button class="icon-btn delete-saving" data-id="${saving.id}" title="Hapus" type="button"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sv-amounts">
+                        ${mAmount("target", saving.targetAmount)}
+                        ${mAmount("terkumpul", saving.currentAmount, isCompleted ? "completed" : "")}
+                        ${mAmount("sisa", saving.targetAmount - saving.currentAmount)}
+                    </div>
+                    <div class="sv-progress-text">${Math.round(progress)}% tercapai</div>
+                    <div class="sv-bar"><div class="sv-bar-fill ${isCompleted ? "completed" : ""}" style="width: ${Math.min(progress, 100)}%"></div></div>
+                    ${mDeadline}
+                </div>
+
                 <div class="saving-card-header">
                     <div class="saving-icon ${saving.photo ? "has-photo" : ""}">
                         ${
@@ -203,6 +326,11 @@ function setupSavingsEventListeners() {
     addBtn.parentNode.replaceChild(newAddBtn, addBtn);
     newAddBtn.addEventListener("click", () => showSavingModal());
   }
+
+  // Tombol + di hero mobile
+  document
+    .getElementById("sv-add-btn")
+    ?.addEventListener("click", () => showSavingModal());
 
   // Empty state add button
   const emptyStateBtn = document.querySelector(".empty-state .btn-add-saving");
@@ -412,7 +540,9 @@ async function showSavingModal(savingId = null) {
     e.preventDefault();
 
     const name = modal.querySelector("#saving-name").value.trim();
-    const targetAmount = parseMoney(modal.querySelector("#saving-target").value);
+    const targetAmount = parseMoney(
+      modal.querySelector("#saving-target").value,
+    );
     let currentAmount =
       parseMoney(modal.querySelector("#saving-current").value) || 0;
     const description = modal.querySelector("#saving-description").value;
@@ -1189,6 +1319,270 @@ function addSavingsStyles() {
             .progress-stats {
                 gap: 16px;
             }
+        }
+
+        /* ===== Elemen khusus mobile: disembunyikan di desktop ===== */
+        .savings-container .m-only { display: none; }
+
+        /* ===== TAMPILAN MOBILE (<= 768px) ===== */
+        @media (max-width: 768px) {
+            /* Hilangkan padding halaman agar hero bisa full ke tepi */
+            #page-content:has(.sv-hero),
+            body *:has(.sv-hero) {
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                padding-top: 0 !important;
+                border-top-left-radius: 0 !important;
+                border-top-right-radius: 0 !important;
+            }
+            html:has(.sv-hero),
+            body:has(.sv-hero) { overflow-x: hidden; }
+
+            .savings-container { max-width: none; margin: 0; }
+            .savings-container .page-header,
+            .savings-container .overall-progress-card { display: none !important; }
+
+            /* ===== Hero biru ===== */
+            .savings-container .sv-hero {
+                display: block;
+                position: relative;
+                z-index: 0;
+                padding: 14px 16px 56px;
+                text-align: center;
+                color: #fff;
+            }
+            .savings-container .sv-hero::before {
+                content: "";
+                position: absolute;
+                z-index: -1;
+                top: calc(var(--sv-bleed-t, 0px) * -1 - 2px);
+                left: calc(var(--sv-bleed-l, 0px) * -1 - 2px);
+                right: calc(var(--sv-bleed-r, 0px) * -1 - 2px);
+                bottom: 0;
+                background: linear-gradient(180deg, #1a3fd1 0%, #2f5be8 100%);
+            }
+            .savings-container .sv-hero-title {
+                text-align: left;
+                font-size: 0.95rem;
+                font-weight: 700;
+                letter-spacing: 0.02em;
+                text-transform: uppercase;
+            }
+            .savings-container .sv-hero-label {
+                margin-top: 14px;
+                font-size: 0.78rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .savings-container .sv-hero-stats {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                margin-top: 8px;
+            }
+            .savings-container .sv-hero-stat { min-width: 0; }
+            .savings-container .sv-hero-stat-label {
+                display: block;
+                font-size: 0.72rem;
+                font-weight: 500;
+                opacity: 0.9;
+            }
+            .savings-container .sv-hero-stat-value {
+                display: block;
+                margin-top: 2px;
+                /* mengecil otomatis sesuai jumlah karakter agar selalu 1 baris */
+                font-size: clamp(9px, calc((100vw - 56px) / 2 / (var(--chars, 12) * 0.62)), 17px);
+                font-weight: 700;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .savings-container .sv-hero-add {
+                width: 36px;
+                height: 36px;
+                margin: 14px auto 0;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 0;
+                border-radius: 50%;
+                background: #d9dbe1;
+                color: #fff;
+                font-size: 1rem;
+                cursor: pointer;
+                box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+            }
+
+            /* ===== Panel putih terangkat berisi kartu ===== */
+            .savings-container,
+            .savings-container .savings-list { min-width: 0; max-width: 100%; box-sizing: border-box; }
+            .savings-container .savings-list {
+                position: relative;
+                z-index: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 14px;
+                margin-top: -34px;
+                padding: 22px clamp(12px, 5vw, 24px) 110px; /* bawah: ruang bottom nav */
+                min-height: 55vh;
+                background: #f3f4f8;
+                border-radius: 28px 28px 0 0;
+                box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.14);
+            }
+
+            /* ===== Kartu tabungan ===== */
+            .savings-container .saving-card {
+                display: block !important;
+                width: 100%;
+                min-width: 0;
+                box-sizing: border-box;
+                margin: 0 !important;
+                padding: 12px;
+                background: #fff !important;
+                border-radius: 14px !important;
+                box-shadow: 0 3px 12px rgba(20, 30, 70, 0.1) !important;
+                overflow: hidden;
+            }
+            .savings-container .saving-card > .saving-card-header,
+            .savings-container .saving-card > .saving-card-body { display: none !important; }
+            .savings-container .sv-card { display: block; min-width: 0; }
+
+            .savings-container .sv-top {
+                display: flex;
+                align-items: flex-start;
+                gap: 12px;
+                min-width: 0;
+            }
+            .savings-container .sv-thumb {
+                flex: 0 0 31%;
+                min-width: 84px;
+                max-width: 120px;
+                aspect-ratio: 4 / 3;
+                border-radius: 8px;
+                overflow: hidden;
+                background:
+                    radial-gradient(ellipse 24% 13% at 38% 30%, #fff 62%, transparent 64%),
+                    radial-gradient(ellipse 15% 10% at 54% 34%, #fff 62%, transparent 64%),
+                    radial-gradient(ellipse 85% 42% at 25% 105%, #6b9a22 70%, transparent 72%),
+                    radial-gradient(ellipse 75% 36% at 95% 108%, #86b53a 70%, transparent 72%),
+                    linear-gradient(#bfe1f7, #e3f2fc);
+            }
+            .savings-container .sv-thumb.has-photo { background: #eef0f5; }
+            .savings-container .sv-thumb img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+                cursor: pointer;
+            }
+            .savings-container .sv-main {
+                flex: 1 1 0;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                align-self: stretch;
+            }
+            .savings-container .sv-name {
+                font-size: 0.95rem;
+                font-weight: 700;
+                line-height: 1.3;
+                color: #111;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .savings-container .sv-desc {
+                margin: 2px 0 8px;
+                font-size: 0.72rem;
+                line-height: 1.3;
+                color: #444;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            .savings-container .sv-actions {
+                margin-top: auto;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+            }
+            .savings-container .sv-actions .icon-btn {
+                flex: 0 0 28px;
+                width: 28px !important;
+                height: 28px !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+                border: 0 !important;
+                border-radius: 50% !important;
+                background: #d3d6dc !important;
+                color: #fff !important;
+                font-size: 0.75rem !important;
+                box-shadow: none !important;
+            }
+            .savings-container .sv-actions .delete-saving {
+                background: #ee1c1c !important;
+                color: #3b0707 !important;
+            }
+
+            .savings-container .sv-amounts {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 8px;
+                margin: 12px 0 8px;
+            }
+            .savings-container .sv-amount { min-width: 0; text-align: left; }
+            .savings-container .sv-amount-label {
+                display: block;
+                font-size: 0.64rem;
+                color: #444;
+            }
+            .savings-container .sv-amount-value {
+                display: block;
+                font-size: clamp(9px, calc((100vw - 120px) / 3 / (var(--chars, 12) * 0.62)), 13.5px);
+                font-weight: 700;
+                color: #111;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .savings-container .sv-amount-value.completed { color: #10b981; }
+            .savings-container .sv-progress-text { font-size: 0.7rem; color: #333; }
+            .savings-container .sv-bar {
+                height: 6px;
+                margin-top: 5px;
+                border-radius: 6px;
+                background: #cfd5df;
+                overflow: hidden;
+            }
+            .savings-container .sv-bar-fill {
+                height: 100%;
+                border-radius: 6px;
+                background: #1e3a8a;
+            }
+            .savings-container .sv-bar-fill.completed { background: #10b981; }
+            .savings-container .sv-deadline { margin-top: 8px; font-size: 0.7rem; color: #555; }
+            .savings-container .sv-deadline.urgent { color: #f59e0b; }
+            .savings-container .sv-deadline.expired { color: #ef4444; }
+        }
+
+        /* Layar sangat sempit: foto di atas, info di bawah */
+        @media (max-width: 340px) {
+            .savings-container .sv-top { flex-direction: column; }
+            .savings-container .sv-thumb {
+                flex: none;
+                width: 100%;
+                max-width: none;
+                aspect-ratio: 16 / 9;
+            }
+            .savings-container .sv-main { width: 100%; align-self: auto; }
+            .savings-container .sv-actions { margin-top: 0; }
         }
     `;
 
