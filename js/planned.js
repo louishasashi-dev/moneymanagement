@@ -427,14 +427,344 @@ async function renderPlannedView() {
 // ───────────────────────────────────────────────
 // Daftar plan (halaman utama Rencana Transaksi)
 // ───────────────────────────────────────────────
+// Styles khusus tampilan MOBILE daftar plan (desktop tetap tampilan awal)
+function ensurePlanListStyles() {
+  document.getElementById("plan-list-styles")?.remove();
+  const style = document.createElement("style");
+  style.id = "plan-list-styles";
+  style.textContent = `
+    /* Desktop: sembunyikan tampilan mobile */
+    .pl-mobile, .pd-mobile { display: none; }
+
+    @media (max-width: 768px) {
+      .pl-desktop, .pd-desktop { display: none !important; }
+
+      /* Hilangkan padding halaman agar header bisa full ke tepi */
+      #page-content:has(.pl-mobile), #page-content:has(.pd-mobile),
+      body *:has(.pl-mobile), body *:has(.pd-mobile) {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        padding-top: 0 !important;
+        border-top-left-radius: 0 !important;
+        border-top-right-radius: 0 !important;
+      }
+      html:has(.pl-mobile), html:has(.pd-mobile),
+      body:has(.pl-mobile), body:has(.pd-mobile) { overflow-x: hidden; }
+
+      #page-content:has(.pl-mobile), #page-content:has(.pd-mobile) { overflow-x: clip; max-width: 100vw; }
+
+      .pl-mobile {
+        display: block;
+        width: 100%;
+        max-width: 100%;
+        padding-bottom: 110px; /* ruang untuk bottom navigation */
+        overflow-wrap: anywhere;
+      }
+      .pl-mobile *, .pl-mobile *::before, .pl-mobile *::after { box-sizing: border-box; }
+
+      /* ===== Hero (full-bleed, margin diatur fitPlanMobileFullBleed()) ===== */
+      .pl-hero {
+        position: relative;
+        z-index: 0;
+        color: #fff;
+        padding: 28px 20px 96px;
+      }
+      .pl-hero::before {
+        content: "";
+        position: absolute;
+        z-index: -1;
+        top: calc(var(--pl-bleed-t, 0px) * -1 - 2px);
+        left: calc(var(--pl-bleed-l, 0px) * -1 - 2px);
+        right: calc(var(--pl-bleed-r, 0px) * -1 - 2px);
+        bottom: 0;
+        background:
+          radial-gradient(circle at 85% 12%, rgba(96,140,255,.30), transparent 55%),
+          linear-gradient(160deg, #0f2347 0%, #172f5c 55%, #1b3a73 100%);
+        border-radius: 0;
+      }
+      .pl-brand { display: flex; align-items: center; gap: 12px; }
+      .pl-brand-logo {
+        width: 40px; height: 40px; border-radius: 12px; background: #fff;
+        color: #1d4ed8; display: flex; align-items: center; justify-content: center;
+        font-size: 1.1rem; flex-shrink: 0;
+      }
+      .pl-brand-name { font-weight: 600; font-size: 1rem; }
+      .pl-hero-title {
+        margin: 36px 0 8px; font-size: clamp(1.4rem, 7.5vw, 1.7rem); line-height: 1.15; font-weight: 700;
+        font-family: Georgia, "Times New Roman", serif; letter-spacing: -.01em; color: #fff;
+      }
+      .pl-hero-sub {
+        margin: 0; font-size: .78rem; line-height: 1.5; max-width: 300px;
+        color: rgba(255,255,255,.85);
+      }
+
+      /* ===== Kartu utama ===== */
+      .pl-main-card {
+        position: relative; z-index: 1;
+        background: #fff; color: #0f1f3d;
+        border-radius: 24px; margin: -64px 16px 0; padding: 18px 18px 22px;
+        box-shadow: 0 14px 36px rgba(15,35,71,.18);
+      }
+      .pl-main-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+      .pl-eyebrow {
+        font-size: .58rem; font-weight: 700; letter-spacing: .12em;
+        color: #1d4ed8; text-transform: uppercase;
+      }
+      .pl-main-title {
+        margin: 0; text-align: left; font-weight: 800; color: #0f1f3d;
+        font-size: clamp(.8rem, 4.1vw, 1rem); line-height: 1.3;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .pl-head-icon {
+        width: 34px; height: 34px; border-radius: 11px; background: #e8efff; color: #2563eb;
+        display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: .9rem;
+      }
+      .pl-empty { text-align: center; padding: 22px 6px 4px; }
+      .pl-empty-icon {
+        width: 56px; height: 56px; border-radius: 50%; background: #e8efff; color: #2563eb;
+        display: flex; align-items: center; justify-content: center;
+        margin: 0 auto 14px; font-size: 1.3rem;
+      }
+      .pl-empty-title { margin: 0 0 6px; font-size: .85rem; font-weight: 700; color: #0f1f3d; }
+      .pl-empty-text { margin: 0 0 18px; font-size: .72rem; line-height: 1.5; color: #334155; }
+      .pl-create-btn {
+        display: block; width: 100%; border: none; cursor: pointer;
+        background: #2563eb; color: #fff; font-weight: 600; font-size: .78rem;
+        padding: 15px 16px; border-radius: 14px;
+        box-shadow: 0 8px 18px rgba(37,99,235,.35);
+        font-family: inherit;
+      }
+      .pl-create-btn:active { transform: translateY(1px); }
+      .pl-create-btn.pl-spaced { margin-top: 16px; }
+
+      /* ===== Daftar plan ===== */
+      .pl-list { margin: 18px 16px 0; display: flex; flex-direction: column; gap: 16px; }
+      .pl-card {
+        position: relative; overflow: hidden;
+        background: #fff; color: #0f1f3d; border-radius: 22px; padding: 18px;
+        border: 1px solid #e8eefb;
+        box-shadow: 0 10px 28px rgba(15,35,71,.10);
+      }
+      .pl-card::before {
+        content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px;
+        background: linear-gradient(90deg, #2563eb, #60a5fa);
+      }
+      .pl-card-head { display: flex; align-items: center; gap: 12px; }
+      .pl-card-badge {
+        width: 46px; height: 46px; border-radius: 15px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, #2563eb, #4f8bff); color: #fff; font-size: 1.15rem;
+        box-shadow: 0 8px 16px rgba(37,99,235,.30);
+      }
+      .pl-card-titles { flex: 1; min-width: 0; }
+      .pl-card-name {
+        margin: 0; font-size: 1.02rem; font-weight: 700; line-height: 1.25; color: #0f1f3d;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .pl-card-sub { display: block; margin-top: 2px; font-size: .74rem; color: #64748b; }
+      .pl-card-tools { display: flex; gap: 6px; flex-shrink: 0; }
+      .pl-icon-btn {
+        width: 34px; height: 34px; border: none; cursor: pointer; border-radius: 50%;
+        background: #f1f5f9; color: #334155; font-size: .85rem;
+        display: flex; align-items: center; justify-content: center; padding: 0;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .pl-icon-btn:active { transform: scale(.94); }
+      .pl-icon-btn.pl-danger { background: #fee9ec; color: #e11d48; }
+      .pl-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+      .pl-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 6px 12px; border-radius: 999px; font-size: .74rem; font-weight: 600;
+      }
+      .pl-chip-all { background: #eef2ff; color: #3730a3; }
+      .pl-chip-wait { background: #fff4de; color: #b45309; }
+      .pl-chip-ok { background: #dcfce7; color: #15803d; }
+      .pl-total-box {
+        margin-top: 14px; padding: 12px 14px; border-radius: 16px;
+        background: linear-gradient(135deg, #f3f7ff, #eaf1ff);
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      }
+      .pl-total-label { font-size: .74rem; font-weight: 600; color: #475569; }
+      .pl-total-amount { font-size: 1.15rem; font-weight: 800; color: #0f1f3d; text-align: right; }
+      .pl-open-btn {
+        width: 100%; margin-top: 14px; border: none; cursor: pointer; font-family: inherit;
+        display: flex; align-items: center; justify-content: center; gap: 10px;
+        padding: 13px 16px; border-radius: 14px;
+        background: #0f2347; color: #fff; font-weight: 700; font-size: .85rem;
+        box-shadow: 0 8px 18px rgba(15,35,71,.28);
+      }
+      .pl-open-btn i { font-size: .8rem; }
+      .pl-open-btn:active { transform: translateY(1px); }
+
+      /* ===================== DETAIL PLAN (mobile) ===================== */
+      .pd-mobile {
+        display: block; width: 100%; max-width: 100%;
+        padding-bottom: 110px; overflow-wrap: anywhere;
+      }
+      .pd-mobile *, .pd-mobile *::before, .pd-mobile *::after { box-sizing: border-box; }
+
+      .pd-hero { position: relative; z-index: 0; color: #fff; padding: 26px 16px 150px; }
+      .pd-hero::before {
+        content: "";
+        position: absolute; z-index: -1;
+        top: calc(var(--pl-bleed-t, 0px) * -1 - 2px);
+        left: calc(var(--pl-bleed-l, 0px) * -1 - 2px);
+        right: calc(var(--pl-bleed-r, 0px) * -1 - 2px);
+        bottom: 0;
+        background:
+          radial-gradient(circle at 90% 6%, rgba(130,170,255,.38), transparent 55%),
+          linear-gradient(170deg, #1b3a96 0%, #2650b5 100%);
+      }
+      .pd-title-row { display: flex; align-items: center; gap: 12px; }
+      .pd-title-ico { font-size: 1.7rem; flex-shrink: 0; }
+      .pd-title {
+        margin: 0; min-width: 0; font-size: 1.35rem; font-weight: 700; color: #fff;
+        text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .pd-actions { display: flex; gap: 8px; margin-top: 16px; }
+      .pd-btn {
+        flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
+        padding: 11px 6px; border: none; border-radius: 12px; cursor: pointer;
+        font-family: inherit; font-size: .76rem; font-weight: 600; white-space: nowrap;
+      }
+      .pd-btn span { overflow: hidden; text-overflow: ellipsis; }
+      .pd-btn i { font-size: .8rem; flex-shrink: 0; }
+      .pd-btn-light { background: #fff; color: #0f1f3d; box-shadow: 0 4px 10px rgba(0,0,0,.12); }
+      .pd-btn-primary { background: #2f6df0; color: #fff; box-shadow: 0 6px 14px rgba(20,60,160,.45); }
+      .pd-btn:active { transform: translateY(1px); }
+      .pd-info { margin: 16px 0 0; font-size: .76rem; font-weight: 600; line-height: 1.55; color: rgba(255,255,255,.95); }
+      .pd-info.urgent { color: #ffe29a; }
+
+      .pd-summary {
+        position: relative; z-index: 3; margin: -110px 16px 0; padding: 16px 4px;
+        border-radius: 20px; color: #fff;
+        background: linear-gradient(135deg, #16338c, #1e49b3);
+        border: 1px solid rgba(255,255,255,.35);
+        box-shadow: 0 14px 30px rgba(10,25,80,.35);
+        display: grid; grid-template-columns: 1fr 1fr 1.3fr;
+      }
+      .pd-sum-col { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 4px; text-align: center; min-width: 0; }
+      .pd-sum-col + .pd-sum-col { border-left: 1px solid rgba(255,255,255,.22); }
+      .pd-sum-icon {
+        width: 34px; height: 34px; border-radius: 50%; background: rgba(255,255,255,.92); color: #2350b8;
+        display: flex; align-items: center; justify-content: center; font-size: .9rem;
+      }
+      .pd-sum-label { font-size: .7rem; opacity: .95; }
+      .pd-sum-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
+      .pd-sum-value.money { font-size: clamp(.8rem, 4.2vw, 1.1rem); white-space: nowrap; color: #ff8a9a; margin-top: 3px; }
+      .pd-sum-value.money.pos { color: #7ff0b4; }
+
+      .pd-sheet {
+        position: relative; z-index: 2; margin-top: -80px;
+        background: #fff; border-radius: 32px 32px 0 0; padding: 104px 16px 0;
+        min-height: 45vh;
+      }
+      .pd-sec-title { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 1.05rem; font-weight: 800; color: #0f1f3d; }
+      .pd-sec-ico {
+        width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; color: #fff; background: #2563eb;
+        display: flex; align-items: center; justify-content: center; font-size: .78rem;
+      }
+      .pd-sec-ico.ok { background: #16a34a; }
+      .pd-sec-ico.plain { background: none; color: #2563eb; width: auto; height: auto; font-size: 1.3rem; }
+
+      .pd-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .pd-tile { border-radius: 16px; padding: 14px; min-width: 0; }
+      .pd-tile.in { background: #e8f8f1; }
+      .pd-tile.out { background: #fdeef0; }
+      .pd-tile-label { display: flex; align-items: center; gap: 6px; font-size: .72rem; color: #475569; }
+      .pd-tile.in .pd-tile-label i, .pd-tile.in .pd-tile-amt { color: #12926a; }
+      .pd-tile.out .pd-tile-label i, .pd-tile.out .pd-tile-amt { color: #e11d48; }
+      .pd-tile-amt { margin-top: 8px; font-weight: 800; font-size: clamp(.88rem, 4.3vw, 1.08rem); white-space: nowrap; }
+      .pd-tile-pend { margin-top: 4px; font-size: .68rem; color: #64748b; }
+      .pd-diff { margin-top: 12px; border-radius: 14px; background: #f3f6fc; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+      .pd-diff-ico {
+        width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0; background: #8a97b1; color: #fff;
+        display: flex; align-items: center; justify-content: center; font-size: .7rem;
+      }
+      .pd-diff-label { flex: 1; min-width: 0; font-size: .76rem; color: #334155; }
+      .pd-diff-val { font-weight: 800; font-size: .95rem; white-space: nowrap; }
+      .pd-pos { color: #12926a; }
+      .pd-neg { color: #e11d48; }
+
+      .pd-block { margin-top: 28px; }
+      .pd-list { border: 1px solid #e3e9f4; border-radius: 16px; background: #fff; overflow: hidden; }
+      .pd-item { display: flex; align-items: center; gap: 10px; padding: 14px 12px; border-bottom: 1px solid #e9eef7; }
+      .pd-item:last-child { border-bottom: none; }
+      .pd-item.done { opacity: .75; }
+      .pd-item-ico { width: 34px; text-align: center; font-size: 1.9rem; flex-shrink: 0; line-height: 1; }
+      .pd-item-ico.exp { color: #ef233c; }
+      .pd-item-ico.inc { color: #19c88d; }
+      .pd-item-ico.sav { color: #6366f1; font-size: 1.4rem; }
+      .pd-item-main { flex: 1; min-width: 0; }
+      .pd-item-name { font-weight: 700; font-size: .95rem; line-height: 1.3; color: #0f1f3d; }
+      .pd-item-meta { margin-top: 2px; font-size: .76rem; line-height: 1.4; color: #64748b; }
+      .pd-item-note { font-style: italic; }
+      .pd-item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
+      .pd-item-amt { font-weight: 800; font-size: .88rem; white-space: nowrap; }
+      .pd-acts { display: flex; gap: 6px; }
+      .pd-act {
+        width: 32px; height: 32px; border: none; border-radius: 50%; cursor: pointer; padding: 0;
+        display: flex; align-items: center; justify-content: center; font-size: .8rem;
+      }
+      .pd-act.ok { background: #dff5e8; color: #16a34a; }
+      .pd-act.ed { background: #e6ecff; color: #2f55d4; }
+      .pd-act.del { background: #fde4e7; color: #e11d48; }
+      .pd-act:active { transform: scale(.94); }
+      .pd-done-badge { font-size: .68rem; font-weight: 700; background: #dcfce7; color: #15803d; padding: 3px 9px; border-radius: 999px; }
+      .pd-empty { padding: 26px 10px; text-align: center; color: #64748b; font-size: .82rem; }
+      .pd-empty i { display: block; font-size: 2rem; margin-bottom: 8px; color: #94a3b8; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// Buat hero mobile benar-benar full (menembus padding #page-content), sama seperti wallet.js
+function fitPlanMobileFullBleed() {
+  const el = document.querySelector(".pl-mobile, .pd-mobile");
+  if (!el || getComputedStyle(el).display === "none") return;
+  const hero = el.querySelector(".pl-hero, .pd-hero");
+  if (!hero) return;
+
+  const rect = hero.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth;
+
+  let top = 0;
+  for (
+    let n = el.parentElement;
+    n && n !== document.documentElement;
+    n = n.parentElement
+  ) {
+    top += parseFloat(getComputedStyle(n).paddingTop) || 0;
+  }
+
+  el.style.setProperty("--pl-bleed-l", `${Math.max(0, rect.left)}px`);
+  el.style.setProperty("--pl-bleed-r", `${Math.max(0, vw - rect.right)}px`);
+  el.style.setProperty("--pl-bleed-t", `${top}px`);
+}
+
+function schedulePlanFullBleed() {
+  fitPlanMobileFullBleed();
+  requestAnimationFrame(fitPlanMobileFullBleed);
+  setTimeout(fitPlanMobileFullBleed, 150);
+  setTimeout(fitPlanMobileFullBleed, 500);
+}
+
+if (!window.__planFullBleedBound) {
+  window.__planFullBleedBound = true;
+  window.addEventListener("resize", fitPlanMobileFullBleed);
+}
+
 async function renderPlanList() {
   const container = document.getElementById("page-content");
   if (!container) return;
 
+  ensurePlanListStyles();
+
   const allItems = await plannedGetAll();
   const plans = await loadPlans(allItems);
 
-  const cards = plans
+  // ── Desktop: tampilan awal (tidak diubah) ──
+  const desktopCards = plans
     .map((plan) => {
       const planItems = allItems.filter((i) => planIdOf(i) === plan.id);
       const sum = summarizePlan(planItems);
@@ -460,38 +790,118 @@ async function renderPlanList() {
     })
     .join("");
 
-  container.innerHTML = `
-    <div class="transactions-container planned-plan-list">
-      <div class="page-header">
-        <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
-        <div>
-          <button class="btn-primary" id="create-plan-btn">
-            <i class="fas fa-plus"></i> Buat Rencana
-          </button>
+  const desktopHtml = `
+    <div class="pl-desktop">
+      <div class="transactions-container planned-plan-list">
+        <div class="page-header">
+          <h1><i class="fas fa-calendar-check"></i> Rencana Transaksi</h1>
+          <div>
+            <button class="btn-primary" id="create-plan-btn">
+              <i class="fas fa-plus"></i> Buat Rencana
+            </button>
+          </div>
         </div>
+
+        ${
+          plans.length === 0
+            ? `<div class="card empty-state" style="padding:30px 16px;text-align:center;">
+                <i class="fas fa-calendar-check"></i>
+                <p>Belum ada rencana transaksi.</p>
+                <p style="font-size:.85rem;">Buat rencana pertama untuk mengelompokkan transaksi yang ingin direncanakan.</p>
+                <button class="btn-primary" id="create-plan-empty-btn">
+                  <i class="fas fa-plus"></i> Buat Rencana
+                </button>
+              </div>`
+            : `<div class="plan-list">${desktopCards}</div>`
+        }
       </div>
+    </div>`;
 
-      ${
-        plans.length === 0
-          ? `<div class="card empty-state" style="padding:30px 16px;text-align:center;">
-              <i class="fas fa-calendar-check"></i>
-              <p>Belum ada rencana transaksi.</p>
-              <p style="font-size:.85rem;">Buat rencana pertama untuk mengelompokkan transaksi yang ingin direncanakan.</p>
-              <button class="btn-primary" id="create-plan-empty-btn">
-                <i class="fas fa-plus"></i> Buat Rencana
-              </button>
-            </div>`
-          : `<div class="plan-list">${cards}</div>`
-      }
-    </div>
-  `;
+  // ── Mobile: desain baru ──
+  const mobileCards = plans
+    .map((plan) => {
+      const planItems = allItems.filter((i) => planIdOf(i) === plan.id);
+      const sum = summarizePlan(planItems);
+      const confirmedCount = planItems.filter(
+        (i) => i.status === "confirmed",
+      ).length;
+      const pid = escapeHtml(plan.id);
+      return `
+      <article class="pl-card plan-card" data-plan-id="${pid}">
+        <div class="pl-card-head">
+          <div class="pl-card-badge"><i class="fas fa-folder-open"></i></div>
+          <div class="pl-card-titles">
+            <h3 class="pl-card-name">${escapeHtml(plan.name)}</h3>
+            <span class="pl-card-sub">${sum.count} transaksi</span>
+          </div>
+          <div class="pl-card-tools">
+            <button class="pl-icon-btn plan-rename-btn" data-plan-id="${pid}" title="Ubah nama rencana" aria-label="Ubah nama rencana">
+              <i class="fas fa-pen-to-square"></i>
+            </button>
+            <button class="pl-icon-btn pl-danger plan-delete-btn" data-plan-id="${pid}" title="Hapus rencana" aria-label="Hapus rencana">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
+        <div class="pl-chips">
+          <span class="pl-chip pl-chip-wait"><i class="fas fa-clock"></i> ${sum.pending} menunggu</span>
+          <span class="pl-chip pl-chip-ok"><i class="fas fa-circle-check"></i> ${confirmedCount} disetujui</span>
+        </div>
+        <div class="pl-total-box">
+          <span class="pl-total-label">Total rencana</span>
+          <strong class="pl-total-amount">${formatCurrency(sum.net)}</strong>
+        </div>
+        <button class="pl-open-btn plan-open-btn" data-plan-id="${pid}">
+          Buka rencana <i class="fas fa-arrow-right"></i>
+        </button>
+      </article>`;
+    })
+    .join("");
 
-  document
-    .getElementById("create-plan-btn")
-    ?.addEventListener("click", () => showPlanNameModal());
-  document
-    .getElementById("create-plan-empty-btn")
-    ?.addEventListener("click", () => showPlanNameModal());
+  const mobileHtml = `
+    <div class="pl-mobile">
+      <header class="pl-hero">
+        <div class="pl-brand">
+          <div class="pl-brand-logo"><i class="fas fa-calendar-check"></i></div>
+          <span class="pl-brand-name">Rencana Transaksi</span>
+        </div>
+        <h1 class="pl-hero-title">Uang lebih tertata.</h1>
+        <p class="pl-hero-sub">Rencanakan transaksi, pantau arus uang, dan jaga anggaran dalam satu tempat.</p>
+      </header>
+
+      <section class="pl-main-card">
+        <div class="pl-main-head">
+          <div class="pl-eyebrow">Rencana Transaksi</div>
+          <div class="pl-head-icon"><i class="fas fa-calendar-days"></i></div>
+        </div>
+        <h2 class="pl-main-title">Rencanamu, selangkah lebih jelas</h2>
+        ${
+          plans.length === 0
+            ? `<div class="pl-empty">
+                <div class="pl-empty-icon"><i class="fas fa-calendar-days"></i></div>
+                <p class="pl-empty-title">Belum ada rencana transaksi.</p>
+                <p class="pl-empty-text">Buat rencana pertama untuk mengelompokkan transaksi yang ingin direncanakan.</p>
+                <button class="pl-create-btn" id="pl-create-empty-m">+ Buat Rencana</button>
+              </div>`
+            : `<button class="pl-create-btn pl-spaced" id="pl-create-btn-m">+ Buat Rencana</button>`
+        }
+      </section>
+
+      ${plans.length === 0 ? "" : `<div class="pl-list">${mobileCards}</div>`}
+    </div>`;
+
+  container.innerHTML = `${desktopHtml}${mobileHtml}`;
+
+  [
+    "create-plan-btn",
+    "create-plan-empty-btn",
+    "pl-create-btn-m",
+    "pl-create-empty-m",
+  ].forEach((id) =>
+    document
+      .getElementById(id)
+      ?.addEventListener("click", () => showPlanNameModal()),
+  );
 
   container.querySelectorAll(".plan-open-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -505,6 +915,8 @@ async function renderPlanList() {
   container.querySelectorAll(".plan-delete-btn").forEach((btn) => {
     btn.addEventListener("click", () => deletePlan(btn.dataset.planId));
   });
+
+  schedulePlanFullBleed();
 }
 
 // ───────────────────────────────────────────────
@@ -620,6 +1032,8 @@ async function renderPlanDetail() {
   const container = document.getElementById("page-content");
   if (!container) return;
 
+  ensurePlanListStyles();
+
   const plans = await planGetAll();
   const plan = plans.find((p) => p.id === currentPlanId);
   if (!plan) {
@@ -659,7 +1073,7 @@ async function renderPlanDetail() {
 
   const urgentClass = daysToReset <= 3 ? "urgent" : "";
 
-  container.innerHTML = `
+  const desktopHtml = `
     <div class="transactions-container">
       <div class="page-header">
         <h1><i class="fas fa-calendar-check"></i> ${escapeHtml(planName)}</h1>
@@ -746,7 +1160,7 @@ async function renderPlanDetail() {
             border-left:3px solid #10b981;
           ">
             <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">
-              <i class="fas fa-arrow-down" style="color:#10b981;"></i> Total Pemasukan <span style="opacity:.7;">(setelah tabungan)</span>
+              <i class="fas fa-arrow-down" style="color:#10b981;"></i>Pemasukan <span style="opacity:.7;"></span>
             </div>
             <div style="font-weight:700;color:#10b981;font-size:1.05rem;">${formatCurrency(totalPemasukan)}</div>
             <div style="font-size:.7rem;color:var(--text-secondary);margin-top:4px;">
@@ -759,7 +1173,7 @@ async function renderPlanDetail() {
             border-left:3px solid #ef4444;
           ">
             <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">
-              <i class="fas fa-arrow-up" style="color:#ef4444;"></i> Total Pengeluaran
+              <i class="fas fa-arrow-up" style="color:#ef4444;"></i>Pengeluaran
             </div>
             <div style="font-weight:700;color:#ef4444;font-size:1.05rem;">${formatCurrency(totalPengeluaran)}</div>
             <div style="font-size:.7rem;color:var(--text-secondary);margin-top:4px;">
@@ -772,7 +1186,7 @@ async function renderPlanDetail() {
           border-radius:10px;padding:12px 14px;
           display:flex;justify-content:space-between;align-items:center;
         ">
-          <span style="font-size:.83rem;color:var(--text-secondary);">Selisih (Pemasukan − Pengeluaran)</span>
+          <span style="font-size:.83rem;color:var(--text-secondary);">Selisih</span>
           <span style="font-weight:700;font-size:1rem;color:${selisih >= 0 ? "#10b981" : "#ef4444"};">
             ${selisih >= 0 ? "+" : ""}${formatCurrency(selisih)}
           </span>
@@ -823,6 +1237,101 @@ async function renderPlanDetail() {
     </div>
   `;
 
+  // ── Mobile: desain baru ──
+  const pdSumBy = (list, type) =>
+    list.filter((i) => i.type === type).reduce((a, i) => a + i.amount, 0);
+  const pdTotalIn = pdSumBy(allItems, "income") - pdSumBy(allItems, "saving");
+  const pdTotalOut = pdSumBy(allItems, "expense");
+  const pdPendIn = pdSumBy(pending, "income") - pdSumBy(pending, "saving");
+  const pdPendOut = pdSumBy(pending, "expense");
+  const pdDiff = pdTotalIn - pdTotalOut;
+  const pdPendingTotal = pending.reduce(
+    (a, i) => a + (i.type === "income" ? i.amount : -i.amount),
+    0,
+  );
+  const pdInfoText =
+    (daysToReset <= 3
+      ? `⚠️ Hanya ${daysToReset} hari lagi! Konfirmasi rencana transaksimu sebelum direset. `
+      : `${daysToReset} hari lagi hingga reset berikutnya. `) +
+    "Seluruh rencana transaksi (menunggu maupun yang sudah dikonfirmasi) akan direset otomatis setiap tanggal 1.";
+
+  const mobileHtml = `
+    <div class="pd-mobile">
+      <header class="pd-hero">
+        <div class="pd-title-row">
+          <i class="fas fa-calendar-check pd-title-ico"></i>
+          <h1 class="pd-title">${escapeHtml(planName)}</h1>
+        </div>
+        <div class="pd-actions">
+          <button type="button" class="pd-btn pd-btn-light pd-back"><i class="fas fa-arrow-left"></i><span>Kembali</span></button>
+          <button type="button" class="pd-btn pd-btn-light pd-reset"><i class="fas fa-rotate-left"></i><span>Reset Manual</span></button>
+          <button type="button" class="pd-btn pd-btn-primary pd-add"><i class="fas fa-plus"></i><span>Rencana Baru</span></button>
+        </div>
+        <p class="pd-info ${daysToReset <= 3 ? "urgent" : ""}">${pdInfoText}</p>
+      </header>
+
+      <section class="pd-summary">
+        <div class="pd-sum-col">
+          <span class="pd-sum-icon"><i class="fas fa-clock"></i></span>
+          <span class="pd-sum-label">Menunggu</span>
+          <span class="pd-sum-value">${pending.length}</span>
+        </div>
+        <div class="pd-sum-col">
+          <span class="pd-sum-icon"><i class="fas fa-check"></i></span>
+          <span class="pd-sum-label">Dikonfirmasi</span>
+          <span class="pd-sum-value">${confirmed.length}</span>
+        </div>
+        <div class="pd-sum-col">
+          <span class="pd-sum-icon"><i class="fas fa-file-lines"></i></span>
+          <span class="pd-sum-label">Total Rencana</span>
+          <span class="pd-sum-value money ${pdPendingTotal >= 0 ? "pos" : ""}">${formatCurrency(pdPendingTotal)}</span>
+        </div>
+      </section>
+
+      <div class="pd-sheet">
+        <h3 class="pd-sec-title"><i class="fas fa-chart-pie pd-sec-ico plain"></i> Statistik Rencana Transaksi</h3>
+        <div class="pd-stats">
+          <div class="pd-tile in">
+            <div class="pd-tile-label"><i class="fas fa-arrow-up"></i> Pemasukan</div>
+            <div class="pd-tile-amt">${formatCurrency(pdTotalIn)}</div>
+            <div class="pd-tile-pend">Pending: ${formatCurrency(pdPendIn)}</div>
+          </div>
+          <div class="pd-tile out">
+            <div class="pd-tile-label"><i class="fas fa-arrow-up"></i> Pengeluaran</div>
+            <div class="pd-tile-amt">${formatCurrency(pdTotalOut)}</div>
+            <div class="pd-tile-pend">Pending: ${formatCurrency(pdPendOut)}</div>
+          </div>
+        </div>
+        <div class="pd-diff">
+          <span class="pd-diff-ico"><i class="fas ${pdDiff >= 0 ? "fa-plus" : "fa-minus"}"></i></span>
+          <span class="pd-diff-label">Selisih (Pemasukan − Pengeluaran)</span>
+          <span class="pd-diff-val ${pdDiff >= 0 ? "pd-pos" : "pd-neg"}">${pdDiff >= 0 ? "+" : ""}${formatCurrency(pdDiff)}</span>
+        </div>
+
+        <div class="pd-block">
+          <h3 class="pd-sec-title"><span class="pd-sec-ico"><i class="fas fa-clock"></i></span> Menunggu Konfirmasi (${pending.length})</h3>
+          ${
+            pending.length === 0
+              ? `<div class="pd-list"><div class="pd-empty"><i class="fas fa-circle-check"></i>Tidak ada rencana yang menunggu konfirmasi</div></div>`
+              : `<div class="pd-list">${pending.map((it) => renderPlannedItemMobile(it)).join("")}</div>`
+          }
+        </div>
+
+        ${
+          confirmed.length > 0
+            ? `<div class="pd-block">
+                <h3 class="pd-sec-title"><span class="pd-sec-ico ok"><i class="fas fa-check"></i></span> Sudah Dikonfirmasi (${confirmed.length})</h3>
+                <div class="pd-list">${confirmed.map((it) => renderPlannedItemMobile(it, true)).join("")}</div>
+              </div>`
+            : ""
+        }
+
+        <div class="pd-block">${renderWalletUsageStats(allItems, wallets)}</div>
+      </div>
+    </div>`;
+
+  container.innerHTML = `<div class="pd-desktop">${desktopHtml}</div>${mobileHtml}`;
+
   // Event listeners
   document
     .getElementById("back-to-plans-btn")
@@ -841,7 +1350,22 @@ async function renderPlanDetail() {
       manualResetPlanned();
     });
 
+  // Tombol tampilan mobile
+  document.querySelectorAll(".pd-back").forEach((b) =>
+    b.addEventListener("click", async () => {
+      currentPlanId = null;
+      await renderPlannedView();
+    }),
+  );
+  document
+    .querySelectorAll(".pd-add")
+    .forEach((b) => b.addEventListener("click", () => showPlannedModal()));
+  document
+    .querySelectorAll(".pd-reset")
+    .forEach((b) => b.addEventListener("click", () => manualResetPlanned()));
+
   setupPlannedItemListeners();
+  schedulePlanFullBleed();
 }
 
 // ───────────────────────────────────────────────
@@ -987,6 +1511,48 @@ function renderPlannedItem(item, isConfirmed = false) {
       </div>
     </div>
   `;
+}
+
+function renderPlannedItemMobile(item, isConfirmed = false) {
+  const isIncome = item.type === "income";
+  const isSaving = item.type === "saving";
+  const quantity = item.quantity || 1;
+  const icoClass = isIncome ? "inc" : isSaving ? "sav" : "exp";
+  const icoName = isIncome
+    ? "fa-caret-up"
+    : isSaving
+      ? "fa-piggy-bank"
+      : "fa-caret-down";
+  const amtClass = isIncome ? "pd-pos" : isSaving ? "" : "pd-neg";
+  const amtStyle = isSaving ? ' style="color:#6366f1"' : "";
+  const sign = isIncome ? "+" : "-";
+
+  const meta =
+    `${item.category || "-"}` +
+    `${isSaving && savingNameById.get(item.savingId) ? ` • ke ${escapeHtml(savingNameById.get(item.savingId))}` : ""}` +
+    `${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}` +
+    `${item.date ? ` • ${item.date} ${item.time || ""}` : ""}`;
+
+  return `
+    <div class="pd-item planned-item ${isConfirmed ? "done" : ""}" data-id="${item.id}">
+      <div class="pd-item-ico ${icoClass}"><i class="fas ${icoName}"></i></div>
+      <div class="pd-item-main">
+        <div class="pd-item-name">${escapeHtml(item.itemName)}</div>
+        <div class="pd-item-meta">${meta}${item.note ? `<br><span class="pd-item-note">${escapeHtml(item.note)}</span>` : ""}</div>
+      </div>
+      <div class="pd-item-side">
+        <div class="pd-item-amt ${amtClass}"${amtStyle}>${sign}${formatCurrency(item.amount)}</div>
+        ${
+          isConfirmed
+            ? `<span class="pd-done-badge">✓ Masuk</span>`
+            : `<div class="pd-acts">
+                <button type="button" class="pd-act ok planned-confirm-btn" data-id="${item.id}" title="Konfirmasi & masukkan ke transaksi" aria-label="Konfirmasi"><i class="fas fa-check"></i></button>
+                <button type="button" class="pd-act ed planned-edit-btn" data-id="${item.id}" title="Edit" aria-label="Edit"><i class="fas fa-pencil-alt"></i></button>
+                <button type="button" class="pd-act del planned-delete-btn" data-id="${item.id}" title="Hapus" aria-label="Hapus"><i class="fas fa-trash"></i></button>
+              </div>`
+        }
+      </div>
+    </div>`;
 }
 
 function setupPlannedItemListeners() {
