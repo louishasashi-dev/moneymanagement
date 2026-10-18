@@ -238,63 +238,51 @@ export async function renderDebtsPage() {
   const stats = calculateStats();
 
   // HTML Template
+  const netPositive = stats.netBalance >= 0;
   container.innerHTML = `
         <div class="debts-container">
             <!-- Header -->
-            <div class="page-header">
-                <h1><i class="fas fa-hand-holding-usd"></i> Piutang</h1>
-                <button class="btn-primary btn-add-debt" id="add-debt-btn">
-                    <i class="fas fa-plus"></i> Tambah
+            <div class="page-header debt-header">
+                <div class="debt-header-title">
+                    <span class="debt-header-icon"><i class="fas fa-hand-holding-usd"></i></span>
+                    <div>
+                        <span class="debt-eyebrow">Money Manager</span>
+                        <h1>Hutang &amp; Piutang</h1>
+                    </div>
+                </div>
+                <button class="btn-primary btn-add-debt" id="add-debt-btn" aria-label="Tambah" title="Tambah">
+                    <i class="fas fa-plus"></i><span class="btn-label">Tambah</span>
                 </button>
             </div>
-            
-            <!-- Stats Cards -->
-            <div class="stats-row">
-                <div class="stat-card-mini">
-                    <div class="stat-icon owe">
-                        <i class="fas fa-arrow-down"></i>
+
+            <!-- Hero: Net Balance + ringkasan -->
+            <div class="debt-hero">
+                <div class="hero-main">
+                    <div class="hero-top">
+                        <span class="hero-label"><i class="fas fa-balance-scale"></i> Net Balance</span>
+                        <span class="hero-caption">${netPositive ? "Piutang dikurangi hutang" : "Harus bayar"}</span>
                     </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Saya Berhutang</span>
-                        <span class="stat-value">${formatCurrency(stats.totalOwe)}</span>
-                    </div>
+                    <span class="hero-amount ${netPositive ? "" : "negative"}">${formatCurrency(Math.abs(stats.netBalance))}</span>
                 </div>
-                <div class="stat-card-mini">
-                    <div class="stat-icon debt">
-                        <i class="fas fa-arrow-up"></i>
+                <div class="hero-tiles">
+                    <div class="hero-tile">
+                        <span class="hero-tile-label owe"><i class="fas fa-caret-down"></i> Hutang</span>
+                        <span class="hero-tile-value">${formatCurrency(stats.totalOwe)}</span>
                     </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Orang Berhutang</span>
-                        <span class="stat-value">${formatCurrency(stats.totalDebt)}</span>
-                    </div>
-                </div>
-                <div class="stat-card-mini">
-                    <div class="stat-icon balance">
-                        <i class="fas fa-balance-scale"></i>
-                    </div>
-                    <div class="stat-details">
-                        <span class="stat-label">Net Balance</span>
-                        <span class="stat-value ${stats.netBalance >= 0 ? "positive" : "negative"}">
-                            ${formatCurrency(Math.abs(stats.netBalance))}
-                            <small>${stats.netBalance >= 0 ? "" : "(harus bayar)"}</small>
-                        </span>
+                    <div class="hero-tile">
+                        <span class="hero-tile-label debt"><i class="fas fa-caret-up"></i> Piutang</span>
+                        <span class="hero-tile-value">${formatCurrency(stats.totalDebt)}</span>
                     </div>
                 </div>
             </div>
-            
+
             <!-- Tabs -->
-            <div class="debt-tabs">
-                <button class="tab-btn active" data-tab="active">
-                    <i class="fas fa-clock"></i> Aktif
-                </button>
-                <button class="tab-btn" data-tab="completed">
-                    <i class="fas fa-check-circle"></i> Lunas
-                </button>
-                <button class="tab-btn" data-tab="overdue">
-                    <i class="fas fa-exclamation-triangle"></i> Overdue
-                </button>
+            <div class="debt-tabs" role="tablist">
+                <button class="tab-btn active" data-tab="active" role="tab" aria-selected="true">Aktif</button>
+                <button class="tab-btn" data-tab="completed" role="tab" aria-selected="false">Lunas</button>
+                <button class="tab-btn" data-tab="overdue" role="tab" aria-selected="false">Overdue</button>
             </div>
-            
+
             <!-- Debts List -->
             <div class="debts-list" id="debts-list">
                 ${renderDebtsList("active")}
@@ -389,73 +377,52 @@ function renderDebtCard(debt) {
   const progress =
     ((debt.amount - (debt.remainingAmount || debt.amount)) / debt.amount) * 100;
   const isOwe = debt.type === "owe";
+  const remaining = debt.remainingAmount || debt.amount;
+  const hasInterest =
+    debt.interestPeriod &&
+    debt.interestPeriod !== "none" &&
+    debt.interestRate > 0;
 
   return `
         <div class="debt-card ${isOverdue ? "overdue" : ""}" data-id="${debt.id}">
-            <div class="debt-card-header">
-                <div class="debt-icon ${debt.type}">
-                    <i class="fas ${isOwe ? "fa-arrow-up" : "fa-arrow-down"}"></i>
+            <!-- Area identitas -->
+            <div class="dc-head">
+                <div class="dc-icon ${debt.type}">
+                    <i class="fas ${isOwe ? "fa-caret-down" : "fa-caret-up"}"></i>
                 </div>
-                <div class="debt-info">
-                    <div class="debt-party">
-                        <h3>${escapeHtml(debt.partyName)}</h3>
-                        <span class="debt-badge ${debt.type}">
-                            ${isOwe ? "Saya berhutang" : "Berhutang ke saya"}
-                        </span>
+                <div class="dc-info">
+                    <div class="dc-name">${escapeHtml(debt.partyName)}</div>
+                    <div class="dc-meta">
+                        <span class="dc-badge ${debt.type}">${isOwe ? "Saya berhutang" : "Berhutang ke saya"}</span>
+                        <span class="dc-desc">${escapeHtml(debt.description || "Tidak ada deskripsi")}</span>
                     </div>
-                    <p class="debt-description">${escapeHtml(debt.description || "Tidak ada deskripsi")}</p>
-                </div>
-                <div class="debt-actions">
-                    <button class="icon-btn add-payment" data-id="${debt.id}" title="Tambah Pembayaran">
-                        <i class="fas fa-money-bill-wave"></i>
-                    </button>
-                    <button class="icon-btn add-debt-amount" data-id="${debt.id}" title="Tambah Nominal Hutang">
-                        <i class="fas fa-plus-circle"></i>
-                    </button>
-                    <button class="icon-btn view-debt-history" data-id="${debt.id}" title="Rincian">
-                        <i class="fas fa-list-alt"></i>
-                    </button>
-                    <button class="icon-btn print-debt-report" data-id="${debt.id}" title="Cetak Laporan">
-                        <i class="fas fa-print"></i>
-                    </button>
-                    <button class="icon-btn edit-debt" data-id="${debt.id}" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="icon-btn delete-debt" data-id="${debt.id}" title="Hapus">
-                        <i class="fas fa-trash"></i>
-                    </button>
                 </div>
             </div>
-            <div class="debt-card-body">
-                <div class="debt-amounts">
-                    <div class="amount-item">
-                        <span class="amount-label">Total</span>
-                        <span class="amount-value">${formatCurrency(debt.amount)}</span>
-                    </div>
-                    <div class="amount-item">
-                        <span class="amount-label">Sisa</span>
-                        <span class="amount-value ${(debt.remainingAmount || debt.amount) === 0 ? "completed" : ""}">
-                            ${formatCurrency(debt.remainingAmount || debt.amount)}
-                        </span>
-                    </div>
-                    ${
-                      debt.dueDate
-                        ? `
-                        <div class="amount-item">
-                            <span class="amount-label">Jatuh Tempo</span>
-                            <span class="amount-value ${isOverdue ? "overdue-text" : ""}">
-                                ${formatDate(debt.dueDate)}
-                                ${isOverdue ? " ⚠️" : ""}
-                            </span>
-                        </div>
-                    `
-                        : ""
-                    }
+
+            <!-- Area finansial -->
+            <div class="debt-card-fin">
+                <div class="fin-sisa-block ${debt.type}">
+                    <span class="fin-label">Sisa</span>
+                    <span class="fin-sisa-value ${remaining === 0 ? "completed" : debt.type}">${formatCurrency(remaining)}</span>
+                </div>
+                <div class="fin-row">
+                    <span class="fin-label">Total</span>
+                    <span class="fin-value">${formatCurrency(debt.amount)}</span>
                 </div>
                 ${
-                  debt.interestPeriod &&
-                  debt.interestPeriod !== "none" &&
-                  debt.interestRate > 0
+                  debt.dueDate
+                    ? `
+                    <div class="fin-row">
+                        <span class="fin-label"><i class="far fa-calendar"></i> Jatuh tempo</span>
+                        <span class="fin-value ${isOverdue ? "overdue-text" : ""}">
+                            ${isOverdue ? '<i class="fas fa-exclamation-triangle"></i> ' : ""}${formatDate(debt.dueDate)}
+                        </span>
+                    </div>
+                `
+                    : ""
+                }
+                ${
+                  hasInterest
                     ? `
                     <div class="interest-badge">
                         <i class="fas ${debt.interestType === "fixed" ? "fa-money-bill-wave" : "fa-percentage"}"></i>
@@ -464,7 +431,7 @@ function renderDebtCard(debt) {
                     </div>
                     ${
                       debt.lastInterestDate
-                        ? `<div class="progress-text" style="margin-top:-6px;margin-bottom:10px;">
+                        ? `<div class="fin-note">
                             <i class="fas fa-sync-alt"></i> Bunga terhitung otomatis s/d ${formatDate(debt.lastInterestDate, "dd/mm/yyyy")}
                            </div>`
                         : ""
@@ -476,12 +443,12 @@ function renderDebtCard(debt) {
                   debt.isInstallment === true &&
                   Array.isArray(debt.installments) &&
                   debt.installments.length > 0
-                    ? `<details class="progress-text" style="margin-bottom:10px;">
-                        <summary><i class="fas fa-calendar-alt"></i> Diangsur: ${debt.installments.length} angsuran • total ${formatCurrency(debt.installments.reduce((s, it) => s + it.amount, 0))}</summary>
+                    ? `<details class="debt-installments">
+                        <summary><i class="fas fa-calendar-alt"></i> Diangsur: ${debt.installments.length} angsuran, total ${formatCurrency(debt.installments.reduce((s, it) => s + it.amount, 0))}</summary>
                         ${debt.installments
                           .map(
                             (it, i) =>
-                              `<div>Angsuran ${i + 1}: ${formatCurrency(it.amount)} • jatuh tempo ${formatDate(it.dueDate, "dd/mm/yyyy")}</div>`,
+                              `<div class="inst-item">Angsuran ${i + 1}: ${formatCurrency(it.amount)} • jatuh tempo ${formatDate(it.dueDate, "dd/mm/yyyy")}</div>`,
                           )
                           .join("")}
                        </details>`
@@ -490,10 +457,15 @@ function renderDebtCard(debt) {
                 ${
                   progress > 0 && progress < 100
                     ? `
-                    <div class="progress-bar-container">
-                        <div class="progress-fill" style="width: ${progress}%"></div>
+                    <div class="debt-progress">
+                        <div class="fin-row">
+                            <span class="fin-label">Progres pembayaran</span>
+                            <span class="fin-value progress-value">${Math.round(progress)}% lunas</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div class="progress-fill" style="width: ${progress}%"></div>
+                        </div>
                     </div>
-                    <div class="progress-text">${Math.round(progress)}% lunas</div>
                 `
                     : ""
                 }
@@ -506,6 +478,28 @@ function renderDebtCard(debt) {
                 `
                     : ""
                 }
+            </div>
+
+            <!-- Aksi -->
+            <div class="debt-actions">
+                <button class="icon-btn add-payment" data-id="${debt.id}" title="Tambah Pembayaran" aria-label="Tambah Pembayaran">
+                    <i class="fas fa-money-bill-wave"></i>
+                </button>
+                <button class="icon-btn add-debt-amount" data-id="${debt.id}" title="Tambah Nominal Hutang" aria-label="Tambah Nominal Hutang">
+                    <i class="fas fa-plus-circle"></i>
+                </button>
+                <button class="icon-btn view-debt-history" data-id="${debt.id}" title="Rincian" aria-label="Rincian">
+                    <i class="fas fa-list-alt"></i>
+                </button>
+                <button class="icon-btn print-debt-report" data-id="${debt.id}" title="Cetak Laporan" aria-label="Cetak Laporan">
+                    <i class="fas fa-print"></i>
+                </button>
+                <button class="icon-btn edit-debt" data-id="${debt.id}" title="Edit" aria-label="Edit">
+                    <i class="fas fa-edit"></i>
+                </button>
+                <button class="icon-btn delete-debt" data-id="${debt.id}" title="Hapus" aria-label="Hapus">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
         </div>
     `;
@@ -534,6 +528,9 @@ function setupDebtEventListeners() {
         .querySelectorAll(".tab-btn")
         .forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
+      document
+        .querySelectorAll(".tab-btn")
+        .forEach((b) => b.setAttribute("aria-selected", b === btn));
       const tab = btn.dataset.tab;
       const listContainer = document.getElementById("debts-list");
       if (listContainer) {
@@ -617,44 +614,61 @@ async function showDebtModal(debtId = null) {
     }
   }
 
+  const hasAdvanced =
+    isEdit &&
+    ((debt.interestPeriod && debt.interestPeriod !== "none") ||
+      (debt.remainingAmount && debt.remainingAmount !== debt.amount));
+
   const modalContent = `
-        <form id="debt-form">
+        <form id="debt-form" class="dm-form">
             <div class="form-group">
                 <label>Tipe <span class="required">*</span></label>
                 <div class="type-selector">
                     <button type="button" class="type-btn ${!isEdit || debt.type === "debt" ? "active" : ""}" data-type="debt">
-                        <i class="fas fa-arrow-down"></i> Orang berhutang ke saya
+                        <span class="type-ico in"><i class="fas fa-caret-up"></i></span>
+                        <span class="type-text"><b>Orang berhutang ke saya</b><small>Uang masuk</small></span>
                     </button>
                     <button type="button" class="type-btn ${isEdit && debt.type === "owe" ? "active" : ""}" data-type="owe">
-                        <i class="fas fa-arrow-up"></i> Saya berhutang
+                        <span class="type-ico out"><i class="fas fa-caret-down"></i></span>
+                        <span class="type-text"><b>Saya berhutang</b><small>Uang keluar</small></span>
                     </button>
                 </div>
                 <input type="hidden" id="debt-type" value="${isEdit ? debt.type : "debt"}">
             </div>
-            
+
             <div class="form-group">
                 <label id="debt-party-label">Nama <span class="required">*</span></label>
-                <input type="text" id="debt-party" class="form-input" 
-                       value="${isEdit ? escapeHtml(debt.partyName) : ""}" 
+                <input type="text" id="debt-party" class="form-input"
+                       value="${isEdit ? escapeHtml(debt.partyName) : ""}"
                        placeholder="Nama orang/toko/perusahaan" required>
             </div>
-            
+
             <div class="form-group">
                 <label>Nominal <span class="required">*</span></label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-amount" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(debt.amount) : ""}" 
-                       placeholder="0" min="1" required>
+                <div class="money-field">
+                    <span class="money-prefix">Rp</span>
+                    <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-amount" class="form-input"
+                           value="${isEdit ? formatMoneyInput(debt.amount) : ""}"
+                           placeholder="0" min="1" required>
+                </div>
             </div>
 
-            <div class="form-group">
-                <label>Cara Pembayaran</label>
-                <select id="debt-installment-mode" class="form-input">
-                    <option value="once" ${!isEdit || debt.isInstallment !== true ? "selected" : ""}>Sekaligus / bebas</option>
-                    <option value="installment" ${isEdit && debt.isInstallment === true ? "selected" : ""}>Diangsur (cicilan)</option>
-                </select>
+            <div class="dm-row">
+                <div class="form-group">
+                    <label>Jatuh Tempo (Opsional)</label>
+                    <input type="date" id="debt-duedate" class="form-input"
+                           value="${isEdit ? debt.dueDate || "" : ""}">
+                </div>
+                <div class="form-group">
+                    <label>Cara Pembayaran</label>
+                    <select id="debt-installment-mode" class="form-input">
+                        <option value="once" ${!isEdit || debt.isInstallment !== true ? "selected" : ""}>Sekaligus / bebas</option>
+                        <option value="installment" ${isEdit && debt.isInstallment === true ? "selected" : ""}>Diangsur (cicilan)</option>
+                    </select>
+                </div>
             </div>
 
-            <div id="debt-installment-fields" style="display:none;">
+            <div id="debt-installment-fields" class="dm-inst" style="display:none;">
                 <div class="form-group">
                     <label>Tanggal Awal Peminjaman (Opsional)</label>
                     <input type="date" id="debt-inst-start" class="form-input"
@@ -665,64 +679,66 @@ async function showDebtModal(debtId = null) {
                 <button type="button" class="btn-secondary multi-add-btn" id="debt-inst-add">
                     <i class="fas fa-plus"></i> Tambah Angsuran
                 </button>
-                <div class="multi-total-row" style="margin-top:12px;">
+                <div class="multi-total-row">
                     <span>Total Angsuran</span>
                     <span id="debt-inst-total">${formatCurrency(0)}</span>
                 </div>
                 <small class="form-help">Nominal tiap angsuran tidak boleh melebihi nominal pinjaman</small>
             </div>
-            
-            <div class="form-group">
-                <label>Sisa Hutang (Opsional)</label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-remaining" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(debt.remainingAmount || debt.amount) : ""}" 
-                       placeholder="Kosongkan jika sama dengan total" min="0">
-                <small class="form-help">Isi jika sudah ada pembayaran sebagian</small>
-            </div>
-            
-            <div class="form-group">
-                <label>Bunga (Opsional)</label>
-                <div class="interest-type-selector">
-                    <button type="button" class="interest-type-btn ${!isEdit || (debt.interestType || "percent") === "percent" ? "active" : ""}" data-interest-type="percent">
-                        <i class="fas fa-percentage"></i> Persentase (%)
-                    </button>
-                    <button type="button" class="interest-type-btn ${isEdit && debt.interestType === "fixed" ? "active" : ""}" data-interest-type="fixed">
-                        <i class="fas fa-money-bill-wave"></i> Nominal Tetap (Rp)
-                    </button>
-                </div>
-                <input type="hidden" id="debt-interest-type" value="${isEdit && debt.interestType === "fixed" ? "fixed" : "percent"}">
-                <div class="interest-row" style="margin-top:8px;">
-                    <input type="number" id="debt-interest-rate" class="form-input" 
-                           value="${isEdit && debt.interestRate ? debt.interestRate : ""}" 
-                           placeholder="${isEdit && debt.interestType === "fixed" ? "Nominal (Rp)" : "Persentase (%)"}" min="0" step="0.01">
-                    <select id="debt-interest-period" class="form-input">
-                        <option value="none" ${!isEdit || !debt.interestPeriod || debt.interestPeriod === "none" ? "selected" : ""}>Tidak ada bunga</option>
-                        <option value="daily" ${isEdit && debt.interestPeriod === "daily" ? "selected" : ""}>Per Hari</option>
-                        <option value="weekly" ${isEdit && debt.interestPeriod === "weekly" ? "selected" : ""}>Per Minggu</option>
-                        <option value="monthly" ${isEdit && debt.interestPeriod === "monthly" ? "selected" : ""}>Per Bulan</option>
-                        <option value="yearly" ${isEdit && debt.interestPeriod === "yearly" ? "selected" : ""}>Per Tahun</option>
-                    </select>
-                </div>
-                <small class="form-help" id="debt-interest-help">Bunga akan bertambah OTOMATIS ke sisa hutang setiap kali tanggal berganti (dihitung ulang tiap kali aplikasi dibuka). Pilih <strong>Persentase</strong> untuk bunga % dari pokok, atau <strong>Nominal Tetap</strong> untuk bunga flat dalam Rupiah per periode. Untuk mingguan/bulanan/tahunan, sistem otomatis mengonversi ke nilai harian.</small>
-                <div class="interest-preview" id="debt-interest-preview" style="display: none;">
-                    <i class="fas fa-calculator"></i>
-                    <span id="debt-interest-preview-text"></span>
-                </div>
-            </div>
-            
+
             <div class="form-group">
                 <label>Deskripsi (Opsional)</label>
-                <textarea id="debt-description" class="form-input" rows="2" 
+                <textarea id="debt-description" class="form-input" rows="2"
                           placeholder="Catatan tentang hutang/piutang ini...">${isEdit ? escapeHtml(debt.description || "") : ""}</textarea>
             </div>
-            
-            <div class="form-group">
-                <label>Tanggal Jatuh Tempo (Opsional)</label>
-                <input type="date" id="debt-duedate" class="form-input" 
-                       value="${isEdit ? debt.dueDate || "" : ""}">
-            </div>
-            
-            <div class="modal-buttons">
+
+            <details class="dm-more" ${hasAdvanced ? "open" : ""}>
+                <summary>Pengaturan lanjutan <span>Sisa hutang &amp; bunga</span></summary>
+                <div class="dm-more-body">
+                    <div class="form-group">
+                        <label>Sisa Hutang (Opsional)</label>
+                        <div class="money-field">
+                            <span class="money-prefix">Rp</span>
+                            <input type="text" inputmode="numeric" autocomplete="off" data-money id="debt-remaining" class="form-input"
+                                   value="${isEdit ? formatMoneyInput(debt.remainingAmount || debt.amount) : ""}"
+                                   placeholder="Sama dengan total" min="0">
+                        </div>
+                        <small class="form-help">Isi jika sudah ada pembayaran sebagian</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Bunga (Opsional)</label>
+                        <div class="interest-type-selector">
+                            <button type="button" class="interest-type-btn ${!isEdit || (debt.interestType || "percent") === "percent" ? "active" : ""}" data-interest-type="percent">
+                                <i class="fas fa-percentage"></i> Persentase (%)
+                            </button>
+                            <button type="button" class="interest-type-btn ${isEdit && debt.interestType === "fixed" ? "active" : ""}" data-interest-type="fixed">
+                                <i class="fas fa-money-bill-wave"></i> Nominal Tetap (Rp)
+                            </button>
+                        </div>
+                        <input type="hidden" id="debt-interest-type" value="${isEdit && debt.interestType === "fixed" ? "fixed" : "percent"}">
+                        <div class="interest-row" style="margin-top:8px;">
+                            <input type="number" id="debt-interest-rate" class="form-input"
+                                   value="${isEdit && debt.interestRate ? debt.interestRate : ""}"
+                                   placeholder="${isEdit && debt.interestType === "fixed" ? "Nominal (Rp)" : "Persentase (%)"}" min="0" step="0.01">
+                            <select id="debt-interest-period" class="form-input">
+                                <option value="none" ${!isEdit || !debt.interestPeriod || debt.interestPeriod === "none" ? "selected" : ""}>Tidak ada bunga</option>
+                                <option value="daily" ${isEdit && debt.interestPeriod === "daily" ? "selected" : ""}>Per Hari</option>
+                                <option value="weekly" ${isEdit && debt.interestPeriod === "weekly" ? "selected" : ""}>Per Minggu</option>
+                                <option value="monthly" ${isEdit && debt.interestPeriod === "monthly" ? "selected" : ""}>Per Bulan</option>
+                                <option value="yearly" ${isEdit && debt.interestPeriod === "yearly" ? "selected" : ""}>Per Tahun</option>
+                            </select>
+                        </div>
+                        <small class="form-help" id="debt-interest-help">Bunga bertambah otomatis ke sisa hutang setiap tanggal berganti, dihitung ulang tiap aplikasi dibuka. Mingguan, bulanan, dan tahunan dikonversi ke nilai harian.</small>
+                        <div class="interest-preview" id="debt-interest-preview" style="display: none;">
+                            <i class="fas fa-calculator"></i>
+                            <span id="debt-interest-preview-text"></span>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <div class="modal-buttons dm-footer">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">${isEdit ? "Simpan Perubahan" : "Tambah"}</button>
             </div>
@@ -732,10 +748,14 @@ async function showDebtModal(debtId = null) {
   const modal = document.createElement("div");
   modal.className = "modal-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-medium">
-            <div class="modal-header">
-                <h3><i class="fas ${isEdit ? "fa-edit" : "fa-plus-circle"}"></i> ${isEdit ? "Edit Piutang" : "Tambah Piutang Baru"}</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
+        <div class="modal-container modal-medium debt-modal">
+            <div class="modal-header dm-header">
+                <span class="dm-header-icon"><i class="fas ${isEdit ? "fa-pen" : "fa-plus"}"></i></span>
+                <div class="dm-header-text">
+                    <span class="dm-eyebrow">Money Manager</span>
+                    <h3>${isEdit ? "Edit Piutang" : "Tambah Piutang Baru"}</h3>
+                </div>
+                <button type="button" class="modal-close-btn modal-close-x" aria-label="Tutup">&times;</button>
             </div>
             <div class="modal-body">
                 ${modalContent}
@@ -1821,233 +1841,676 @@ function addDebtStyles() {
   style.id = "debt-styles";
   style.textContent = `
         .debts-container {
+            --d-brand: #2B2A4C;
+            --d-red: #C0524F;
+            --d-green: #1F9D55;
+            --d-bar: #2ECC71;
+            --d-surface: var(--bg-secondary, #fff);
+            --d-soft: var(--bg-primary, #F4F4F7);
+            --d-text: var(--text-primary, #242333);
+            --d-muted: var(--text-secondary, #6F6F7B);
+            --d-line: var(--border-color, #EEEEF3);
             max-width: 1000px;
             margin: 0 auto;
-        }
-        
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-        
-        .stat-card-mini {
-            background: var(--bg-secondary);
-            border-radius: 16px;
-            padding: 16px;
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* ---------- Header ---------- */
+        .debts-container .debt-header {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            text-align: left !important;
             gap: 12px;
-            box-shadow: var(--card-shadow);
-        }
-        
-        .stat-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.3rem;
-        }
-        
-        .stat-icon.owe {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
-        
-        .stat-icon.debt {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-        }
-        
-        .stat-icon.balance {
-            background: rgba(59, 130, 246, 0.1);
-            color: #3b82f6;
-        }
-        
-        .stat-details {
-            flex: 1;
-        }
-        
-        .stat-label {
-            display: block;
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
-        }
-        
-        .stat-value {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-        
-        .stat-value small {
-            font-size: 0.6rem;
-            font-weight: normal;
-            display: block;
-        }
-        
-        .stat-value.positive {
-            color: #10b981;
-        }
-        
-        .stat-value.negative {
-            color: #ef4444;
-        }
-        
-        .debt-tabs {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 20px;
-            background: var(--bg-secondary);
-            padding: 8px;
-            border-radius: 12px;
-        }
-        
-        .tab-btn {
-            flex: 1;
-            padding: 10px;
-            border: none;
-            background: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 0.85rem;
-            transition: all 0.3s ease;
-            color: var(--text-secondary);
-        }
-        
-        .tab-btn.active {
-            background: var(--info);
-            color: white;
-        }
-        
-        .debt-card {
-            background: var(--bg-secondary);
-            border-radius: 16px;
-            margin-bottom: 16px;
-            overflow: hidden;
-            box-shadow: var(--card-shadow);
-        }
-        
-        .debt-card.overdue {
-            border-left: 4px solid #ef4444;
-        }
-        
-        .debt-card-header {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            padding: 16px;
-            background: var(--bg-primary);
-            border-bottom: 1px solid var(--border-color);
-            flex-wrap: wrap;
-        }
-        
-        .debt-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.3rem;
-        }
-        
-        .debt-icon.debt {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-        }
-        
-        .debt-icon.owe {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
-        
-        .debt-info {
-            flex: 1;
-            min-width: 150px;
-        }
-        
-        .debt-party {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 4px;
-        }
-        
-        .debt-party h3 {
-            font-size: 1rem;
             margin: 0;
         }
-        
-        .debt-badge {
-            font-size: 0.65rem;
-            padding: 2px 8px;
-            border-radius: 20px;
-        }
-        
-        .debt-badge.debt {
-            background: rgba(16, 185, 129, 0.15);
-            color: #10b981;
-        }
-        
-        .debt-badge.owe {
-            background: rgba(239, 68, 68, 0.15);
-            color: #ef4444;
-        }
-        
-        .debt-description {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-        
-        .debt-actions {
+        .debts-container .debt-header-title {
             display: flex;
-            gap: 5px;
+            flex-direction: row;
+            align-items: center;
+            justify-content: flex-start;
+            text-align: left;
+            gap: 12px;
+            flex: 1 1 auto;
+            min-width: 0;
         }
-        
-        .debt-card-body {
+        .debts-container .debt-header-title > div {
+            min-width: 0;
+            text-align: left;
+        }
+        .debt-header-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--d-brand);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.05rem;
+            flex: none;
+        }
+        .debt-eyebrow {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--d-muted);
+        }
+        .debt-header h1 {
+            margin: 0;
+            font-size: 1.3rem;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+        .debts-container .debt-header #add-debt-btn {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            flex: 0 0 auto;
+            width: auto !important;
+            min-width: 0 !important;
+            height: 44px !important;
+            padding: 0 18px !important;
+            margin: 0 !important;
+            border: 0;
+            border-radius: 999px !important;
+            background: var(--d-brand);
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.9rem !important;
+            line-height: 1;
+            white-space: nowrap;
+            cursor: pointer;
+            box-shadow: 0 6px 16px rgba(43, 42, 76, 0.28);
+        }
+        .debts-container .debt-header #add-debt-btn i {
+            font-size: 0.8rem;
+            margin: 0;
+        }
+
+        /* ---------- Hero ---------- */
+        .debt-hero {
+            position: relative;
+            overflow: hidden;
+            background: var(--d-brand);
+            color: #fff;
+            border-radius: 24px;
             padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 10px 24px rgba(43, 42, 76, 0.25);
         }
-        
-        .debt-amounts {
+        .debt-hero::before {
+            content: "";
+            position: absolute;
+            right: -50px;
+            top: -60px;
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.06);
+            pointer-events: none;
+        }
+        .debt-hero > * { position: relative; }
+        .hero-main { display: flex; flex-direction: column; gap: 2px; }
+        .hero-top {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 12px;
-            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+        .debt-hero .hero-label { font-size: 0.8rem; font-weight: 600; color: #D4D3EA !important; }
+        .debt-hero .hero-caption { font-size: 0.7rem; color: #B9B8D6 !important; text-align: right; }
+        .debt-hero .hero-amount {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            color: #fff !important;
+            font-variant-numeric: tabular-nums;
+        }
+        .debt-hero .hero-amount.negative { color: #FF9C98 !important; }
+        .hero-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .hero-tile {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            padding: 10px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+        .debt-hero .hero-tile-label { font-size: 0.72rem; font-weight: 600; color: #D4D3EA !important; }
+        .hero-tile-label.owe i { color: #FF9C98; font-size: 1.1em; }
+        .hero-tile-label.debt i { color: #2ECC71; font-size: 1.1em; }
+        .debt-hero .hero-tile-value {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fff !important;
+            font-variant-numeric: tabular-nums;
+            word-break: break-word;
+        }
+
+        /* ---------- Tabs ---------- */
+        .debts-container .debt-tabs {
+            display: flex;
+            gap: 8px;
+            background: transparent !important;
+            border: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+        }
+        .debts-container .debt-tabs .tab-btn {
+            flex: 0 0 auto;
+            height: 38px;
+            padding: 0 20px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent !important;
+            background-image: none !important;
+            color: var(--d-muted);
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: none;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+        .debts-container .debt-tabs .tab-btn.active {
+            background: var(--d-brand) !important;
+            background-image: none !important;
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(43, 42, 76, 0.22);
+        }
+
+        /* ---------- Cards ---------- */
+        .debts-list { display: flex; flex-direction: column; gap: 14px; }
+        .debt-card {
+            background: var(--d-surface);
+            border-radius: 22px;
+            padding: 16px;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            grid-template-areas: "head" "fin" "actions";
+            gap: 14px;
+            box-shadow: 0 1px 2px rgba(36, 35, 51, 0.05), 0 8px 24px rgba(43, 42, 76, 0.06);
+        }
+        .debt-card.overdue {
+            box-shadow: 0 0 0 1.5px rgba(192, 82, 79, 0.4), 0 8px 24px rgba(192, 82, 79, 0.08);
+        }
+        .dc-head {
+            grid-area: head;
+            display: flex;
+            align-items: center;
             gap: 12px;
+            min-width: 0;
         }
-        
-        .amount-item {
-            text-align: center;
+        .debts-container .dc-icon {
+            width: 44px;
+            height: 44px;
+            margin: 0;
+            border-radius: 50%;
+            flex: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.35rem;
+            line-height: 1;
+            box-shadow: none !important;
+        }
+        .debts-container .dc-icon.debt { background: rgba(31, 157, 85, 0.14); color: var(--d-green); }
+        .debts-container .dc-icon.owe { background: rgba(192, 82, 79, 0.14); color: var(--d-red); }
+        .debts-container .dc-icon i { color: inherit; line-height: 1; }
+        .debts-container .dc-info {
             flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 4px;
         }
-        
-        .amount-value.completed {
-            color: #10b981;
+        .debts-container .dc-name {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            line-height: 1.3;
+            color: var(--d-text);
+            overflow-wrap: anywhere;
         }
-        
-        .amount-value.overdue-text {
-            color: #ef4444;
+        .debts-container .dc-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px 8px;
         }
-        
-        .completed-badge {
-            text-align: center;
-            color: #10b981;
+        .debts-container .dc-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .debts-container .dc-badge.debt { background: rgba(31, 157, 85, 0.12); color: var(--d-green); }
+        .debts-container .dc-badge.owe { background: rgba(192, 82, 79, 0.12); color: var(--d-red); }
+        .debts-container .dc-desc { font-size: 0.8rem; color: var(--d-muted); }
+
+        .debt-card-fin {
+            grid-area: fin;
+            border-top: 1px solid var(--d-line);
+            padding-top: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .fin-sisa-block {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: 16px;
+            background: var(--d-soft);
+        }
+        .fin-sisa-block.debt { background: rgba(31, 157, 85, 0.1); }
+        .fin-sisa-block.owe { background: rgba(192, 82, 79, 0.1); }
+        .fin-sisa-block .fin-label { font-weight: 600; color: var(--d-text); }
+        .fin-sisa-value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            font-variant-numeric: tabular-nums;
+        }
+        .fin-sisa-value.debt, .fin-sisa-value.completed { color: var(--d-green); }
+        .fin-sisa-value.owe { color: var(--d-red); }
+        .fin-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.85rem;
+        }
+        .fin-label { color: var(--d-muted); }
+        .fin-label i { margin-right: 4px; }
+        .fin-value {
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+        }
+        .fin-value.overdue-text { color: var(--d-red); }
+        .fin-value.progress-value { color: var(--d-green); }
+        .fin-note {
+            font-size: 0.72rem;
+            color: var(--d-muted);
+            margin-top: -4px;
+        }
+        .debt-installments {
             font-size: 0.8rem;
-            margin-top: 8px;
+            background: var(--d-soft);
+            border-radius: 12px;
+            padding: 10px 12px;
+            color: var(--d-muted);
         }
-        
-        .progress-text {
-            font-size: 0.7rem;
+        .debt-installments summary { cursor: pointer; font-weight: 500; }
+        .debt-installments .inst-item { margin-top: 6px; }
+        .debt-progress { display: flex; flex-direction: column; gap: 8px; }
+        .debts-container .progress-bar-container {
+            height: 8px;
+            border-radius: 999px;
+            background: var(--d-line);
+            overflow: hidden;
+        }
+        .debts-container .progress-fill {
+            height: 100%;
+            background: var(--d-bar);
+            border-radius: 999px;
+        }
+        .completed-badge {
+            align-self: flex-start;
+            background: rgba(31, 157, 85, 0.12);
+            color: var(--d-green);
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 5px 12px;
+            border-radius: 999px;
+        }
+
+        /* ---------- Aksi ---------- */
+        .debt-actions {
+            grid-area: actions;
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 8px;
+            justify-items: center;
+            border-top: 1px solid var(--d-line);
+            padding-top: 14px;
+        }
+        .debts-container .debt-actions .icon-btn {
+            width: 100%;
+            max-width: 44px;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            border: 0;
+            border-radius: 50%;
+            background: rgba(128, 128, 150, 0.16) !important;
+            color: var(--d-text) !important;
+            opacity: 1 !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.95rem;
+            cursor: pointer;
+            padding: 0;
+        }
+        .debts-container .debt-actions .icon-btn i { color: inherit !important; opacity: 1 !important; }
+        .debts-container .debt-actions .icon-btn.delete-debt {
+            background: rgba(192, 82, 79, 0.16) !important;
+            color: var(--d-red) !important;
+        }
+
+        /* ---------- Empty state ---------- */
+        .debts-container .empty-state {
+            background: var(--d-surface);
+            border-radius: 24px;
+            padding: 40px 20px;
             text-align: center;
-            margin-top: 8px;
-            color: var(--text-secondary);
+            color: var(--d-muted);
         }
-        
+
+        /* ---------- Modal Tambah/Edit ---------- */
+        .modal-container.debt-modal {
+            --d-brand: #2B2A4C;
+            --d-red: #C0524F;
+            --d-green: #1F9D55;
+            --d-surface: var(--bg-secondary, #fff);
+            --d-soft: var(--bg-primary, #F4F4F7);
+            --d-text: var(--text-primary, #242333);
+            --d-muted: var(--text-secondary, #6F6F7B);
+            --d-line: var(--border-color, #E6E6EC);
+            width: 100%;
+            max-width: 520px;
+            max-height: 92vh;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--d-surface);
+            border-radius: 28px;
+            box-shadow: 0 24px 60px rgba(43, 42, 76, 0.28);
+        }
+        .debt-modal .dm-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 20px 16px;
+            border: 0;
+            background: transparent;
+            flex: none;
+        }
+        .debt-modal .dm-header-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            background: var(--d-brand);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: none;
+        }
+        .debt-modal .dm-header-text { flex: 1; min-width: 0; }
+        .debt-modal .dm-eyebrow { display: block; font-size: 0.72rem; color: var(--d-muted); }
+        .debt-modal .dm-header h3 {
+            margin: 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--d-text);
+        }
+        .debt-modal .modal-close-x {
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: var(--d-soft);
+            color: var(--d-muted);
+            font-size: 1.3rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+        .debt-modal .modal-body {
+            overflow-y: auto;
+            flex: 1;
+            padding: 0 20px;
+        }
+        .debt-modal .dm-form { display: flex; flex-direction: column; gap: 16px; }
+        .debt-modal .form-group { margin: 0; }
+        .debt-modal label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--d-muted);
+        }
+        .debt-modal .required { color: var(--d-red); }
+        .debt-modal .form-input {
+            width: 100%;
+            box-sizing: border-box;
+            height: 48px;
+            padding: 0 14px;
+            border: 1.5px solid transparent;
+            border-radius: 14px;
+            background: var(--d-soft);
+            color: var(--d-text);
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+        }
+        .debt-modal textarea.form-input { height: auto; padding: 12px 14px; resize: vertical; }
+        .debt-modal select.form-input {
+            appearance: none;
+            -webkit-appearance: none;
+            padding-right: 36px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23858590' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+        }
+        .debt-modal .form-input:focus {
+            border-color: var(--d-brand);
+            background-color: var(--d-surface);
+            box-shadow: 0 0 0 4px rgba(43, 42, 76, 0.1);
+        }
+        .debt-modal .money-field { position: relative; }
+        .debt-modal .money-prefix {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-weight: 600;
+            color: var(--d-muted);
+            pointer-events: none;
+        }
+        .debt-modal .money-field .form-input {
+            padding-left: 44px;
+            font-size: 1.15rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            font-variant-numeric: tabular-nums;
+        }
+        .debt-modal .type-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .debt-modal .type-btn {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            border: 1.5px solid var(--d-line);
+            border-radius: 18px;
+            background: var(--d-surface);
+            color: var(--d-text);
+            text-align: left;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .debt-modal .type-btn.active {
+            border-color: var(--d-brand);
+            background: rgba(43, 42, 76, 0.06);
+            box-shadow: 0 0 0 3px rgba(43, 42, 76, 0.08);
+        }
+        .debt-modal .type-ico {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            flex: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+        }
+        .debt-modal .type-ico.in { background: rgba(31, 157, 85, 0.12); color: var(--d-green); }
+        .debt-modal .type-ico.out { background: rgba(192, 82, 79, 0.12); color: var(--d-red); }
+        .debt-modal .type-text b { display: block; font-size: 0.82rem; font-weight: 600; line-height: 1.25; }
+        .debt-modal .type-text small { display: block; margin-top: 2px; font-size: 0.7rem; color: var(--d-muted); }
+        .debt-modal .dm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .debt-modal .dm-inst {
+            background: var(--d-soft);
+            border-radius: 18px;
+            padding: 14px;
+        }
+        .debt-modal .dm-inst .form-input { background: var(--d-surface); }
+        .debt-modal .dm-inst .form-group { margin-bottom: 12px; }
+        .debt-modal .multi-section-title { font-size: 0.8rem; font-weight: 600; margin-bottom: 8px; }
+        .debt-modal .multi-item {
+            background: var(--d-surface);
+            border-radius: 14px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+        .debt-modal .multi-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .debt-modal .multi-item-title { font-size: 0.82rem; font-weight: 600; }
+        .debt-modal .multi-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .debt-modal .multi-item .form-input { background: var(--d-soft); }
+        .debt-modal .multi-item .form-group { margin: 0; }
+        .debt-modal .debt-inst-remove {
+            width: 32px;
+            height: 32px;
+            border: 0;
+            border-radius: 50%;
+            background: rgba(192, 82, 79, 0.12);
+            color: var(--d-red);
+            cursor: pointer;
+            padding: 0;
+        }
+        .debt-modal .multi-add-btn {
+            width: 100%;
+            height: 42px;
+            border: 1.5px dashed var(--d-brand);
+            border-radius: 12px;
+            background: transparent;
+            color: var(--d-brand);
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        .debt-modal .multi-total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .debt-modal .form-help {
+            display: block;
+            margin-top: 6px;
+            font-size: 0.72rem;
+            color: var(--d-muted);
+        }
+        .debt-modal details.dm-more {
+            border: 1px solid var(--d-line);
+            border-radius: 18px;
+        }
+        .debt-modal details.dm-more > summary {
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 16px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .debt-modal details.dm-more > summary::-webkit-details-marker { display: none; }
+        .debt-modal details.dm-more > summary span {
+            margin-left: auto;
+            font-size: 0.72rem;
+            font-weight: 500;
+            color: var(--d-muted);
+        }
+        .debt-modal details.dm-more > summary::after {
+            content: "\\25BE";
+            color: var(--d-muted);
+            transition: transform 0.2s ease;
+        }
+        .debt-modal details.dm-more[open] > summary::after { transform: rotate(180deg); }
+        .debt-modal .dm-more-body {
+            padding: 0 16px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .debt-modal .interest-type-selector { background: var(--d-soft); border-radius: 14px; padding: 4px; }
+        .debt-modal .interest-type-btn { border-radius: 10px; color: var(--d-muted); font-weight: 600; }
+        .debt-modal .interest-type-btn.active { background: var(--d-brand); color: #fff; }
+        .debt-modal .interest-preview { background: rgba(43, 42, 76, 0.07); color: var(--d-brand); border-radius: 12px; }
+        .debt-modal .dm-footer {
+            position: sticky;
+            bottom: 0;
+            display: flex;
+            gap: 10px;
+            margin: 0 -20px;
+            padding: 14px 20px 20px;
+            background: var(--d-surface);
+            border-top: 1px solid var(--d-line);
+        }
+        .debt-modal .dm-footer button {
+            height: 48px;
+            border: 0;
+            border-radius: 999px;
+            font-weight: 600;
+            font-size: 0.92rem;
+            cursor: pointer;
+        }
+        .debt-modal .dm-footer .btn-secondary { flex: 1; background: var(--d-soft); color: var(--d-text); }
+        .debt-modal .dm-footer .btn-primary {
+            flex: 2;
+            background: var(--d-brand);
+            color: #fff;
+            box-shadow: 0 6px 16px rgba(43, 42, 76, 0.28);
+        }
+        @media (max-width: 600px) {
+            .modal-overlay:has(.debt-modal) { align-items: flex-end; padding: 0; }
+            .modal-container.debt-modal {
+                max-width: none;
+                max-height: 94vh;
+                border-radius: 28px 28px 0 0;
+            }
+        }
+        @media (max-width: 420px) {
+            .debt-modal .dm-row,
+            .debt-modal .multi-form-row { grid-template-columns: 1fr; }
+            .debt-modal .type-btn { padding: 10px; }
+        }
+
+        /* ---------- Modal helpers (tetap) ---------- */
         .info-box {
             background: var(--bg-primary);
             padding: 12px;
@@ -2055,12 +2518,7 @@ function addDebtStyles() {
             margin: 10px 0;
             font-size: 0.85rem;
         }
-        
-        .interest-row {
-            display: flex;
-            gap: 8px;
-        }
-        
+        .interest-row { display: flex; gap: 8px; }
         .interest-type-selector {
             display: flex;
             gap: 8px;
@@ -2068,7 +2526,6 @@ function addDebtStyles() {
             padding: 4px;
             border-radius: 10px;
         }
-        
         .interest-type-btn {
             flex: 1;
             padding: 8px;
@@ -2084,20 +2541,9 @@ function addDebtStyles() {
             justify-content: center;
             gap: 6px;
         }
-        
-        .interest-type-btn.active {
-            background: var(--info);
-            color: white;
-        }
-        
-        .interest-row #debt-interest-rate {
-            flex: 1;
-        }
-        
-        .interest-row #debt-interest-period {
-            flex: 1.4;
-        }
-        
+        .interest-type-btn.active { background: var(--info); color: white; }
+        .interest-row #debt-interest-rate { flex: 1; }
+        .interest-row #debt-interest-period { flex: 1.4; }
         .interest-preview {
             display: flex;
             align-items: center;
@@ -2109,60 +2555,77 @@ function addDebtStyles() {
             font-size: 0.8rem;
             margin-top: 8px;
         }
-        
         .interest-badge {
             display: flex;
             align-items: center;
             gap: 6px;
             flex-wrap: wrap;
             background: rgba(245, 158, 11, 0.1);
-            color: #f59e0b;
+            color: #b7791f;
             padding: 8px 12px;
-            border-radius: 10px;
+            border-radius: 12px;
             font-size: 0.75rem;
-            margin-bottom: 12px;
         }
-        
         .interest-badge .interest-daily {
             margin-left: auto;
             font-weight: 600;
-            opacity: 0.9;
         }
-        
+
         @media (max-width: 480px) {
-            .interest-row {
-                flex-direction: column;
-            }
-            
-            .interest-badge .interest-daily {
-                margin-left: 0;
-                width: 100%;
+            .interest-row { flex-direction: column; }
+            .interest-badge .interest-daily { margin-left: 0; width: 100%; }
+            .debts-container .debt-header h1 { font-size: 1.15rem; }
+            .debts-container .debt-tabs { display: grid; grid-template-columns: repeat(3, 1fr); }
+            .debts-container .debt-tabs .tab-btn { padding: 0; }
+        }
+
+        /* ---------- Layar sangat sempit: tombol tambah jadi ikon ---------- */
+        @media (max-width: 340px) {
+            .debts-container .debt-header #add-debt-btn .btn-label { display: none; }
+            .debts-container .debt-header #add-debt-btn {
+                width: 44px !important;
+                padding: 0 !important;
             }
         }
-        
-        @media (max-width: 768px) {
-            .stats-row {
-                grid-template-columns: 1fr;
-                gap: 10px;
+
+        /* ---------- Tablet / desktop ---------- */
+        @media (min-width: 768px) {
+            .debt-hero {
+                flex-direction: row;
+                align-items: center;
+                justify-content: space-between;
+                gap: 24px;
+                padding: 22px 26px;
             }
-            
-            .debt-card-header {
-                flex-direction: column;
-                text-align: center;
+            .hero-main { flex: 1; }
+            .debt-hero .hero-amount { font-size: 2.6rem; }
+            .hero-tiles { width: min(420px, 50%); }
+            .debt-card {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+                grid-template-areas: "head fin" "actions fin";
+                column-gap: 0;
+                padding: 0;
+                overflow: hidden;
             }
-            
+            .dc-head { padding: 22px 24px 0; background: var(--d-soft); }
             .debt-actions {
-                justify-content: center;
-            }
-            
-            .debt-amounts {
-                flex-direction: column;
+                display: flex;
+                justify-content: flex-start;
+                align-items: flex-end;
                 gap: 8px;
+                padding: 14px 24px 22px;
+                background: var(--d-soft);
+                border-top: 0;
             }
-            
-            .debt-tabs {
-                flex-direction: column;
+            .debts-container .debt-actions .icon-btn {
+                width: 38px;
+                max-width: none;
+                height: 38px;
+                aspect-ratio: auto;
+                background: var(--d-surface) !important;
             }
+            .debts-container .debt-actions .icon-btn.delete-debt { background: rgba(192, 82, 79, 0.16) !important; }
+            .debt-card-fin { border-top: 0; padding: 22px 26px; justify-content: center; }
         }
     `;
 

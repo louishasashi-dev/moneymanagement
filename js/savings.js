@@ -102,26 +102,65 @@ export async function renderSavingsPage() {
   const targetText = heroText(totalTarget);
   const savedText = heroText(totalSaved);
 
+  // Data tambahan untuk hero mobile
+  const activeCount = allSavings.filter((s) => s.status === "active").length;
+  const doneCount = allSavings.length - activeCount;
+  const remaining = Math.max(totalTarget - totalSaved, 0);
+  const ringR = 46;
+  const ringC = 2 * Math.PI * ringR;
+  const ringOffset = ringC * (1 - Math.min(overallProgress, 100) / 100);
+  const heroEyebrow =
+    allSavings.length === 0
+      ? "Mulai menabung"
+      : `${activeCount} aktif · ${doneCount} tercapai`;
+  const heroChip =
+    allSavings.length === 0
+      ? `<i class="fas fa-seedling"></i> Belum ada target`
+      : remaining > 0
+        ? `<i class="fas fa-flag-checkered"></i> Sisa ${heroText(remaining)} lagi`
+        : `<i class="fas fa-check-circle"></i> Semua target tercapai`;
+
   // HTML Template
   container.innerHTML = `
         <div class="savings-container">
             <!-- Hero khusus mobile -->
             <div class="m-only sv-hero">
-                <div class="sv-hero-title">Tabungan</div>
-                <div class="sv-hero-label">Progress Keseluruhan</div>
-                <div class="sv-hero-stats">
-                    <div class="sv-hero-stat">
-                        <span class="sv-hero-stat-label">Total Target</span>
-                        <span class="sv-hero-stat-value" style="--chars: ${targetText.length}">${targetText}</span>
+                <div class="sv-hero-top">
+                    <div class="sv-hero-badge"><i class="fas fa-piggy-bank"></i></div>
+                    <div class="sv-hero-heading">
+                        <span class="sv-hero-eyebrow">${heroEyebrow}</span>
+                        <div class="sv-hero-title">Tabungan</div>
                     </div>
-                    <div class="sv-hero-stat">
-                        <span class="sv-hero-stat-label">Terkumpul</span>
-                        <span class="sv-hero-stat-value" style="--chars: ${savedText.length}">${savedText}</span>
+                    <button type="button" class="sv-hero-add" id="sv-add-btn" aria-label="Target Baru" title="Target Baru">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+
+                <div class="sv-hero-ring">
+                    <svg viewBox="0 0 120 120" aria-hidden="true">
+                        <circle class="sv-ring-track" cx="60" cy="60" r="${ringR}"></circle>
+                        <circle class="sv-ring-progress" cx="60" cy="60" r="${ringR}"
+                                stroke-dasharray="${ringC.toFixed(2)}" stroke-dashoffset="${ringC.toFixed(2)}"
+                                data-offset="${ringOffset.toFixed(2)}"
+                                transform="rotate(-90 60 60)"></circle>
+                    </svg>
+                    <div class="sv-ring-center">
+                        <strong>${Math.round(overallProgress)}%</strong>
+                        <span>tercapai</span>
                     </div>
                 </div>
-                <button type="button" class="sv-hero-add" id="sv-add-btn" aria-label="Target Baru" title="Target Baru">
-                    <i class="fas fa-plus"></i>
-                </button>
+                <div class="sv-hero-chip">${heroChip}</div>
+
+                <div class="sv-hero-stats">
+                    <div class="sv-hero-stat">
+                        <span class="sv-hero-stat-label"><i class="fas fa-bullseye"></i> Total Target</span>
+                        <span class="sv-hero-stat-value" style="--chars: ${targetText.length}" title="${formatCurrency(totalTarget)}">${targetText}</span>
+                    </div>
+                    <div class="sv-hero-stat">
+                        <span class="sv-hero-stat-label"><i class="fas fa-coins"></i> Terkumpul</span>
+                        <span class="sv-hero-stat-value" style="--chars: ${savedText.length}" title="${formatCurrency(totalSaved)}">${savedText}</span>
+                    </div>
+                </div>
             </div>
 
             <!-- Header -->
@@ -164,6 +203,18 @@ export async function renderSavingsPage() {
   // Setup event listeners
   setupSavingsEventListeners();
   scheduleSavingsFullBleed();
+  animateSavingsRing();
+}
+
+// Animasi ring progress terisi (dijalankan setelah HTML masuk ke DOM)
+function animateSavingsRing() {
+  const ring = document.querySelector(".sv-ring-progress");
+  if (!ring) return;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      ring.style.strokeDashoffset = ring.dataset.offset;
+    });
+  });
 }
 
 // Load semua tabungan dari database
@@ -1052,6 +1103,45 @@ function addSavingsStyles() {
             font-size: 0.8rem;
             font-weight: 500;
         }
+
+        /* Poles kartu progress (desktop) */
+        .overall-progress-card {
+            position: relative;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 92% 0%, rgba(255, 213, 74, 0.28) 0%, rgba(255, 213, 74, 0) 40%),
+                radial-gradient(circle at 4% 100%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 36%),
+                linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+            box-shadow: 0 12px 28px rgba(99, 102, 241, 0.28);
+        }
+        .overall-progress-card .progress-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            font-weight: 600;
+        }
+        .overall-progress-card .progress-header i {
+            width: 30px;
+            height: 30px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.18);
+            color: #ffd54a;
+        }
+        .overall-progress-card .progress-stats .stat {
+            min-width: 160px;
+            padding: 10px 18px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .overall-progress-card .progress-stats .stat-value { font-size: 1.2rem; font-weight: 700; }
+        .overall-progress-card .progress-bar-container { height: 12px; }
+        .overall-progress-card .progress-fill { background: #ffd54a; }
+        .overall-progress-card .progress-percentage { font-size: 0.85rem; font-weight: 700; }
         
         .saving-card {
             background: var(--bg-secondary);
@@ -1342,13 +1432,12 @@ function addSavingsStyles() {
             .savings-container .page-header,
             .savings-container .overall-progress-card { display: none !important; }
 
-            /* ===== Hero biru ===== */
+            /* ===== Hero ===== */
             .savings-container .sv-hero {
                 display: block;
                 position: relative;
                 z-index: 0;
-                padding: 14px 16px 56px;
-                text-align: center;
+                padding: 16px 16px 60px; /* bawah: area yang ditimpa panel putih */
                 color: #fff;
             }
             .savings-container .sv-hero::before {
@@ -1359,60 +1448,145 @@ function addSavingsStyles() {
                 left: calc(var(--sv-bleed-l, 0px) * -1 - 2px);
                 right: calc(var(--sv-bleed-r, 0px) * -1 - 2px);
                 bottom: 0;
-                background: linear-gradient(180deg, #1a3fd1 0%, #2f5be8 100%);
+                background:
+                    radial-gradient(circle at 90% 6%, rgba(255, 213, 74, 0.30) 0%, rgba(255, 213, 74, 0) 36%),
+                    radial-gradient(circle at 4% 58%, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0) 32%),
+                    linear-gradient(165deg, #1a3fd1 0%, #2f5be8 62%, #4a74f0 100%);
             }
-            .savings-container .sv-hero-title {
-                text-align: left;
-                font-size: 0.95rem;
-                font-weight: 700;
-                letter-spacing: 0.02em;
-                text-transform: uppercase;
-            }
-            .savings-container .sv-hero-label {
-                margin-top: 14px;
-                font-size: 0.78rem;
-                font-weight: 700;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-            }
-            .savings-container .sv-hero-stats {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
+
+            /* Baris atas: ikon, judul, tombol tambah */
+            .savings-container .sv-hero-top {
+                display: flex;
+                align-items: center;
                 gap: 12px;
-                margin-top: 8px;
             }
-            .savings-container .sv-hero-stat { min-width: 0; }
-            .savings-container .sv-hero-stat-label {
+            .savings-container .sv-hero-badge {
+                width: 44px;
+                height: 44px;
+                flex: none;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                background: rgba(255, 255, 255, 0.16);
+                border: 2px solid rgba(255, 255, 255, 0.32);
+                font-size: 1.1rem;
+            }
+            .savings-container .sv-hero-heading { flex: 1; min-width: 0; text-align: left; }
+            .savings-container .sv-hero-eyebrow {
                 display: block;
                 font-size: 0.72rem;
-                font-weight: 500;
-                opacity: 0.9;
+                color: #d5e0ff;
             }
-            .savings-container .sv-hero-stat-value {
-                display: block;
-                margin-top: 2px;
-                /* mengecil otomatis sesuai jumlah karakter agar selalu 1 baris */
-                font-size: clamp(9px, calc((100vw - 56px) / 2 / (var(--chars, 12) * 0.62)), 17px);
+            .savings-container .sv-hero-title {
+                font-size: 1.2rem;
                 font-weight: 700;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                letter-spacing: -0.01em;
+                line-height: 1.2;
             }
             .savings-container .sv-hero-add {
-                width: 36px;
-                height: 36px;
-                margin: 14px auto 0;
+                width: 42px;
+                height: 42px;
+                flex: none;
                 padding: 0;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 border: 0;
                 border-radius: 50%;
-                background: #d9dbe1;
-                color: #fff;
+                background: #fff;
+                color: #2f5be8;
                 font-size: 1rem;
                 cursor: pointer;
-                box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+                box-shadow: 0 6px 14px rgba(10, 25, 90, 0.28);
+            }
+            .savings-container .sv-hero-add:active { transform: scale(0.94); }
+
+            /* Ring progress keseluruhan */
+            .savings-container .sv-hero-ring {
+                position: relative;
+                width: 128px;
+                height: 128px;
+                margin: 18px auto 0;
+            }
+            .savings-container .sv-hero-ring svg { width: 100%; height: 100%; display: block; }
+            .savings-container .sv-ring-track {
+                fill: none;
+                stroke: rgba(255, 255, 255, 0.2);
+                stroke-width: 10;
+            }
+            .savings-container .sv-ring-progress {
+                fill: none;
+                stroke: #ffd54a;
+                stroke-width: 10;
+                stroke-linecap: round;
+                transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
+            }
+            .savings-container .sv-ring-center {
+                position: absolute;
+                inset: 0;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 2px;
+            }
+            .savings-container .sv-ring-center strong {
+                font-size: 1.7rem;
+                font-weight: 700;
+                line-height: 1;
+            }
+            .savings-container .sv-ring-center span { font-size: 0.7rem; opacity: 0.85; }
+
+            .savings-container .sv-hero-chip {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                width: fit-content;
+                max-width: 100%;
+                margin: 12px auto 0;
+                padding: 6px 12px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.16);
+                font-size: 0.76rem;
+                font-weight: 600;
+            }
+            .savings-container .sv-hero-chip i { color: #ffd54a; }
+
+            /* Dua kartu statistik */
+            .savings-container .sv-hero-stats {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                margin-top: 16px;
+            }
+            .savings-container .sv-hero-stat {
+                min-width: 0;
+                padding: 10px 12px;
+                text-align: left;
+                border-radius: 16px;
+                background: rgba(255, 255, 255, 0.14);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+            }
+            .savings-container .sv-hero-stat-label {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.7rem;
+                font-weight: 500;
+                opacity: 0.92;
+            }
+            .savings-container .sv-hero-stat-label i { color: #ffd54a; }
+            .savings-container .sv-hero-stat-value {
+                display: block;
+                margin-top: 4px;
+                /* mengecil otomatis sesuai jumlah karakter agar selalu 1 baris */
+                font-size: clamp(9px, calc((100vw - 92px) / 2 / (var(--chars, 12) * 0.62)), 17px);
+                font-weight: 700;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
 
             /* ===== Panel putih terangkat berisi kartu ===== */

@@ -87,101 +87,118 @@ export async function renderDashboard() {
   // HTML Template
   container.innerHTML = `
         <div class="dashboard-container">
-            <!-- Header with date and greeting -->
-            <div class="dashboard-header">
-                <div class="greeting">
-                    <h1>Halo, <span id="user-name">Pengguna</span>!</h1>
-                    <p>${formatDate(new Date(), "datetime")}</p>
-                </div>
-                <button class="refresh-btn" id="refresh-dashboard">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-            </div>
-            
-            <!-- Balance Cards -->
-            <div class="stats-grid">
-                <div class="stat-card income-card">
-                    <div class="stat-icon">
-                        <i class="fas fa-arrow-down"></i>
+            <!-- Header ungu dengan sudut bawah membulat -->
+            <header class="dash-hero">
+                <div class="dash-top">
+                    <div class="dash-avatar"><i class="fas fa-user"></i></div>
+                    <div class="dash-greet">
+                        <span class="dash-eyebrow">Selamat datang kembali</span>
+                        <h1>Halo, <span id="user-name">Pengguna</span>!</h1>
                     </div>
-                    <div class="stat-info">
-                        <span class="stat-label">Pemasukan</span>
-                        <span class="stat-value" id="total-income">${formatCurrency(stats.income)}</span>
-                    </div>
-                </div>
-                <div class="stat-card expense-card">
-                    <div class="stat-icon">
-                        <i class="fas fa-arrow-up"></i>
-                    </div>
-                    <div class="stat-info">
-                        <span class="stat-label">Pengeluaran</span>
-                        <span class="stat-value" id="total-expense">${formatCurrency(stats.expense)}</span>
-                    </div>
-                </div>
-                <div class="stat-card balance-card">
-                    <div class="stat-icon">
-                        <i class="fas fa-wallet"></i>
-                    </div>
-                    <div class="stat-info">
-                        <span class="stat-label">Arus kas</span>
-                        <span class="stat-value ${stats.balance >= 0 ? "positive" : "negative"}" id="total-balance">${formatCurrency(stats.balance)}</span>
-                    </div>
-                </div>
-                <div class="stat-card total-saldo-stat-card">
-                    <div class="stat-icon">
-                        <i class="fas fa-landmark"></i>
-                    </div>
-                    <div class="stat-info">
-                        <span class="stat-label">Total Saldo</span>
-                        <span class="stat-value" id="total-wallet-balance">${formatCurrency(totalWalletBalance)}</span>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Anggaran per Kategori -->
-            <div class="card daily-budget-card">
-                <div class="card-header">
-                    <h3><i class="fas fa-tags"></i> Anggaran per Kategori</h3>
-                    <button class="edit-budget-btn" id="manage-budget-btn">
-                        <i class="fas fa-plus"></i> Atur
+                    <button class="refresh-btn" id="refresh-dashboard" aria-label="Perbarui data" title="Perbarui data">
+                        <i class="fas fa-sync-alt"></i>
                     </button>
                 </div>
-                <div id="category-budget-list">
-                    <div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:.85rem;">
-                        <i class="fas fa-tags" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
-                        Belum ada anggaran kategori.<br>Klik <strong>Atur</strong> untuk menambahkan.
-                    </div>
+
+                <div class="dash-balance">
+                    <span class="dash-label">
+                        Total Saldo
+                        <button type="button" class="dash-eye" id="toggle-balance" aria-label="Sembunyikan saldo" title="Sembunyikan / tampilkan saldo">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </span>
+                    <span class="dash-amount" id="total-wallet-balance">${formatCurrency(totalWalletBalance)}</span>
+                    <span class="dash-chip ${stats.balance >= 0 ? "up" : "down"}">
+                        <i class="fas ${stats.balance >= 0 ? "fa-caret-up" : "fa-caret-down"}"></i>
+                        ${stats.balance >= 0 ? "+" : ""}${formatCurrency(stats.balance)} bulan ini
+                    </span>
                 </div>
-            </div>
-            
-            <!-- Statistik Bulan Ini (ring) -->
-            <div class="card month-rings-card" id="chart-card">
-                <div class="card-header">
-                    <h3><i class="fas fa-chart-pie"></i> Statistik Bulan Ini</h3>
-                    <span class="month-rings-period">${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</span>
+
+                <div class="dash-actions">
+                    <a href="#" data-page="transactions" class="dash-action primary">
+                        <span class="ico"><i class="fas fa-exchange-alt"></i></span>Transaksi
+                    </a>
+                    <a href="#" data-page="wallets" class="dash-action">
+                        <span class="ico"><i class="fas fa-wallet"></i></span>Dompet
+                    </a>
+                    <button type="button" class="dash-action" id="quick-budget-btn">
+                        <span class="ico"><i class="fas fa-tags"></i></span>Anggaran
+                    </button>
+                    <button type="button" class="dash-action" data-scroll="chart-card">
+                        <span class="ico"><i class="fas fa-chart-pie"></i></span>Statistik
+                    </button>
                 </div>
-                ${monthRingsHTML}
-            </div>
-            
-            <!-- Wallet Summary -->
-            <div class="card wallets-card">
-                <div class="card-header">
-                    <h3><i class="fas fa-landmark"></i> Ringkasan Dompet</h3>
-                    <a href="#" data-page="wallets" class="view-all-link">Lihat Semua <i class="fas fa-chevron-right"></i></a>
+            </header>
+
+            <div class="dash-grid">
+                <div class="dash-col">
+                    <!-- Ringkasan bulan ini -->
+                    <section>
+                        <div class="dash-section-head"><h2>Ringkasan Bulan Ini</h2></div>
+                        <div class="dash-card dash-tiles">
+                            <div class="dash-tile income-card">
+                                <span class="tile-ico in"><i class="fas fa-arrow-down"></i></span>
+                                <span class="tile-label">Pemasukan</span>
+                                <span class="tile-value" id="total-income" title="${formatCurrency(stats.income)}">${formatCurrencyShort(stats.income)}</span>
+                            </div>
+                            <div class="dash-tile expense-card">
+                                <span class="tile-ico out"><i class="fas fa-arrow-up"></i></span>
+                                <span class="tile-label">Pengeluaran</span>
+                                <span class="tile-value" id="total-expense" title="${formatCurrency(stats.expense)}">${formatCurrencyShort(stats.expense)}</span>
+                            </div>
+                            <div class="dash-tile balance-card">
+                                <span class="tile-ico flow"><i class="fas fa-wallet"></i></span>
+                                <span class="tile-label">Arus kas</span>
+                                <span class="tile-value ${stats.balance >= 0 ? "positive" : "negative"}" id="total-balance" title="${formatCurrency(stats.balance)}">${formatCurrencyShort(stats.balance)}</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Anggaran per Kategori -->
+                    <section>
+                        <div class="dash-section-head">
+                            <h2>Anggaran per Kategori</h2>
+                            <button class="dash-link" id="manage-budget-btn" type="button">Atur</button>
+                        </div>
+                        <div class="dash-card" id="category-budget-list">
+                            ${budgetEmptyHTML()}
+                        </div>
+                    </section>
+
+                    <!-- Statistik Bulan Ini (ring) -->
+                    <section id="chart-card">
+                        <div class="dash-section-head">
+                            <h2>Statistik Bulan Ini</h2>
+                            <span class="month-rings-period">${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</span>
+                        </div>
+                        <div class="dash-card">
+                            ${monthRingsHTML}
+                        </div>
+                    </section>
                 </div>
-                <div class="wallets-list" id="wallets-list">
-                    ${renderWalletsList(allWallets)}
-                </div>
-            </div>
-            
-            <!-- Recent Transactions -->
-            <div class="card recent-card">
-                <div class="card-header">
-                    <h3><i class="fas fa-history"></i> Transaksi Terbaru</h3>
-                    <a href="#" data-page="transactions" class="view-all-link">Lihat Semua <i class="fas fa-chevron-right"></i></a>
-                </div>
-                <div class="transactions-list" id="recent-transactions">
-                    ${renderTransactionsList(top5Recent)}
+
+                <div class="dash-col">
+                    <!-- Wallet Summary -->
+                    <section>
+                        <div class="dash-section-head">
+                            <h2>Ringkasan Dompet</h2>
+                            <a href="#" data-page="wallets" class="dash-link">Lihat Semua</a>
+                        </div>
+                        <div class="dash-card wallets-list" id="wallets-list">
+                            ${renderWalletsList(allWallets)}
+                        </div>
+                    </section>
+
+                    <!-- Recent Transactions -->
+                    <section>
+                        <div class="dash-section-head">
+                            <h2>Transaksi Terbaru</h2>
+                            <a href="#" data-page="transactions" class="dash-link">Lihat Semua</a>
+                        </div>
+                        <div class="dash-card transactions-list" id="recent-transactions">
+                            ${renderTransactionsList(top5Recent)}
+                        </div>
+                    </section>
                 </div>
             </div>
         </div>
@@ -201,6 +218,9 @@ export async function renderDashboard() {
 
   // Setup event listeners
   setupDashboardEvents();
+
+  // Header full sampai tepi layar (mobile)
+  scheduleDashboardFullBleed();
 
   // Setup navigation for links
   document.querySelectorAll("[data-page]").forEach((link) => {
@@ -280,6 +300,27 @@ function sumByType(transactions) {
     if (r[t.type] !== undefined) r[t.type] += t.amount || 0;
   });
   return r;
+}
+
+// Nominal singkat untuk kartu ringkasan: di bawah 1 juta tampil penuh,
+// mulai 1 juta disingkat: Rp 1jt, Rp 7,45jt, Rp 1M, Rp 2,5T ...
+function formatCurrencyShort(n) {
+  const abs = Math.abs(n || 0);
+  const sign = n < 0 ? "-" : "";
+  const units = [
+    [1e12, "T"],
+    [1e9, "M"],
+    [1e6, "jt"],
+  ];
+  for (const [size, label] of units) {
+    if (abs >= size) {
+      // dibulatkan ke bawah, maksimal 2 angka di belakang koma
+      const v = Math.floor((abs / size) * 100) / 100;
+      const text = String(v).replace(".", ",");
+      return `${sign}Rp ${text}${label}`;
+    }
+  }
+  return formatCurrency(n);
 }
 
 // Nominal ringkas untuk di tengah ring: Rp 3,5 jt / Rp 750 rb
@@ -595,7 +636,114 @@ function setupChartResize() {
   });
 }
 
+// Buat header mobile benar-benar full (menembus padding #page-content)
+function fitDashboardFullBleed() {
+  const root = document.querySelector(".dashboard-container");
+  const hero = root && root.querySelector(".dash-hero");
+  if (!root || !hero) return;
+
+  // Di tablet/desktop header berupa kartu biasa
+  if (window.innerWidth >= 768) {
+    root.style.removeProperty("--db-bleed-l");
+    root.style.removeProperty("--db-bleed-r");
+    root.style.removeProperty("--db-bleed-t");
+    return;
+  }
+
+  // Jarak hero ke tepi kiri/kanan layar
+  const rect = hero.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth;
+
+  // Total padding atas semua parent (agar background naik sampai tepi atas)
+  let top = 0;
+  for (
+    let n = root.parentElement;
+    n && n !== document.documentElement;
+    n = n.parentElement
+  ) {
+    top += parseFloat(getComputedStyle(n).paddingTop) || 0;
+  }
+
+  root.style.setProperty("--db-bleed-l", `${Math.max(0, rect.left)}px`);
+  root.style.setProperty("--db-bleed-r", `${Math.max(0, vw - rect.right)}px`);
+  root.style.setProperty("--db-bleed-t", `${top}px`);
+}
+
+function refitDashboardHeader() {
+  fitDashboardFullBleed();
+  fitBalanceText();
+}
+
+// Jalankan ulang setelah layout/font selesai agar ukuran bleed akurat
+function scheduleDashboardFullBleed() {
+  refitDashboardHeader();
+  requestAnimationFrame(refitDashboardHeader);
+  setTimeout(refitDashboardHeader, 150);
+  setTimeout(refitDashboardHeader, 500);
+}
+
+if (!window.__dashFullBleedBound) {
+  window.__dashFullBleedBound = true;
+  window.addEventListener("resize", fitDashboardFullBleed);
+}
+
+// Kecilkan font total saldo bila terlalu panjang, supaya tetap satu baris
+function fitBalanceText() {
+  const el = document.getElementById("total-wallet-balance");
+  const box = el && el.parentElement;
+  if (!el || !box) return;
+
+  // Lebar tersedia = kotak saldo, tapi tidak pernah lebih dari lebar layar
+  const avail = Math.min(
+    box.clientWidth,
+    document.documentElement.clientWidth - 40,
+  );
+
+  el.style.fontSize = "";
+  let size = parseFloat(getComputedStyle(el).fontSize);
+  while (el.offsetWidth > avail && size > 14) {
+    size -= 1;
+    el.style.fontSize = size + "px";
+  }
+}
+
+if (!window.__dashFitBound) {
+  window.__dashFitBound = true;
+  window.addEventListener("resize", fitBalanceText);
+}
+
+// Sembunyikan / tampilkan total saldo (pilihan disimpan di browser)
+const HIDE_BALANCE_KEY = "dashboard_hide_balance";
+
+function setupBalanceToggle() {
+  const btn = document.getElementById("toggle-balance");
+  const amount = document.getElementById("total-wallet-balance");
+  if (!btn || !amount) return;
+
+  const realValue = amount.textContent;
+  const apply = (hidden) => {
+    amount.textContent = hidden ? "Rp ••••••" : realValue;
+    const icon = btn.querySelector("i");
+    if (icon) icon.className = hidden ? "fas fa-eye-slash" : "fas fa-eye";
+    btn.setAttribute(
+      "aria-label",
+      hidden ? "Tampilkan saldo" : "Sembunyikan saldo",
+    );
+    fitBalanceText();
+  };
+
+  apply(localStorage.getItem(HIDE_BALANCE_KEY) === "1");
+  btn.addEventListener("click", () => {
+    const hidden = localStorage.getItem(HIDE_BALANCE_KEY) !== "1";
+    localStorage.setItem(HIDE_BALANCE_KEY, hidden ? "1" : "0");
+    apply(hidden);
+  });
+}
+
 function setupDashboardEvents() {
+  // Tombol mata di header
+  setupBalanceToggle();
+
   // Refresh button
   const refreshBtn = document.getElementById("refresh-dashboard");
   if (refreshBtn) {
@@ -605,6 +753,19 @@ function setupDashboardEvents() {
       showToast("Data diperbarui", "success");
     });
   }
+
+  // Aksi cepat di header
+  const quickBudgetBtn = document.getElementById("quick-budget-btn");
+  if (quickBudgetBtn) {
+    quickBudgetBtn.addEventListener("click", () => showManageBudgetModal());
+  }
+  document.querySelectorAll("[data-scroll]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document
+        .getElementById(btn.dataset.scroll)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
 
   // Render category budgets
   renderCategoryBudgets();
@@ -634,6 +795,15 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// Tampilan kosong anggaran kategori
+function budgetEmptyHTML() {
+  return `
+      <div class="dash-empty">
+        <i class="fas fa-tags"></i>
+        <p>Belum ada anggaran kategori.<br>Klik <strong>Atur</strong> untuk menambahkan.</p>
+      </div>`;
+}
+
 // Render daftar anggaran per kategori
 async function renderCategoryBudgets() {
   const container = document.getElementById("category-budget-list");
@@ -644,11 +814,7 @@ async function renderCategoryBudgets() {
   const budgets = catBudget?.budgets || [];
 
   if (budgets.length === 0) {
-    container.innerHTML = `
-      <div style="text-align:center;padding:20px;color:var(--text-secondary);font-size:.85rem;">
-        <i class="fas fa-tags" style="font-size:2rem;opacity:.3;display:block;margin-bottom:8px;"></i>
-        Belum ada anggaran kategori.<br>Klik <strong>Atur</strong> untuk menambahkan.
-      </div>`;
+    container.innerHTML = budgetEmptyHTML();
     return;
   }
 
@@ -670,21 +836,15 @@ async function renderCategoryBudgets() {
       const spent = spentMap[b.category] || 0;
       const pct = Math.min((spent / b.amount) * 100, 100);
       const over = spent > b.amount;
-      const color = over
-        ? "var(--danger)"
-        : pct > 80
-          ? "var(--warning)"
-          : "var(--success)";
+      const state = over ? "bad" : pct > 80 ? "warn" : "ok";
       return `
-      <div style="margin-bottom:14px;">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:.85rem;">
-          <span style="font-weight:500;">${b.category}</span>
-          <span style="color:${color};font-weight:600;">${formatCurrency(spent)} / ${formatCurrency(b.amount)}</span>
+      <div class="bud-row">
+        <div class="bud-top">
+          <span class="bud-name">${escapeHtml(b.category)}</span>
+          <span class="bud-amt ${state}">${formatCurrency(spent)} / ${formatCurrency(b.amount)}</span>
         </div>
-        <div style="background:var(--border-color);border-radius:8px;height:8px;overflow:hidden;">
-          <div style="width:${pct}%;height:100%;background:${color};border-radius:8px;transition:width .3s;"></div>
-        </div>
-        ${over ? `<div style="font-size:.75rem;color:var(--danger);margin-top:2px;">⚠️ Melebihi anggaran ${formatCurrency(spent - b.amount)}</div>` : ""}
+        <div class="bud-bar"><div class="bud-fill ${state}" style="width:${pct}%"></div></div>
+        ${over ? `<div class="bud-warn"><i class="fas fa-exclamation-triangle"></i> Melebihi anggaran ${formatCurrency(spent - b.amount)}</div>` : ""}
       </div>`;
     })
     .join("");
@@ -814,137 +974,274 @@ function addDashboardStyles() {
   style.id = "dashboard-styles";
   style.textContent = `
         .dashboard-container {
-            max-width: 1200px;
+            --d-brand: #0B3D2A;
+            --d-brand-2: #0F5A3A;
+            --d-lime: #C6F432;
+            --d-accent: #16A34A;
+            --d-red: #DC4C4C;
+            --d-green: #16A34A;
+            --d-surface: var(--bg-secondary, #fff);
+            --d-soft: var(--bg-primary, #F4F4F7);
+            --d-text: var(--text-primary, #242333);
+            --d-muted: var(--text-secondary, #6F6F7B);
+            --d-line: var(--border-color, #EEEEF3);
+            --dash-pad: 16px;
+            width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            max-width: 1100px;
             margin: 0 auto;
-        }
-        
-        .dashboard-header {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
+            flex-direction: column;
+            gap: 20px;
         }
-        
-        .greeting h1 {
-            font-size: 1.5rem;
-            margin-bottom: 4px;
+
+        /* ---------- Header ---------- */
+        .dash-hero {
+            position: relative;
+            z-index: 0;
+            color: #fff;
+            margin: 0;
+            padding: 28px 20px 22px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
         }
-        
-        .greeting p {
-            color: var(--text-secondary);
-            font-size: 0.875rem;
+        /* Latar header: melebar sampai tepi layar (diatur oleh fitDashboardFullBleed) */
+        .dash-hero::before {
+            content: "";
+            position: absolute;
+            z-index: -1;
+            /* overshoot 2px agar tidak ada celah putih (sub-pixel) di tepi */
+            top: calc(var(--db-bleed-t, 0px) * -1 - 2px);
+            left: calc(var(--db-bleed-l, 0px) * -1 - 2px);
+            right: calc(var(--db-bleed-r, 0px) * -1 - 2px);
+            bottom: 0;
+            background:
+                radial-gradient(circle at 92% 0%, rgba(198, 244, 50, 0.16) 0%, rgba(198, 244, 50, 0) 45%),
+                linear-gradient(160deg, var(--d-brand-2) 0%, var(--d-brand) 70%);
+            border-radius: 0 0 32px 32px;
+            box-shadow: 0 14px 30px rgba(11, 61, 42, 0.28);
+            pointer-events: none;
         }
-        
-        .refresh-btn {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
+        .dash-hero > * { position: relative; }
+        .dash-top { display: flex; align-items: center; gap: 12px; }
+        .dash-avatar {
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            cursor: pointer;
-            color: var(--text-primary);
-            transition: all 0.3s ease;
-        }
-        
-        .refresh-btn:hover {
-            transform: rotate(180deg);
-        }
-        
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 20px;
-        }
-        
-        .stat-card {
-            background: var(--bg-secondary);
-            border-radius: 16px;
-            padding: 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: var(--card-shadow);
-        }
-        
-        .stat-icon {
-            width: 48px;
-            height: 48px;
-            border-radius: 12px;
+            flex: none;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.5rem;
+            background: rgba(255, 255, 255, 0.12);
+            border: 2px solid rgba(255, 255, 255, 0.35);
+            color: #fff;
         }
-        
-        .income-card .stat-icon {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
+        .dash-greet { flex: 1; min-width: 0; }
+        .dash-hero .dash-eyebrow { display: block; font-size: 0.72rem; color: #B7D9C6 !important; }
+        .dash-hero .dash-greet h1 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: #fff !important;
+            letter-spacing: -0.01em;
         }
-        
-        .expense-card .stat-icon {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
+        .dash-hero .refresh-btn {
+            width: 40px;
+            height: 40px;
+            flex: none;
+            border: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.12);
+            color: #fff;
+            cursor: pointer;
+            transition: transform 0.3s ease;
         }
-        
-        .balance-card .stat-icon {
-            background: rgba(59, 130, 246, 0.1);
-            color: #3b82f6;
+        .dash-hero .refresh-btn:hover { transform: rotate(180deg); }
+        .dash-balance {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            text-align: center;
+            min-width: 0;
+            max-width: 100%;
+            contain: inline-size; /* lebar alami nominal tidak ikut melebarkan header */
         }
-        
-        .total-saldo-stat-card .stat-icon {
-            background: rgba(139, 92, 246, 0.1);
-            color: #8b5cf6;
+        .dash-hero .dash-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #B7D9C6 !important;
         }
-        
-        .stat-info {
-            flex: 1;
+        .dash-eye {
+            padding: 2px;
+            border: 0;
+            background: none;
+            color: #B7D9C6;
+            font-size: 0.85rem;
+            line-height: 1;
+            cursor: pointer;
         }
-        
-        .stat-label {
-            display: block;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
+        .dash-eye:hover { color: #fff; }
+        .dash-hero .dash-amount {
+            font-size: clamp(1.3rem, 7vw, 2.2rem);
+            font-weight: 700;
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            color: #fff !important;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
         }
-        
-        .stat-value {
-            font-size: 1.25rem;
+        .dash-hero .dash-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 0.78rem;
             font-weight: 600;
         }
-        
-        .stat-value.positive {
-            color: #10b981;
+        .dash-hero .dash-chip.up { background: var(--d-lime); color: var(--d-brand) !important; }
+        .dash-hero .dash-chip.down { background: rgba(255, 156, 152, 0.22); color: #FFB8B5 !important; }
+        .dash-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+        .dash-hero .dash-action {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 0;
+            border: 0;
+            background: none;
+            color: #fff !important;
+            font-family: inherit;
+            font-size: 0.72rem !important;
+            font-weight: 500 !important;
+            line-height: 1.2;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
         }
-        
-        .stat-value.negative {
-            color: #ef4444;
+        .dash-hero .dash-action .ico {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #fff;
+            font-size: 1.05rem;
         }
-        
-        .card-header {
+        .dash-hero .dash-action.primary .ico {
+            background: var(--d-lime);
+            border-color: var(--d-lime);
+            color: var(--d-brand);
+        }
+
+        /* ---------- Layout & section ---------- */
+        .dash-grid { display: flex; flex-direction: column; gap: 20px; }
+        .dash-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+        .dash-section-head {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin: 0 2px 10px;
         }
-        
-        .card-header h3 {
-            font-size: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .dash-section-head h2 {
+            margin: 0;
+            font-size: 1.02rem;
+            font-weight: 700;
+            color: var(--d-text);
+        }
+        .dash-link {
+            padding: 0;
+            border: 0;
+            background: none;
+            color: var(--d-accent);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .month-rings-period { font-size: 0.8rem; color: var(--d-muted); }
+        .dash-card {
+            background: var(--d-surface);
+            border-radius: 22px;
+            padding: 16px;
+            border: 1px solid var(--d-line);
+            box-shadow: 0 1px 2px rgba(15, 40, 28, 0.04), 0 8px 24px rgba(15, 40, 28, 0.05);
         }
 
-        /* Grafik yang bisa di-resize manual oleh user (desktop & mobile) */
-        .month-rings-period {
-            font-size: .8rem;
-            color: var(--text-secondary);
+        /* ---------- Tile ringkasan ---------- */
+        .dash-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        .dash-tile {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            text-align: center;
+            min-width: 0;
         }
+        .tile-ico {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+        .tile-ico.in { background: #E6F6EC; color: var(--d-green); }
+        .tile-ico.out { background: #FDEBEA; color: var(--d-red); }
+        .tile-ico.flow { background: #EAF0FF; color: #3B6FE0; }
+        .tile-label { font-size: 0.72rem; font-weight: 500; color: var(--d-muted); }
+        .tile-value {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--d-text);
+            font-variant-numeric: tabular-nums;
+            word-break: break-word;
+        }
+        .tile-value.positive { color: var(--d-green); }
+        .tile-value.negative { color: var(--d-red); }
+
+        /* ---------- Anggaran ---------- */
+        .bud-row { margin-bottom: 16px; }
+        .bud-row:last-child { margin-bottom: 0; }
+        .bud-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        .bud-name { font-weight: 600; color: var(--d-text); }
+        .bud-amt { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+        .bud-amt.ok { color: var(--d-green); }
+        .bud-amt.warn { color: #B7791F; }
+        .bud-amt.bad { color: var(--d-red); }
+        .bud-bar { height: 8px; border-radius: 999px; background: var(--d-line); overflow: hidden; }
+        .bud-fill { height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+        .bud-fill.ok { background: var(--d-green); }
+        .bud-fill.warn { background: #F5A524; }
+        .bud-fill.bad { background: var(--d-red); }
+        .bud-warn { margin-top: 6px; font-size: 0.75rem; color: var(--d-red); }
+        .dash-empty { text-align: center; padding: 14px 8px; color: var(--d-muted); font-size: 0.85rem; }
+        .dash-empty i { display: block; margin-bottom: 8px; font-size: 1.8rem; opacity: 0.35; }
+        .dash-empty p { margin: 0; }
+
+        /* ---------- Statistik ring ---------- */
         .month-rings {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 12px;
-            padding: 8px 0 4px;
+            padding: 4px 0;
         }
         .month-ring {
             display: flex;
@@ -954,20 +1251,9 @@ function addDashboardStyles() {
             min-width: 0;
             gap: 2px;
         }
-        .month-ring-graphic {
-            position: relative;
-            width: 100%;
-            max-width: 150px;
-            aspect-ratio: 1 / 1;
-        }
-        .month-ring-graphic svg {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-        .ring-progress {
-            transition: stroke-dashoffset 1s cubic-bezier(.4, 0, .2, 1);
-        }
+        .month-ring-graphic { position: relative; width: 100%; max-width: 150px; aspect-ratio: 1 / 1; }
+        .month-ring-graphic svg { width: 100%; height: 100%; display: block; }
+        .ring-progress { transition: stroke-dashoffset 1s cubic-bezier(.4, 0, .2, 1); }
         .month-ring-center {
             position: absolute;
             inset: 0;
@@ -981,264 +1267,171 @@ function addDashboardStyles() {
             line-height: 1.1;
             white-space: nowrap;
         }
-        .month-ring-label {
-            margin-top: 8px;
-            font-weight: 600;
-            font-size: .85rem;
-        }
-        .month-ring-amount {
-            font-size: .78rem;
-            color: var(--text-secondary);
-            word-break: break-word;
-        }
-        .month-ring-sub {
-            font-size: .7rem;
-            color: var(--text-secondary);
-        }
-        .ring-delta {
-            font-size: .68rem;
-            color: var(--text-secondary);
-        }
-        .ring-delta.good { color: #10b981; }
-        .ring-delta.bad { color: #ef4444; }
+        .month-ring-label { margin-top: 8px; font-weight: 600; font-size: 0.85rem; }
+        .month-ring-amount { font-size: 0.78rem; color: var(--d-muted); word-break: break-word; }
+        .month-ring-sub { font-size: 0.7rem; color: var(--d-muted); }
+        .ring-delta { font-size: 0.68rem; color: var(--d-muted); }
+        .ring-delta.good { color: var(--d-green); }
+        .ring-delta.bad { color: var(--d-red); }
         .month-rings-rest {
             display: flex;
             justify-content: space-between;
             align-items: center;
             gap: 8px;
             margin-top: 14px;
-            padding: 10px 14px;
-            border-radius: 10px;
-            background: var(--bg-primary);
-            font-size: .82rem;
-            color: var(--text-secondary);
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: var(--d-soft);
+            font-size: 0.82rem;
+            color: var(--d-muted);
         }
-        .month-rings-rest small { opacity: .75; }
-        .month-rings-rest strong.positive { color: #10b981; }
-        .month-rings-rest strong.negative { color: #ef4444; }
-        @media (max-width: 480px) {
-            .month-rings { gap: 6px; }
-            .month-rings-rest { flex-direction: column; align-items: flex-start; }
-        }
-        .chart-card {
-            position: relative;
-            padding-bottom: 30px;
-        }
+        .month-rings-rest small { opacity: 0.75; }
+        .month-rings-rest strong.positive { color: var(--d-green); }
+        .month-rings-rest strong.negative { color: var(--d-red); }
 
-        .chart-canvas-wrapper {
-            position: relative;
-            width: 100%;
-            height: 260px;
-            min-height: 180px;
-        }
-
-        .chart-canvas-wrapper canvas {
-            width: 100% !important;
-            height: 100% !important;
-        }
-
-        .chart-resize-handle {
-            position: absolute;
-            right: 6px;
-            bottom: 4px;
-            width: 34px;
-            height: 34px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 8px;
-            color: var(--text-secondary);
-            font-size: 0.75rem;
-            cursor: ns-resize;
-            touch-action: none;
-            user-select: none;
-            transition: background 0.15s ease, color 0.15s ease;
-        }
-
-        .chart-resize-handle:hover {
-            background: rgba(99, 102, 241, 0.1);
-            color: var(--info);
-        }
-
-        .chart-resize-handle.resizing {
-            background: rgba(99, 102, 241, 0.18);
-            color: var(--info);
-        }
-
-        /* Cegah body ikut ke-scroll saat drag resize di layar sentuh */
-        body.chart-resizing-active {
-            overscroll-behavior: none;
-            -webkit-user-select: none;
-            user-select: none;
-        }
-
-        @media (max-width: 768px) {
-            .chart-canvas-wrapper {
-                height: 220px;
-            }
-        }
-        
-        .view-all-link {
-            color: var(--info);
-            text-decoration: none;
-            font-size: 0.75rem;
-        }
-        
-        .daily-budget-card {
-            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-secondary) 100%);
-        }
-        
-        .budget-info {
-            margin-top: 8px;
-        }
-        
-        .budget-stats {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 12px;
-        }
-        
-        .budget-label {
-            display: block;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-        
-        .budget-amount {
-            font-weight: 600;
-            font-size: 1rem;
-        }
-        
-        .progress-bar {
-            height: 8px;
-            background: var(--border-color);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: 8px;
-        }
-        
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #10b981, #3b82f6);
-            border-radius: 4px;
-            transition: width 0.3s ease;
-        }
-        
-        .budget-detail {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-        }
-        
-        .wallets-list,
-        .transactions-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        
+        /* ---------- Dompet & transaksi ---------- */
+        .dash-card.wallets-list,
+        .dash-card.transactions-list { display: flex; flex-direction: column; gap: 0; padding: 6px 16px; }
         .wallet-item,
         .transaction-item {
             display: flex;
             align-items: center;
             gap: 12px;
-            padding: 12px;
-            background: var(--bg-primary);
-            border-radius: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--d-line);
         }
-        
-        .wallet-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.2rem;
-        }
-        
-        .wallet-info,
-        .transaction-info {
-            flex: 1;
-        }
-        
-        .wallet-name,
-        .transaction-name {
-            font-weight: 500;
-            margin-bottom: 4px;
-        }
-        
-        .wallet-type,
-        .transaction-meta {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-        }
-        
-        .transaction-meta {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .wallet-balance {
-            font-weight: 600;
-        }
-        
+        .wallet-item:last-child,
+        .transaction-item:last-child { border-bottom: 0; }
+        .wallet-icon,
         .transaction-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            flex: none;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1rem;
+            font-size: 1.05rem;
         }
-        
-        .transaction-icon.income {
-            background: rgba(16, 185, 129, 0.1);
-            color: #10b981;
-        }
-        
-        .transaction-icon.expense {
-            background: rgba(239, 68, 68, 0.1);
-            color: #ef4444;
-        }
-        
-        .transaction-amount {
+        .transaction-icon.income { background: #E6F6EC; color: var(--d-green); }
+        .transaction-icon.expense { background: #FDEBEA; color: var(--d-red); }
+        .wallet-info, .transaction-info { flex: 1; min-width: 0; }
+        .wallet-name, .transaction-name {
             font-weight: 600;
+            font-size: 0.92rem;
+            margin-bottom: 2px;
+            color: var(--d-text);
+            overflow-wrap: anywhere;
         }
-        
-        .transaction-amount.income {
-            color: #10b981;
+        .wallet-type, .transaction-meta { font-size: 0.75rem; color: var(--d-muted); }
+        .transaction-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+        .wallet-balance, .transaction-amount {
+            font-weight: 700;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
         }
-        
-        .transaction-amount.expense {
-            color: #ef4444;
-        }
-        
-        .empty-state {
+        .transaction-amount.income { color: var(--d-green); }
+        .transaction-amount.expense { color: var(--d-text); }
+        .dashboard-container .empty-state {
             text-align: center;
-            padding: 40px;
-            color: var(--text-secondary);
+            padding: 24px 0;
+            color: var(--d-muted);
+            font-size: 0.88rem;
         }
-        
-        .edit-budget-btn {
-            background: none;
-            border: none;
-            color: var(--info);
-            cursor: pointer;
-            font-size: 1rem;
+
+        @media (max-width: 767px) {
+            /* Hilangkan padding halaman agar header bisa full ke tepi */
+            #page-content:has(.dashboard-container),
+            body *:has(.dashboard-container) {
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                padding-top: 0 !important;
+                border-top-left-radius: 0 !important;
+                border-top-right-radius: 0 !important;
+            }
+            /* Potong kelebihan latar header tanpa mengunci scroll/zoom halaman */
+            #page-content:has(.dashboard-container) { overflow-x: clip; }
+
+            .dashboard-container { padding-bottom: 110px; } /* ruang untuk bottom navigation */
+            .dash-grid { padding: 0 var(--dash-pad); }
         }
-        
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-                gap: 12px;
+
+        @media (max-width: 480px) {
+            .month-rings { gap: 6px; }
+            .month-rings-rest { flex-direction: column; align-items: flex-start; }
+        }
+
+        /* ---------- Tablet / desktop ---------- */
+        @media (min-width: 768px) {
+            .dash-hero {
+                padding: 26px 28px;
+                display: grid;
+                grid-template-columns: 1fr auto;
+                grid-template-areas: "top top" "balance actions";
+                align-items: center;
+                gap: 22px 24px;
             }
-            
-            .stat-value {
-                font-size: 0.95rem;
+            .dash-hero::before {
+                top: 0;
+                left: 0;
+                right: 0;
+                border-radius: 28px;
             }
+            .dash-top { grid-area: top; }
+            .dash-balance { grid-area: balance; align-items: flex-start; text-align: left; }
+            .dash-actions { grid-area: actions; width: 340px; }
+            .dash-hero .dash-amount { font-size: 2.8rem; }
+            .dash-grid {
+                display: grid;
+                grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+                gap: 20px;
+                align-items: start;
+            }
+        }
+
+        /* ---------- Modal anggaran ---------- */
+        #budget-modal {
+            --d-brand: #0B3D2A;
+            --d-red: #DC4C4C;
+            --d-soft: var(--bg-primary, #F4F4F7);
+            --d-line: var(--border-color, #EEEEF3);
+        }
+        #budget-modal .modal-container { border-radius: 28px; }
+        #budget-modal .modal-header { border: 0; }
+        #budget-modal .modal-header h3 { font-size: 1.1rem; font-weight: 600; }
+        #budget-modal .modal-close-x {
+            width: 36px;
+            height: 36px;
+            padding: 0 !important;
+            border-radius: 50%;
+            background: var(--d-soft) !important;
+            line-height: 1;
+        }
+        #budget-modal .form-input {
+            height: 46px;
+            padding: 0 14px;
+            border: 1.5px solid transparent;
+            border-radius: 14px;
+            background: var(--d-soft);
+            outline: none;
+        }
+        #budget-modal .form-input:focus {
+            border-color: var(--d-brand);
+            box-shadow: 0 0 0 4px rgba(11, 61, 42, 0.12);
+        }
+        #budget-modal #add-budget-btn {
+            background: var(--d-brand) !important;
+            border-radius: 14px !important;
+            min-height: 46px;
+        }
+        #budget-modal .delete-budget-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50% !important;
+            background: rgba(192, 82, 79, 0.12) !important;
+            color: var(--d-red) !important;
+            padding: 0 !important;
         }
     `;
 
