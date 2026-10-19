@@ -202,6 +202,238 @@
       }
     </style>
 
+    <!-- Tema hijau: sidebar desktop, bottom nav mengambang, drawer "Lainnya".
+         Hanya gaya; id, rute, badge dan perilaku tidak berubah. -->
+    <style id="green-nav-theme">
+      /* Sidebar desktop */
+      body .sidebar {
+        background: var(--bg-secondary);
+        border-right: 1px solid var(--border-color);
+      }
+      body .sidebar .sidebar-header {
+        border-bottom: 1px solid var(--border-color);
+      }
+      body .sidebar .sidebar-header h2 {
+        color: var(--text-primary);
+      }
+      body .sidebar .nav-item {
+        margin: 2px 12px;
+        padding: 12px 14px;
+        border-left: 0;
+        border-radius: 14px;
+        color: var(--text-secondary);
+      }
+      body .sidebar .nav-item span,
+      body .sidebar .nav-item i,
+      [data-theme="vintage"] body .sidebar .nav-item span,
+      [data-theme="nature"] body .sidebar .nav-item span,
+      [data-theme="vintage"] body .sidebar .nav-item i,
+      [data-theme="nature"] body .sidebar .nav-item i {
+        color: var(--text-secondary);
+      }
+      body .sidebar .nav-item:hover {
+        background: rgba(22, 163, 74, 0.08);
+        border-left: 0;
+      }
+      body .sidebar .nav-item.active {
+        background: #e6f6ec;
+        border-left: 0;
+      }
+      body .sidebar .nav-item.active span,
+      body .sidebar .nav-item.active i,
+      [data-theme="vintage"] body .sidebar .nav-item.active span,
+      [data-theme="nature"] body .sidebar .nav-item.active span,
+      [data-theme="vintage"] body .sidebar .nav-item.active i,
+      [data-theme="nature"] body .sidebar .nav-item.active i {
+        color: #16a34a;
+        font-weight: 700;
+      }
+      [data-theme="dark"] body .sidebar .nav-item.active {
+        background: rgba(22, 163, 74, 0.18);
+      }
+
+      @media (max-width: 768px) {
+        /* Pil putih mengambang; tanpa lubang dan tanpa bulan */
+        body .bottom-nav {
+          filter: drop-shadow(0 8px 18px rgba(11, 61, 42, 0.16));
+        }
+        body .bottom-nav::before {
+          -webkit-mask-image: none;
+          mask-image: none;
+          background: var(--bg-secondary);
+          border-radius: 28px;
+        }
+        body .bottom-nav .bottom-nav-bubble {
+          display: none !important;
+        }
+        body .bottom-nav .bottom-nav-item {
+          justify-content: center;
+          padding: 0 !important;
+          color: var(--text-secondary);
+        }
+        body .bottom-nav .bottom-nav-item i,
+        body .bottom-nav .bottom-nav-item span {
+          color: var(--text-secondary);
+        }
+        body .bottom-nav .bottom-nav-item.active i {
+          transform: none;
+          animation: none;
+          color: #16a34a !important;
+        }
+        body .bottom-nav .bottom-nav-item.active span {
+          color: #16a34a;
+          font-weight: 700;
+        }
+
+        /* Drawer "Lainnya" duduk di atas pil navigasi mengambang (tinggi 66px + jarak 12px) */
+        .more-menu-backdrop {
+          bottom: 0;
+        }
+        .more-menu-content {
+          bottom: calc(90px + env(safe-area-inset-bottom, 0px));
+          max-height: calc(100dvh - 120px - env(safe-area-inset-bottom, 0px));
+          overflow-y: auto;
+        }
+      }
+
+      /* Drawer "Lainnya" */
+      .more-menu-content {
+        border-radius: 24px;
+        box-shadow: 0 14px 30px rgba(11, 61, 42, 0.2);
+      }
+      .more-menu-item:hover,
+      .more-menu-item:active {
+        background: #e6f6ec;
+        color: #16a34a;
+      }
+      [data-theme="dark"] .more-menu-item:hover,
+      [data-theme="dark"] .more-menu-item:active {
+        background: rgba(22, 163, 74, 0.18);
+      }
+      .more-menu-item i {
+        color: #16a34a;
+      }
+    </style>
+
+    <!-- Bar navigasi mobile bergaya referensi (lekuk + bulan gradien ungu),
+         warna/radius/bayangan mengikuti finance-stripe-design.md.
+         Hanya gaya; id, rute, badge dan perilaku tidak berubah. -->
+    <style id="stripe-notch-nav">
+      :root {
+        --sn-primary: #533afd;
+        --sn-primary-light: #9b8cff;
+        --sn-foreground: #0a2540;
+        --sn-surface: #f6f9fc;
+        --sn-border: #d8dee8;
+        --sn-font:
+          "sohne-var", "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+          sans-serif;
+      }
+      [data-theme="dark"] {
+        --sn-foreground: #e6ecf5;
+        --sn-surface: #1e2235;
+        --sn-border: #2f3550;
+      }
+
+      @media (max-width: 768px) {
+        body .bottom-nav {
+          height: 68px !important;
+          border-radius: 12px !important;
+          font-family: var(--sn-font);
+          filter: drop-shadow(0 4px 12px rgba(10, 37, 64, 0.1))
+            drop-shadow(0 0 1px rgba(10, 37, 64, 0.18));
+        }
+
+        /* Badan bar: permukaan terang + lekuk melingkar di atas item aktif */
+        body .bottom-nav::before {
+          border-radius: 12px;
+          background: var(--sn-surface);
+          -webkit-mask-image: radial-gradient(
+            circle 36px at var(--notch-x) 4px,
+            transparent 35px,
+            #000 36px
+          );
+          mask-image: radial-gradient(
+            circle 36px at var(--notch-x) 4px,
+            transparent 35px,
+            #000 36px
+          );
+        }
+
+        /* Item: ikon di atas, label di bawah */
+        body .bottom-nav .bottom-nav-item {
+          justify-content: flex-end;
+          padding: 0 0 10px !important;
+          gap: 5px;
+          color: var(--sn-foreground);
+        }
+        body .bottom-nav .bottom-nav-item i,
+        body .bottom-nav .bottom-nav-item span {
+          color: var(--sn-foreground);
+        }
+        body .bottom-nav .bottom-nav-item i {
+          font-size: 20px;
+        }
+        body .bottom-nav .bottom-nav-item span {
+          font-family: var(--sn-font);
+          font-size: 11px;
+          font-weight: 400;
+          letter-spacing: 0.01em;
+        }
+
+        /* Aktif: ikon naik ke dalam bulan, bergradien ungu */
+        body .bottom-nav .bottom-nav-item.active i {
+          font-size: 22px;
+          transform: translateY(-27px);
+          color: transparent !important;
+          background: linear-gradient(
+            135deg,
+            var(--sn-primary-light) 0%,
+            var(--sn-primary) 100%
+          );
+          -webkit-background-clip: text;
+          background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: snIconIn 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        body .bottom-nav .bottom-nav-item.active span {
+          color: var(--sn-foreground);
+          font-weight: 700;
+        }
+
+        /* Bulan: lingkaran terang yang bergeser mengikuti item aktif */
+        body .bottom-nav .bottom-nav-bubble {
+          display: block !important;
+          top: -25px;
+          width: 56px;
+          height: 56px;
+          background: #fff !important;
+          border: 1px solid var(--sn-border);
+          box-shadow: 0 2px 8px rgba(10, 37, 64, 0.08);
+        }
+        [data-theme="dark"] body .bottom-nav .bottom-nav-bubble {
+          background: #2a2f4a !important;
+        }
+      }
+
+      @keyframes snIconIn {
+        0% {
+          transform: translateY(0) scale(0.6);
+        }
+        60% {
+          transform: translateY(-31px) scale(1.15);
+        }
+        100% {
+          transform: translateY(-27px) scale(1);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        body .bottom-nav .bottom-nav-item.active i {
+          animation: none !important;
+        }
+      }
+    </style>
+
     <!-- Di dalam <head> setelah CSS -->
     <script>
       // Apply theme from localStorage immediately
@@ -447,7 +679,7 @@
         const nav = document.querySelector(".bottom-nav");
         if (!nav) return;
 
-        const SIZE = 54;
+        const SIZE = 56;
         const bubble = document.createElement("div");
         bubble.className = "bottom-nav-bubble";
         bubble.setAttribute("aria-hidden", "true");

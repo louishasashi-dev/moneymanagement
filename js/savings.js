@@ -18,6 +18,12 @@ import {
   formatMoneyInput,
   parseMoney,
 } from "./utils.js";
+import { ensureTxSheetStyles } from "./modal-sheet.js";
+import {
+  ensureTypeIconStyles,
+  renderTypeTile,
+  renderTypeIcon,
+} from "./type-icon.js";
 
 // State
 let allSavings = [];
@@ -44,6 +50,28 @@ function formatSavingCompact(n, force = false) {
     }
   }
   return formatCurrency(n);
+}
+
+// Nominal untuk di dalam circle bar: dua baris ("Rp" / "7,5jt")
+function ringAmount(n) {
+  const v = Math.max(0, Number(n) || 0);
+  const text =
+    v >= 1e6 ? formatSavingCompact(v, true) : `Rp ${v.toLocaleString("id-ID")}`;
+  const idx = text.indexOf(" ");
+  return [text.slice(0, idx), text.slice(idx + 1)];
+}
+
+// Data tersimpan (nama, deskripsi, catatan) bisa berisi emoji yang diketik pengguna.
+// Data di database TIDAK diubah; hanya tampilan yang disaring.
+const EMOJI_RE =
+  /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{23E9}-\u{23FF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu;
+
+function displayText(text, fallback = "") {
+  const clean = String(text ?? "")
+    .replace(EMOJI_RE, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return escapeHtml(clean || fallback);
 }
 
 // Hero mobile menembus padding #page-content (pola yang sama dengan halaman Dompet/Transaksi)
@@ -78,6 +106,22 @@ if (!window.__svFullBleedBound) {
   window.addEventListener("resize", fitSavingsFullBleed);
 }
 
+// Satu circle bar ringkasan di hero. `share` (0..1) = porsi busur terisi
+function renderHeroRing(label, kind, [line1, line2], share) {
+  const pct = Math.max(0, Math.min(1, share)) * 100;
+  return `
+                    <div class="sv-stat">
+                        <span class="sv-stat-label">${label}</span>
+                        <div class="sv-ring">
+                            <svg viewBox="0 0 100 100" aria-hidden="true">
+                                <circle class="sv-ring-track" cx="50" cy="50" r="40"></circle>
+                                <circle class="sv-ring-bar ${kind} ${pct > 0 ? "" : "is-empty"}" cx="50" cy="50" r="40" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" data-offset="${(100 - pct).toFixed(2)}" transform="rotate(-90 50 50)"></circle>
+                            </svg>
+                            <span class="sv-stat-value ${kind}"><span>${line1}</span><span>${line2}</span></span>
+                        </div>
+                    </div>`;
+}
+
 // Render halaman tabungan utama
 export async function renderSavingsPage() {
   const container = document.getElementById("page-content");
@@ -85,6 +129,7 @@ export async function renderSavingsPage() {
 
   // Style harus ada SEBELUM markup dirender (elemen khusus mobile disembunyikan lewat CSS)
   addSavingsStyles();
+  ensureTypeIconStyles();
 
   // Load semua tabungan
   await loadSavings();
@@ -99,20 +144,20 @@ export async function renderSavingsPage() {
     const full = formatCurrency(n);
     return full.length > 16 ? formatSavingCompact(n, true) : full;
   };
-  const targetText = heroText(totalTarget);
   const savedText = heroText(totalSaved);
 
   // Data tambahan untuk hero mobile
   const activeCount = allSavings.filter((s) => s.status === "active").length;
   const doneCount = allSavings.length - activeCount;
   const remaining = Math.max(totalTarget - totalSaved, 0);
-  const ringR = 46;
-  const ringC = 2 * Math.PI * ringR;
-  const ringOffset = ringC * (1 - Math.min(overallProgress, 100) / 100);
+  const progressRounded = Math.round(overallProgress);
+  const savedShare =
+    totalTarget > 0 ? Math.min(totalSaved / totalTarget, 1) : 0;
+  const restShare = totalTarget > 0 ? Math.min(remaining / totalTarget, 1) : 0;
   const heroEyebrow =
     allSavings.length === 0
       ? "Mulai menabung"
-      : `${activeCount} aktif · ${doneCount} tercapai`;
+      : `${activeCount} aktif &bull; ${doneCount} tercapai`;
   const heroChip =
     allSavings.length === 0
       ? `<i class="fas fa-seedling"></i> Belum ada target`
@@ -136,30 +181,29 @@ export async function renderSavingsPage() {
                     </button>
                 </div>
 
-                <div class="sv-hero-ring">
-                    <svg viewBox="0 0 120 120" aria-hidden="true">
-                        <circle class="sv-ring-track" cx="60" cy="60" r="${ringR}"></circle>
-                        <circle class="sv-ring-progress" cx="60" cy="60" r="${ringR}"
-                                stroke-dasharray="${ringC.toFixed(2)}" stroke-dashoffset="${ringC.toFixed(2)}"
-                                data-offset="${ringOffset.toFixed(2)}"
-                                transform="rotate(-90 60 60)"></circle>
-                    </svg>
-                    <div class="sv-ring-center">
-                        <strong>${Math.round(overallProgress)}%</strong>
-                        <span>tercapai</span>
-                    </div>
+                <div class="sv-hero-balance">
+                    <span class="sv-hero-balance-label">Total terkumpul</span>
+                    <div class="sv-hero-amount" style="--chars: ${savedText.length}" title="${formatCurrency(totalSaved)}">${savedText}</div>
+                    <div class="sv-hero-chip">${heroChip}</div>
                 </div>
-                <div class="sv-hero-chip">${heroChip}</div>
 
-                <div class="sv-hero-stats">
-                    <div class="sv-hero-stat">
-                        <span class="sv-hero-stat-label"><i class="fas fa-bullseye"></i> Total Target</span>
-                        <span class="sv-hero-stat-value" style="--chars: ${targetText.length}" title="${formatCurrency(totalTarget)}">${targetText}</span>
+                <div class="sv-stats">
+                    ${renderHeroRing("Target", "target", ringAmount(totalTarget), totalTarget > 0 ? 1 : 0)}
+                    ${renderHeroRing("Sisa", "rest", ringAmount(remaining), restShare)}
+                    ${renderHeroRing("Tercapai", "saved", [`${progressRounded}%`, "tercapai"], savedShare)}
+                </div>
+            </div>
+
+            <!-- Progress keseluruhan (mobile) -->
+            <div class="m-only sv-section">
+                <h2 class="sv-section-title">Progress keseluruhan</h2>
+                <div class="sv-progress-card">
+                    <div class="sv-progress-top">
+                        <span class="sv-progress-name">Semua target</span>
+                        <span class="sv-progress-pct">${progressRounded}%</span>
                     </div>
-                    <div class="sv-hero-stat">
-                        <span class="sv-hero-stat-label"><i class="fas fa-coins"></i> Terkumpul</span>
-                        <span class="sv-hero-stat-value" style="--chars: ${savedText.length}" title="${formatCurrency(totalSaved)}">${savedText}</span>
-                    </div>
+                    <div class="sv-progress-track"><div class="sv-progress-fill" style="width: ${Math.min(overallProgress, 100)}%"></div></div>
+                    <div class="sv-progress-meta">${formatSavingCompact(totalSaved)} dari ${formatSavingCompact(totalTarget)}</div>
                 </div>
             </div>
 
@@ -170,7 +214,7 @@ export async function renderSavingsPage() {
                     <i class="fas fa-plus"></i> Target Baru
                 </button>
             </div>
-            
+
             <!-- Overall Progress Card -->
             <div class="overall-progress-card card">
                 <div class="progress-header">
@@ -190,12 +234,15 @@ export async function renderSavingsPage() {
                 <div class="progress-bar-container">
                     <div class="progress-fill" style="width: ${Math.min(overallProgress, 100)}%"></div>
                 </div>
-                <div class="progress-percentage">${Math.round(overallProgress)}% tercapai</div>
+                <div class="progress-percentage">${progressRounded}% tercapai</div>
             </div>
-            
+
             <!-- Savings List -->
-            <div class="savings-list" id="savings-list">
-                ${renderSavingsList()}
+            <div class="sv-list-section">
+                <h2 class="sv-section-title m-only">Target tabungan</h2>
+                <div class="savings-list" id="savings-list">
+                    ${renderSavingsList()}
+                </div>
             </div>
         </div>
     `;
@@ -206,13 +253,15 @@ export async function renderSavingsPage() {
   animateSavingsRing();
 }
 
-// Animasi ring progress terisi (dijalankan setelah HTML masuk ke DOM)
+// Animasi circle bar terisi (dijalankan setelah HTML masuk ke DOM)
 function animateSavingsRing() {
-  const ring = document.querySelector(".sv-ring-progress");
-  if (!ring) return;
+  const rings = document.querySelectorAll(".sv-ring-bar");
+  if (!rings.length) return;
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      ring.style.strokeDashoffset = ring.dataset.offset;
+      rings.forEach((ring) => {
+        ring.style.strokeDashoffset = ring.dataset.offset;
+      });
     });
   });
 }
@@ -245,6 +294,11 @@ function renderSavingsList() {
       const progress = (saving.currentAmount / saving.targetAmount) * 100;
       const isCompleted = progress >= 100;
       const daysLeft = getDaysLeft(saving.deadline);
+      const name = displayText(saving.name);
+      const description = displayText(
+        saving.description,
+        "Tidak ada deskripsi",
+      );
 
       const mAmount = (label, value, extra = "") => `
                         <div class="sv-amount">
@@ -256,49 +310,53 @@ function renderSavingsList() {
                             <i class="far fa-calendar-alt"></i>
                             ${daysLeft < 0 ? "Melewati deadline" : `${daysLeft} hari lagi`}
                         </div>`
-        : "";
+        : `<div class="sv-deadline"></div>`;
 
       return `
             <div class="saving-card" data-id="${saving.id}">
                 <!-- Tampilan khusus mobile -->
                 <div class="m-only sv-card">
-                    <div class="sv-top">
-                        <div class="sv-thumb ${saving.photo ? "has-photo" : ""}">
-                            ${saving.photo ? `<img src="${saving.photo}" alt="${escapeHtml(saving.name)}" class="saving-photo-thumb">` : ""}
+                    <div class="sv-row">
+                        <div class="sv-lead">
+                            ${
+                              saving.photo
+                                ? `<div class="sv-photo"><img src="${saving.photo}" alt="${name}" class="saving-photo-thumb"></div>`
+                                : renderTypeTile("saving")
+                            }
                         </div>
-                        <div class="sv-main">
-                            <div class="sv-name">${escapeHtml(saving.name)}</div>
-                            <div class="sv-desc">${escapeHtml(saving.description || "Tidak ada deskripsi")}</div>
-                            <div class="sv-actions">
-                                <button class="icon-btn add-saving-money" data-id="${saving.id}" title="Tambah Tabungan" type="button"><i class="fas fa-plus"></i></button>
-                                <button class="icon-btn withdraw-saving" data-id="${saving.id}" title="Ambil Tabungan" type="button"><i class="fas fa-minus"></i></button>
-                                <button class="icon-btn view-history" data-id="${saving.id}" title="Lihat Riwayat" type="button"><i class="fas fa-list-ul"></i></button>
-                                <button class="icon-btn edit-saving" data-id="${saving.id}" title="Edit" type="button"><i class="fas fa-edit"></i></button>
-                                <button class="icon-btn delete-saving" data-id="${saving.id}" title="Hapus" type="button"><i class="fas fa-trash"></i></button>
-                            </div>
+                        <div class="sv-info">
+                            <div class="sv-name">${name}</div>
+                            <div class="sv-desc">${description}</div>
                         </div>
+                        <span class="sv-pct">${Math.round(progress)}%</span>
                     </div>
+                    <div class="sv-bar"><div class="sv-bar-fill ${isCompleted ? "completed" : ""}" style="width: ${Math.min(progress, 100)}%"></div></div>
                     <div class="sv-amounts">
                         ${mAmount("target", saving.targetAmount)}
                         ${mAmount("terkumpul", saving.currentAmount, isCompleted ? "completed" : "")}
                         ${mAmount("sisa", saving.targetAmount - saving.currentAmount)}
                     </div>
-                    <div class="sv-progress-text">${Math.round(progress)}% tercapai</div>
-                    <div class="sv-bar"><div class="sv-bar-fill ${isCompleted ? "completed" : ""}" style="width: ${Math.min(progress, 100)}%"></div></div>
-                    ${mDeadline}
+                    <div class="sv-foot">
+                        ${mDeadline}
+                        <div class="sv-actions">
+                            <button class="icon-btn add-saving-money" data-id="${saving.id}" title="Tambah Tabungan" type="button"><i class="fas fa-plus"></i></button>
+                            <button class="icon-btn withdraw-saving" data-id="${saving.id}" title="Ambil Tabungan" type="button"><i class="fas fa-minus"></i></button>
+                            <button class="icon-btn view-history" data-id="${saving.id}" title="Lihat Riwayat" type="button"><i class="fas fa-list-ul"></i></button>
+                            <button class="icon-btn edit-saving" data-id="${saving.id}" title="Edit" type="button"><i class="fas fa-edit"></i></button>
+                            <button class="icon-btn delete-saving" data-id="${saving.id}" title="Hapus" type="button"><i class="fas fa-trash"></i></button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="saving-card-header">
-                    <div class="saving-icon ${saving.photo ? "has-photo" : ""}">
-                        ${
-                          saving.photo
-                            ? `<img src="${saving.photo}" alt="${escapeHtml(saving.name)}" class="saving-photo-thumb">`
-                            : `<i class="fas ${saving.icon || "fa-piggy-bank"}"></i>`
-                        }
-                    </div>
+                    ${
+                      saving.photo
+                        ? `<div class="saving-icon has-photo"><img src="${saving.photo}" alt="${name}" class="saving-photo-thumb"></div>`
+                        : renderTypeTile("saving", "saving-icon-tile")
+                    }
                     <div class="saving-info">
-                        <h3>${escapeHtml(saving.name)}</h3>
-                        <p class="saving-description">${escapeHtml(saving.description || "Tidak ada deskripsi")}</p>
+                        <h3>${name}</h3>
+                        <p class="saving-description">${description}</p>
                     </div>
                     <div class="saving-actions">
                         <button class="icon-btn add-saving-money" data-id="${saving.id}" title="Tambah Tabungan">
@@ -448,6 +506,7 @@ function setupSavingsEventListeners() {
 
 // Show modal untuk tambah/edit tabungan
 async function showSavingModal(savingId = null) {
+  ensureTxSheetStyles();
   const isEdit = savingId !== null;
   let saving = null;
 
@@ -461,10 +520,11 @@ async function showSavingModal(savingId = null) {
 
   const modalContent = `
         <form id="saving-form">
+            <div class="tx-sheet-scroll">
             <div class="form-group">
-                <label>Nama Target <span class="required">*</span></label>
-                <input type="text" id="saving-name" class="form-input" 
-                       value="${isEdit ? escapeHtml(saving.name) : ""}" 
+                <label>Nama Target</label>
+                <input type="text" id="saving-name" class="form-input"
+                       value="${isEdit ? escapeHtml(saving.name) : ""}"
                        placeholder="Contoh: Liburan ke Bali, Beli HP Baru..." required>
             </div>
 
@@ -481,40 +541,41 @@ async function showSavingModal(savingId = null) {
                         <i class="fas fa-camera"></i>
                         <span>Pasang foto barang/tujuan tabungan</span>
                     </label>
-                    <input type="file" id="saving-photo-input" accept="image/*" style="display:none;">
+                    <input type="file" id="saving-photo-input" accept="image/*" hidden>
                 </div>
-                <small class="form-help">Contoh: pasang foto HP yang ingin dibeli biar makin semangat menabung!</small>
+                <small class="form-help">Contoh: pasang foto HP yang ingin dibeli biar makin semangat menabung.</small>
             </div>
-            
+
             <div class="form-group">
-                <label>Target Nominal <span class="required">*</span></label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="saving-target" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(saving.targetAmount) : ""}" 
+                <label>Target Nominal</label>
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="saving-target" class="form-input"
+                       value="${isEdit ? formatMoneyInput(saving.targetAmount) : ""}"
                        placeholder="0" min="1" required>
             </div>
-            
+
             <div class="form-group">
                 <label>Jumlah Saat Ini</label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="saving-current" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(saving.currentAmount) : 0}" 
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="saving-current" class="form-input"
+                       value="${isEdit ? formatMoneyInput(saving.currentAmount) : 0}"
                        placeholder="0" min="0">
                 <small class="form-help">Jumlah yang sudah terkumpul saat ini</small>
             </div>
-            
+
             <div class="form-group">
                 <label>Deskripsi (Opsional)</label>
-                <textarea id="saving-description" class="form-input" rows="2" 
+                <textarea id="saving-description" class="form-input" rows="2"
                           placeholder="Tambahkan catatan untuk target ini...">${isEdit ? escapeHtml(saving.description || "") : ""}</textarea>
             </div>
-            
+
             <div class="form-group">
                 <label>Target Tanggal (Opsional)</label>
-                <input type="date" id="saving-deadline" class="form-input" 
+                <input type="date" id="saving-deadline" class="form-input"
                        value="${isEdit ? saving.deadline || "" : ""}">
                 <small class="form-help">Kapan target ini ingin dicapai?</small>
             </div>
-            
-            <div class="modal-buttons">
+            </div>
+
+            <div class="modal-buttons tx-sheet-footer">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">${isEdit ? "Simpan Perubahan" : "Buat Target"}</button>
             </div>
@@ -523,12 +584,12 @@ async function showSavingModal(savingId = null) {
 
   // Create modal
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-medium">
+        <div class="modal-container modal-medium tx-sheet">
             <div class="modal-header">
                 <h3><i class="fas ${isEdit ? "fa-edit" : "fa-plus-circle"}"></i> ${isEdit ? "Edit Target Tabungan" : "Target Tabungan Baru"}</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
+                <button type="button" class="modal-close-btn modal-close-x">&times;</button>
             </div>
             <div class="modal-body">
                 ${modalContent}
@@ -649,17 +710,17 @@ async function showSavingModal(savingId = null) {
   });
 
   // Close modal
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
   const closeModal = () => modal.remove();
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
   });
 }
 
 // Show modal untuk tambah uang ke tabungan
 async function showAddMoneyModal(savingId) {
+  ensureTxSheetStyles();
   const saving = await getItem(STORES.SAVINGS, savingId);
   if (!saving) {
     showToast("Target tabungan tidak ditemukan", "error");
@@ -668,35 +729,37 @@ async function showAddMoneyModal(savingId) {
 
   const remaining = saving.targetAmount - saving.currentAmount;
   if (remaining <= 0) {
-    showToast("Target sudah tercapai!", "info");
+    showToast("Target sudah tercapai", "info");
     return;
   }
 
   const modalContent = `
         <form id="add-money-form">
+            <div class="tx-sheet-scroll">
             <div class="form-group">
-                <label>Target: ${escapeHtml(saving.name)}</label>
+                <label>Target: ${displayText(saving.name)}</label>
                 <div class="info-box">
                     <div>Target: ${formatCurrency(saving.targetAmount)}</div>
                     <div>Terkumpul: ${formatCurrency(saving.currentAmount)}</div>
                     <div>Sisa: ${formatCurrency(remaining)}</div>
                 </div>
             </div>
-            
+
             <div class="form-group">
-                <label>Jumlah yang Ditambahkan <span class="required">*</span></label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="add-amount" class="form-input" 
+                <label>Jumlah yang Ditambahkan</label>
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="add-amount" class="form-input"
                        placeholder="0" min="1" max="${remaining}" required>
                 <small class="form-help">Maksimal: ${formatCurrency(remaining)}</small>
             </div>
-            
+
             <div class="form-group">
                 <label>Catatan (Opsional)</label>
-                <textarea id="add-note" class="form-input" rows="2" 
+                <textarea id="add-note" class="form-input" rows="2"
                           placeholder="Catatan untuk penambahan ini..."></textarea>
             </div>
-            
-            <div class="modal-buttons">
+            </div>
+
+            <div class="modal-buttons tx-sheet-footer">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">Tambah Tabungan</button>
             </div>
@@ -704,12 +767,12 @@ async function showAddMoneyModal(savingId) {
     `;
 
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-small">
+        <div class="modal-container modal-small tx-sheet">
             <div class="modal-header">
                 <h3><i class="fas fa-plus-circle"></i> Tambah Tabungan</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
+                <button type="button" class="modal-close-btn modal-close-x">&times;</button>
             </div>
             <div class="modal-body">
                 ${modalContent}
@@ -766,17 +829,17 @@ async function showAddMoneyModal(savingId) {
     await renderSavingsPage();
   });
 
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
   const closeModal = () => modal.remove();
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
   });
 }
 
 // Show modal untuk ambil uang dari tabungan
 async function showWithdrawModal(savingId) {
+  ensureTxSheetStyles();
   const saving = await getItem(STORES.SAVINGS, savingId);
   if (!saving) {
     showToast("Target tabungan tidak ditemukan", "error");
@@ -790,28 +853,30 @@ async function showWithdrawModal(savingId) {
 
   const modalContent = `
         <form id="withdraw-form">
+            <div class="tx-sheet-scroll">
             <div class="form-group">
-                <label>Target: ${escapeHtml(saving.name)}</label>
+                <label>Target: ${displayText(saving.name)}</label>
                 <div class="info-box">
                     <div>Target: ${formatCurrency(saving.targetAmount)}</div>
                     <div>Terkumpul: ${formatCurrency(saving.currentAmount)}</div>
                 </div>
             </div>
-            
+
             <div class="form-group">
-                <label>Jumlah yang Diambil <span class="required">*</span></label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="withdraw-amount" class="form-input" 
+                <label>Jumlah yang Diambil</label>
+                <input type="text" inputmode="numeric" autocomplete="off" data-money id="withdraw-amount" class="form-input"
                        placeholder="0" min="1" max="${saving.currentAmount}" required>
                 <small class="form-help">Maksimal: ${formatCurrency(saving.currentAmount)}</small>
             </div>
-            
+
             <div class="form-group">
                 <label>Catatan (Opsional)</label>
-                <textarea id="withdraw-note" class="form-input" rows="2" 
+                <textarea id="withdraw-note" class="form-input" rows="2"
                           placeholder="Catatan untuk pengambilan ini..."></textarea>
             </div>
-            
-            <div class="modal-buttons">
+            </div>
+
+            <div class="modal-buttons tx-sheet-footer">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">Ambil Tabungan</button>
             </div>
@@ -819,12 +884,12 @@ async function showWithdrawModal(savingId) {
     `;
 
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-small">
+        <div class="modal-container modal-small tx-sheet">
             <div class="modal-header">
                 <h3><i class="fas fa-minus-circle"></i> Ambil Tabungan</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
+                <button type="button" class="modal-close-btn modal-close-x">&times;</button>
             </div>
             <div class="modal-body">
                 ${modalContent}
@@ -881,17 +946,18 @@ async function showWithdrawModal(savingId) {
     await renderSavingsPage();
   });
 
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
   const closeModal = () => modal.remove();
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
   });
 }
 
 // Show modal riwayat tabungan
 async function showHistoryModal(savingId) {
+  ensureTxSheetStyles();
+  ensureTypeIconStyles();
   const saving = await getItem(STORES.SAVINGS, savingId);
   if (!saving) {
     showToast("Target tabungan tidak ditemukan", "error");
@@ -908,8 +974,8 @@ async function showHistoryModal(savingId) {
 
   const historyRows =
     history.length === 0
-      ? `<div style="text-align:center;padding:30px 0;color:var(--text-secondary);">
-           <i class="fas fa-history" style="font-size:2.5rem;display:block;margin-bottom:10px;opacity:0.4;"></i>
+      ? `<div class="empty-state">
+           <i class="fas fa-history"></i>
            <p>Belum ada riwayat transaksi</p>
          </div>`
       : [...history]
@@ -941,34 +1007,22 @@ async function showHistoryModal(savingId) {
                   minute: "2-digit",
                 })
               : "";
+            const note = displayText(h.note);
             return `
-              <div style="
-                display:flex;align-items:center;gap:12px;
-                padding:12px 0;
-                border-bottom:1px solid var(--border-color);
-              ">
-                <div style="
-                  width:36px;height:36px;border-radius:50%;flex-shrink:0;
-                  background:${isDeposit ? "rgba(16,185,129,.15)" : "rgba(239,68,68,.15)"};
-                  display:flex;align-items:center;justify-content:center;
-                ">
-                  <i class="fas ${isDeposit ? "fa-arrow-down" : "fa-arrow-up"}"
-                     style="color:${isDeposit ? "#10b981" : "#ef4444"};font-size:.85rem;"></i>
-                </div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-weight:600;font-size:.88rem;">
-                    ${isDeposit ? "Uang Masuk" : "Uang Keluar"}
-                  </div>
-                  <div style="font-size:.75rem;color:var(--text-secondary);margin-top:2px;">
-                    ${dateStr} • ${timeStr}
-                    ${h.note ? `<br><span style="font-style:italic;">${escapeHtml(h.note)}</span>` : ""}
+              <div class="sv-hist-row">
+                ${renderTypeTile(isDeposit ? "income" : "expense")}
+                <div class="sv-hist-main">
+                  <div class="sv-hist-name">${isDeposit ? "Uang Masuk" : "Uang Keluar"}</div>
+                  <div class="sv-hist-meta">
+                    ${dateStr} &bull; ${timeStr}
+                    ${note ? `<span class="sv-hist-note">${note}</span>` : ""}
                   </div>
                 </div>
-                <div style="text-align:right;flex-shrink:0;">
-                  <div style="font-weight:700;color:${isDeposit ? "#10b981" : "#ef4444"};font-size:.95rem;">
+                <div class="sv-hist-end">
+                  <div class="sv-hist-amount ${isDeposit ? "in" : "out"}">
                     ${isDeposit ? "+" : "-"}${formatCurrency(h.amount)}
                   </div>
-                  <div style="font-size:.7rem;color:var(--text-secondary);">
+                  <div class="sv-hist-balance">
                     Saldo: ${formatCurrency(h.newAmount)}
                   </div>
                 </div>
@@ -977,44 +1031,47 @@ async function showHistoryModal(savingId) {
           .join("");
 
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-    <div class="modal-container modal-medium" style="max-height:90vh;display:flex;flex-direction:column;">
+    <div class="modal-container modal-medium tx-sheet">
       <div class="modal-header">
-        <h3><i class="fas fa-eye"></i> Riwayat — ${escapeHtml(saving.name)}</h3>
-        <button class="modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text-secondary);padding:0 8px;">&times;</button>
+        <h3><i class="fas fa-eye"></i> Riwayat &mdash; ${displayText(saving.name)}</h3>
+        <button type="button" class="modal-close-btn modal-close-x">&times;</button>
       </div>
-      <div style="padding:16px;border-bottom:1px solid var(--border-color);background:var(--bg-primary);">
-        <div style="display:flex;gap:16px;justify-content:space-around;text-align:center;">
-          <div>
-            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Uang Masuk</div>
-            <div style="font-weight:700;color:#10b981;font-size:1rem;">${formatCurrency(totalMasuk)}</div>
+      <div class="modal-body">
+        <div class="tx-sheet-scroll">
+          <div class="sv-hist-summary">
+            <div>
+              <span class="sv-hist-sum-label">Total Uang Masuk</span>
+              <span class="sv-hist-sum-value in">${formatCurrency(totalMasuk)}</span>
+            </div>
+            <div>
+              <span class="sv-hist-sum-label">Total Uang Keluar</span>
+              <span class="sv-hist-sum-value out">${formatCurrency(totalKeluar)}</span>
+            </div>
+            <div>
+              <span class="sv-hist-sum-label">Total Transaksi</span>
+              <span class="sv-hist-sum-value">${history.length}</span>
+            </div>
           </div>
-          <div style="width:1px;background:var(--border-color);"></div>
-          <div>
-            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Uang Keluar</div>
-            <div style="font-weight:700;color:#ef4444;font-size:1rem;">${formatCurrency(totalKeluar)}</div>
-          </div>
-          <div style="width:1px;background:var(--border-color);"></div>
-          <div>
-            <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">Total Transaksi</div>
-            <div style="font-weight:700;font-size:1rem;">${history.length}</div>
+          <div class="sv-hist-list">
+            ${historyRows}
           </div>
         </div>
-      </div>
-      <div class="modal-body" style="overflow-y:auto;flex:1;">
-        ${historyRows}
+        <div class="modal-buttons tx-sheet-footer">
+          <button type="button" class="btn-secondary modal-close-btn">Tutup</button>
+        </div>
       </div>
     </div>
   `;
 
   document.body.appendChild(modal);
 
-  modal
-    .querySelector(".modal-close-x")
-    .addEventListener("click", () => modal.remove());
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) modal.remove();
+  // Modal hanya bisa ditutup lewat tombol Tutup atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup.
+  const closeModal = () => modal.remove();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
   });
 }
 
@@ -1043,158 +1100,267 @@ function addSavingsStyles() {
             max-width: 1000px;
             margin: 0 auto;
         }
-        
-        .overall-progress-card {
-            background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-            color: white;
-            margin-bottom: 24px;
-            text-align: center;
-        }
-        
-        .progress-header {
-            font-size: 0.875rem;
-            opacity: 0.9;
-            margin-bottom: 16px;
-        }
-        
-        .progress-stats {
-            display: flex;
-            justify-content: center;
-            gap: 32px;
-            margin-bottom: 16px;
-        }
-        
-        .progress-stats .stat {
-            text-align: center;
-        }
-        
-        .progress-stats .stat-label {
-            display: block;
-            font-size: 0.7rem;
-            opacity: 0.8;
-            margin-bottom: 4px;
-        }
-        
-        .progress-stats .stat-value {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-        
-        .progress-bar-container {
-            background: rgba(255,255,255,0.3);
-            border-radius: 20px;
-            height: 10px;
-            overflow: hidden;
-            margin: 16px 0;
-        }
-        
-        .progress-fill {
-            background: white;
-            height: 100%;
-            border-radius: 20px;
-            transition: width 0.3s ease;
-        }
-        
-        .progress-fill.completed {
-            background: #10b981;
-        }
-        
-        .progress-percentage {
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
 
-        /* Poles kartu progress (desktop) */
-        .overall-progress-card {
+        /* ===== Progress keseluruhan (desktop) ===== */
+        .savings-container .overall-progress-card.card {
             position: relative;
             overflow: hidden;
+            margin-bottom: 24px;
+            padding: 26px 20px 22px;
+            text-align: center;
+            color: #fff;
             background:
-                radial-gradient(circle at 92% 0%, rgba(255, 213, 74, 0.28) 0%, rgba(255, 213, 74, 0) 40%),
-                radial-gradient(circle at 4% 100%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 36%),
-                linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
-            box-shadow: 0 12px 28px rgba(99, 102, 241, 0.28);
+                radial-gradient(circle at 92% 0%, rgba(198, 244, 50, 0.16) 0%, rgba(198, 244, 50, 0) 45%),
+                linear-gradient(160deg, #0F5A3A 0%, #0B3D2A 70%),
+                #0B3D2A;
+            border: 0;
+            box-shadow: 0 14px 30px rgba(11, 61, 42, 0.28);
         }
-        .overall-progress-card .progress-header {
+        .savings-container .overall-progress-card .progress-header {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
+            margin-bottom: 18px;
+            font-size: 0.8rem;
             font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            opacity: 0.92;
         }
-        .overall-progress-card .progress-header i {
+        .savings-container .overall-progress-card .progress-header i {
             width: 30px;
             height: 30px;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.18);
-            color: #ffd54a;
+            background: rgba(255, 255, 255, 0.14);
+            color: #C6F432;
         }
-        .overall-progress-card .progress-stats .stat {
+        .savings-container .overall-progress-card .progress-stats {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .savings-container .overall-progress-card .progress-stats .stat {
             min-width: 160px;
             padding: 10px 18px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.14);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-        }
-        .overall-progress-card .progress-stats .stat-value { font-size: 1.2rem; font-weight: 700; }
-        .overall-progress-card .progress-bar-container { height: 12px; }
-        .overall-progress-card .progress-fill { background: #ffd54a; }
-        .overall-progress-card .progress-percentage { font-size: 0.85rem; font-weight: 700; }
-        
-        .saving-card {
-            background: var(--bg-secondary);
+            text-align: center;
             border-radius: 16px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.16);
+        }
+        .savings-container .overall-progress-card .progress-stats .stat-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.72rem;
+            color: rgba(255, 255, 255, 0.82);
+        }
+        .savings-container .overall-progress-card .progress-stats .stat-value {
+            color: #fff;
+            font-size: 1.2rem;
+            font-weight: 700;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .savings-container .overall-progress-card .progress-bar-container {
+            height: 12px;
+            margin: 14px 0;
+            overflow: hidden;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .savings-container .overall-progress-card .progress-fill {
+            height: 100%;
+            border-radius: 20px;
+            background: #C6F432;
+            transition: width 0.3s ease;
+        }
+        .savings-container .overall-progress-card .progress-percentage {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 999px;
+            background: #C6F432;
+            color: #0B3D2A;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        /* ===== Kartu target (desktop) ===== */
+        .savings-container .saving-card {
+            background: var(--bg-secondary);
+            border-radius: 20px;
             margin-bottom: 16px;
             overflow: hidden;
-            box-shadow: var(--card-shadow);
+            border: 1px solid rgba(11, 61, 42, 0.06);
+            box-shadow: 0 6px 20px rgba(11, 61, 42, 0.08);
+            transition:
+                transform 0.25s ease,
+                box-shadow 0.25s ease;
         }
-        
-        .saving-card-header {
+        .savings-container .saving-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 28px rgba(11, 61, 42, 0.14);
+        }
+        .savings-container .saving-card-header {
             display: flex;
             align-items: center;
             gap: 15px;
-            padding: 16px;
-            background: var(--bg-primary);
+            padding: 16px 20px;
+            background: transparent;
             border-bottom: 1px solid var(--border-color);
             flex-wrap: wrap;
         }
-        
-        .saving-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 14px;
-            background: rgba(139, 92, 246, 0.1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            color: #8b5cf6;
+        .savings-container .saving-icon.has-photo {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
             overflow: hidden;
             flex-shrink: 0;
+            background: #E6F6EC;
         }
-        
-        .saving-icon.has-photo {
-            background: var(--bg-secondary);
-        }
-        
-        .saving-photo-thumb {
+        .savings-container .saving-photo-thumb {
             width: 100%;
             height: 100%;
             object-fit: cover;
+            display: block;
             cursor: pointer;
             transition: transform 0.2s ease;
         }
-        
-        .saving-photo-thumb:hover {
+        .savings-container .saving-photo-thumb:hover {
             transform: scale(1.08);
         }
-        
+        .savings-container .saving-info {
+            flex: 1;
+            min-width: 150px;
+        }
+        .savings-container .saving-info h3 {
+            margin-bottom: 4px;
+            font-size: 1rem;
+            color: var(--text-primary);
+        }
+        .savings-container .saving-description {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+        .savings-container .saving-actions {
+            display: flex;
+            gap: 6px;
+        }
+        .savings-container .saving-card-body {
+            padding: 16px 20px;
+        }
+        .savings-container .saving-amounts {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .savings-container .amount-item {
+            text-align: center;
+            flex: 1;
+        }
+        .savings-container .amount-label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+        }
+        .savings-container .amount-value {
+            font-size: 1rem;
+            font-weight: 600;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+        .savings-container .amount-value.completed {
+            color: #16A34A;
+        }
+        .savings-container .saving-card .progress-bar-container {
+            height: 10px;
+            margin: 4px 0 0;
+            overflow: hidden;
+            border-radius: 20px;
+            background: var(--border-color);
+        }
+        .savings-container .saving-card .progress-fill {
+            height: 100%;
+            border-radius: 20px;
+            background: #16A34A;
+            transition: width 0.3s ease;
+        }
+        .savings-container .saving-card .progress-fill.completed {
+            background: #0F5A3A;
+        }
+        .savings-container .saving-footer {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 12px;
+            font-size: 0.75rem;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .savings-container .progress-text {
+            color: #16A34A;
+            font-weight: 600;
+        }
+        .savings-container .deadline {
+            color: var(--text-secondary);
+        }
+        .savings-container .deadline.urgent,
+        .savings-container .deadline.expired {
+            color: #DC4C4C;
+            font-weight: 600;
+        }
+
+        /* Tombol aksi kartu (desktop & mobile): pastel hijau / merah / netral */
+        .savings-container .saving-card .icon-btn.add-saving-money {
+            background: #E6F6EC;
+            color: #16A34A;
+        }
+        .savings-container .saving-card .icon-btn.withdraw-saving,
+        .savings-container .saving-card .icon-btn.delete-saving {
+            background: #FDEBEA;
+            color: #DC4C4C;
+        }
+        .savings-container .saving-card .icon-btn.view-history,
+        .savings-container .saving-card .icon-btn.edit-saving {
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+        }
+        [data-theme="dark"] .savings-container .saving-card .icon-btn.add-saving-money {
+            background: rgba(22, 163, 74, 0.18);
+        }
+        [data-theme="dark"] .savings-container .saving-card .icon-btn.withdraw-saving,
+        [data-theme="dark"] .savings-container .saving-card .icon-btn.delete-saving {
+            background: rgba(220, 76, 76, 0.18);
+        }
+
+        /* ===== Dipakai juga oleh modal di halaman lain ===== */
+        .info-box {
+            background: var(--bg-primary);
+            padding: 12px;
+            border-radius: 10px;
+            margin: 10px 0;
+            font-size: 0.85rem;
+        }
+
+        .modal-small {
+            max-width: 400px;
+            width: 95%;
+        }
+
+        .btn-add-saving {
+            background: #16A34A;
+            color: #fff;
+        }
+
+        /* ===== Foto target (form) ===== */
         .saving-photo-upload {
             margin-top: 4px;
         }
-        
         .saving-photo-picker {
             display: flex;
             flex-direction: column;
@@ -1203,39 +1369,34 @@ function addSavingsStyles() {
             gap: 8px;
             padding: 24px 16px;
             border: 2px dashed var(--border-color);
-            border-radius: 12px;
+            border-radius: 16px;
             cursor: pointer;
             color: var(--text-secondary);
             font-size: 0.8rem;
             text-align: center;
             transition: all 0.2s ease;
         }
-        
         .saving-photo-picker:hover {
-            border-color: #8b5cf6;
-            color: #8b5cf6;
-            background: rgba(139, 92, 246, 0.05);
+            border-color: #16A34A;
+            color: #16A34A;
+            background: rgba(22, 163, 74, 0.05);
         }
-        
         .saving-photo-picker i {
             font-size: 1.6rem;
         }
-        
         .saving-photo-preview-wrap {
             position: relative;
             width: 100%;
             max-width: 240px;
             margin: 0 auto;
         }
-        
         .saving-photo-preview-wrap img {
             width: 100%;
             max-height: 220px;
             object-fit: cover;
-            border-radius: 12px;
+            border-radius: 16px;
             display: block;
         }
-        
         .saving-photo-remove-btn {
             position: absolute;
             top: 6px;
@@ -1252,33 +1413,30 @@ function addSavingsStyles() {
             justify-content: center;
             font-size: 0.8rem;
         }
-        
+
+        /* ===== Lightbox foto ===== */
         .saving-photo-lightbox {
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 20px;
         }
-        
         .saving-photo-lightbox-content {
             position: relative;
             max-width: 500px;
             width: 100%;
         }
-        
         .saving-photo-lightbox-content img {
             width: 100%;
-            border-radius: 16px;
+            border-radius: 20px;
             display: block;
         }
-        
         .saving-photo-lightbox-title {
             text-align: center;
             color: #fff;
             margin-top: 12px;
             font-weight: 600;
         }
-        
         .saving-photo-lightbox-close {
             position: absolute;
             top: -14px;
@@ -1287,128 +1445,64 @@ function addSavingsStyles() {
             height: 34px;
             border-radius: 50%;
             background: #fff;
-            color: #1e1e32;
+            color: #0B3D2A;
             border: none;
             cursor: pointer;
-            box-shadow: 0 2px 10px rgba(0,0,0,.3);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        
-        .saving-info {
-            flex: 1;
-            min-width: 150px;
+
+        /* ===== Riwayat tabungan (modal) ===== */
+        .sv-hist-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 8px;
+            margin-bottom: 8px;
+            padding: 14px;
+            text-align: center;
+            border-radius: 18px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
         }
-        
-        .saving-info h3 {
-            font-size: 1rem;
+        .sv-hist-sum-label {
+            display: block;
             margin-bottom: 4px;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
         }
-        
-        .saving-description {
+        .sv-hist-sum-value {
+            display: block;
+            font-size: 0.95rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .sv-hist-sum-value.in { color: #16A34A; }
+        .sv-hist-sum-value.out { color: #DC4C4C; }
+        .sv-hist-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .sv-hist-row:last-child { border-bottom: 0; }
+        .sv-hist-main { flex: 1; min-width: 0; }
+        .sv-hist-name { font-size: 0.9rem; font-weight: 600; }
+        .sv-hist-meta {
+            margin-top: 2px;
             font-size: 0.75rem;
             color: var(--text-secondary);
         }
-        
-        .saving-actions {
-            display: flex;
-            gap: 5px;
-        }
-        
-        .saving-card-body {
-            padding: 16px;
-        }
-        
-        .saving-amounts {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        
-        .amount-item {
-            text-align: center;
-            flex: 1;
-        }
-        
-        .amount-label {
-            display: block;
+        .sv-hist-note { display: block; font-style: italic; }
+        .sv-hist-end { flex-shrink: 0; text-align: right; }
+        .sv-hist-amount { font-size: 0.95rem; font-weight: 700; }
+        .sv-hist-amount.in { color: #16A34A; }
+        .sv-hist-amount.out { color: #DC4C4C; }
+        .sv-hist-balance {
             font-size: 0.7rem;
             color: var(--text-secondary);
-            margin-bottom: 4px;
-        }
-        
-        .amount-value {
-            font-size: 1rem;
-            font-weight: 600;
-        }
-        
-        .amount-value.completed {
-            color: #10b981;
-        }
-        
-        .saving-footer {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 12px;
-            font-size: 0.7rem;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-        
-        .progress-text {
-            color: var(--info);
-        }
-        
-        .deadline {
-            color: var(--text-secondary);
-        }
-        
-        .deadline.urgent {
-            color: #f59e0b;
-        }
-        
-        .deadline.expired {
-            color: #ef4444;
-        }
-        
-        .info-box {
-            background: var(--bg-primary);
-            padding: 12px;
-            border-radius: 10px;
-            margin: 10px 0;
-            font-size: 0.85rem;
-        }
-        
-        .modal-small {
-            max-width: 400px;
-            width: 95%;
-        }
-        
-        .btn-add-saving {
-            background: #8b5cf6;
-        }
-        
-        @media (max-width: 768px) {
-            .saving-card-header {
-                flex-direction: column;
-                text-align: center;
-            }
-            
-            .saving-actions {
-                justify-content: center;
-            }
-            
-            .saving-amounts {
-                flex-direction: column;
-                gap: 8px;
-            }
-            
-            .progress-stats {
-                gap: 16px;
-            }
         }
 
         /* ===== Elemen khusus mobile: disembunyikan di desktop ===== */
@@ -1428,7 +1522,7 @@ function addSavingsStyles() {
             html:has(.sv-hero),
             body:has(.sv-hero) { overflow-x: hidden; }
 
-            .savings-container { max-width: none; margin: 0; }
+            .savings-container { max-width: none; margin: 0; min-width: 0; box-sizing: border-box; }
             .savings-container .page-header,
             .savings-container .overall-progress-card { display: none !important; }
 
@@ -1437,7 +1531,7 @@ function addSavingsStyles() {
                 display: block;
                 position: relative;
                 z-index: 0;
-                padding: 16px 16px 60px; /* bawah: area yang ditimpa panel putih */
+                padding: 16px 16px 28px;
                 color: #fff;
             }
             .savings-container .sv-hero::before {
@@ -1448,13 +1542,15 @@ function addSavingsStyles() {
                 left: calc(var(--sv-bleed-l, 0px) * -1 - 2px);
                 right: calc(var(--sv-bleed-r, 0px) * -1 - 2px);
                 bottom: 0;
+                border-radius: 0 0 32px 32px;
                 background:
-                    radial-gradient(circle at 90% 6%, rgba(255, 213, 74, 0.30) 0%, rgba(255, 213, 74, 0) 36%),
-                    radial-gradient(circle at 4% 58%, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0) 32%),
-                    linear-gradient(165deg, #1a3fd1 0%, #2f5be8 62%, #4a74f0 100%);
+                    radial-gradient(circle at 92% 0%, rgba(198, 244, 50, 0.16) 0%, rgba(198, 244, 50, 0) 45%),
+                    linear-gradient(160deg, #0F5A3A 0%, #0B3D2A 70%),
+                    #0B3D2A;
+                box-shadow: 0 14px 30px rgba(11, 61, 42, 0.28);
             }
 
-            /* Baris atas: ikon, judul, tombol tambah */
+            /* Baris atas: ikon halaman, sapaan kecil + judul, tombol bulat */
             .savings-container .sv-hero-top {
                 display: flex;
                 align-items: center;
@@ -1468,25 +1564,25 @@ function addSavingsStyles() {
                 align-items: center;
                 justify-content: center;
                 border-radius: 50%;
-                background: rgba(255, 255, 255, 0.16);
-                border: 2px solid rgba(255, 255, 255, 0.32);
-                font-size: 1.1rem;
+                background: rgba(255, 255, 255, 0.12);
+                border: 2px solid rgba(255, 255, 255, 0.28);
+                font-size: 1.05rem;
             }
             .savings-container .sv-hero-heading { flex: 1; min-width: 0; text-align: left; }
             .savings-container .sv-hero-eyebrow {
                 display: block;
-                font-size: 0.72rem;
-                color: #d5e0ff;
+                font-size: 0.78rem;
+                color: rgba(255, 255, 255, 0.72);
             }
             .savings-container .sv-hero-title {
-                font-size: 1.2rem;
+                font-size: 1.4rem;
                 font-weight: 700;
                 letter-spacing: -0.01em;
                 line-height: 1.2;
             }
             .savings-container .sv-hero-add {
-                width: 42px;
-                height: 42px;
+                width: 44px;
+                height: 44px;
                 flex: none;
                 padding: 0;
                 display: flex;
@@ -1494,116 +1590,190 @@ function addSavingsStyles() {
                 justify-content: center;
                 border: 0;
                 border-radius: 50%;
-                background: #fff;
-                color: #2f5be8;
-                font-size: 1rem;
+                background: #C6F432;
+                color: #0B3D2A;
+                font-size: 1.05rem;
                 cursor: pointer;
-                box-shadow: 0 6px 14px rgba(10, 25, 90, 0.28);
+                box-shadow: 0 6px 14px rgba(0, 0, 0, 0.22);
             }
             .savings-container .sv-hero-add:active { transform: scale(0.94); }
 
-            /* Ring progress keseluruhan */
-            .savings-container .sv-hero-ring {
+            /* Label + angka utama + chip lime */
+            .savings-container .sv-hero-balance {
+                margin-top: 22px;
+                text-align: center;
+            }
+            .savings-container .sv-hero-balance-label {
+                display: block;
+                font-size: 0.82rem;
+                color: rgba(255, 255, 255, 0.78);
+            }
+            .savings-container .sv-hero-amount {
+                margin-top: 6px;
+                /* mengecil otomatis sesuai jumlah karakter agar selalu 1 baris */
+                font-size: clamp(1.4rem, calc((100vw - 48px) / (var(--chars, 12) * 0.62)), 2.6rem);
+                font-weight: 800;
+                line-height: 1.15;
+                letter-spacing: -0.01em;
+                white-space: nowrap;
+            }
+            .savings-container .sv-hero-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                max-width: 100%;
+                margin-top: 12px;
+                padding: 6px 14px;
+                border-radius: 999px;
+                background: #C6F432;
+                color: #0B3D2A;
+                font-size: 0.76rem;
+                font-weight: 700;
+            }
+
+            /* Tiga circle bar ringkasan (pola tx-stats / tx-ring) */
+            .savings-container .sv-stats {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                margin-top: 20px;
+                padding: 14px 4px 16px;
+                border-radius: 20px;
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                -webkit-backdrop-filter: blur(14px) saturate(160%);
+                backdrop-filter: blur(14px) saturate(160%);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+            }
+            .savings-container .sv-stat {
+                min-width: 0;
+                padding: 0 4px;
+                overflow: hidden;
+                text-align: center;
+            }
+            .savings-container .sv-stat + .sv-stat { border-left: 1px solid rgba(255, 255, 255, 0.16); }
+            .savings-container .sv-stat-label {
+                display: block;
+                font-size: 0.72rem;
+                font-weight: 600;
+                color: rgba(255, 255, 255, 0.86);
+            }
+            .savings-container .sv-ring {
                 position: relative;
-                width: 128px;
-                height: 128px;
-                margin: 18px auto 0;
+                width: 74px;
+                max-width: 100%;
+                aspect-ratio: 1 / 1;
+                margin: 10px auto 0;
             }
-            .savings-container .sv-hero-ring svg { width: 100%; height: 100%; display: block; }
-            .savings-container .sv-ring-track {
-                fill: none;
-                stroke: rgba(255, 255, 255, 0.2);
-                stroke-width: 10;
-            }
-            .savings-container .sv-ring-progress {
-                fill: none;
-                stroke: #ffd54a;
-                stroke-width: 10;
-                stroke-linecap: round;
-                transition: stroke-dashoffset 1s cubic-bezier(0.4, 0, 0.2, 1);
-            }
-            .savings-container .sv-ring-center {
+            .savings-container .sv-ring svg {
                 position: absolute;
                 inset: 0;
+                width: 100%;
+                height: 100%;
+                display: block;
+                overflow: hidden;
+            }
+            .savings-container .sv-ring circle {
+                fill: rgba(11, 61, 42, 0.35);
+                stroke-width: 8;
+            }
+            .savings-container .sv-ring .sv-ring-track { stroke: rgba(255, 255, 255, 0.22); }
+            .savings-container .sv-ring .sv-ring-bar {
+                fill: none;
+                stroke-linecap: round;
+                transition: stroke-dashoffset 0.8s ease;
+            }
+            .savings-container .sv-ring .sv-ring-bar.is-empty { opacity: 0; }
+            .savings-container .sv-ring .sv-ring-bar.target { stroke: #fff; }
+            .savings-container .sv-ring .sv-ring-bar.rest { stroke: rgba(255, 255, 255, 0.6); }
+            .savings-container .sv-ring .sv-ring-bar.saved { stroke: #C6F432; }
+            .savings-container .sv-ring .sv-stat-value {
+                position: absolute;
+                inset: 0;
+                margin: 0;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: center;
-                gap: 2px;
+                padding: 0 12px;
+                box-sizing: border-box;
+                font-size: 10px; /* sama untuk ketiganya */
+                font-weight: 800;
+                line-height: 1.3;
+                color: #fff;
             }
-            .savings-container .sv-ring-center strong {
-                font-size: 1.7rem;
-                font-weight: 700;
-                line-height: 1;
-            }
-            .savings-container .sv-ring-center span { font-size: 0.7rem; opacity: 0.85; }
+            .savings-container .sv-ring .sv-stat-value.saved { color: #C6F432; }
 
-            .savings-container .sv-hero-chip {
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                gap: 6px;
-                width: fit-content;
-                max-width: 100%;
-                margin: 12px auto 0;
-                padding: 6px 12px;
-                border-radius: 999px;
-                background: rgba(255, 255, 255, 0.16);
-                font-size: 0.76rem;
-                font-weight: 600;
-            }
-            .savings-container .sv-hero-chip i { color: #ffd54a; }
-
-            /* Dua kartu statistik */
-            .savings-container .sv-hero-stats {
-                display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 12px;
-                margin-top: 16px;
-            }
-            .savings-container .sv-hero-stat {
-                min-width: 0;
-                padding: 10px 12px;
-                text-align: left;
-                border-radius: 16px;
-                background: rgba(255, 255, 255, 0.14);
-                border: 1px solid rgba(255, 255, 255, 0.18);
-            }
-            .savings-container .sv-hero-stat-label {
-                display: flex;
-                align-items: center;
-                gap: 6px;
-                font-size: 0.7rem;
-                font-weight: 500;
-                opacity: 0.92;
-            }
-            .savings-container .sv-hero-stat-label i { color: #ffd54a; }
-            .savings-container .sv-hero-stat-value {
+            /* ===== Blok konten di bawah hero ===== */
+            .savings-container .sv-section.m-only { display: block; margin: 22px 16px 0; }
+            .savings-container .sv-list-section { margin: 22px 16px 0; min-width: 0; }
+            .savings-container .sv-section-title,
+            .savings-container .sv-section-title.m-only {
                 display: block;
-                margin-top: 4px;
-                /* mengecil otomatis sesuai jumlah karakter agar selalu 1 baris */
-                font-size: clamp(9px, calc((100vw - 92px) / 2 / (var(--chars, 12) * 0.62)), 17px);
-                font-weight: 700;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                margin: 0 0 12px;
+                font-size: 1.1rem;
+                font-weight: 800;
+                color: var(--text-primary);
             }
 
-            /* ===== Panel putih terangkat berisi kartu ===== */
-            .savings-container,
-            .savings-container .savings-list { min-width: 0; max-width: 100%; box-sizing: border-box; }
+            /* Progress keseluruhan */
+            .savings-container .sv-progress-card {
+                padding: 16px 18px;
+                background: var(--bg-secondary);
+                border: 1px solid rgba(11, 61, 42, 0.06);
+                border-radius: 22px;
+                box-shadow: 0 6px 20px rgba(11, 61, 42, 0.08);
+            }
+            .savings-container .sv-progress-top {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 12px;
+            }
+            .savings-container .sv-progress-name {
+                font-size: 1rem;
+                font-weight: 700;
+                color: var(--text-primary);
+            }
+            .savings-container .sv-progress-pct {
+                font-size: 1rem;
+                font-weight: 800;
+                color: #16A34A;
+            }
+            .savings-container .sv-progress-track {
+                height: 10px;
+                margin-top: 12px;
+                overflow: hidden;
+                border-radius: 999px;
+                background: var(--border-color);
+            }
+            .savings-container .sv-progress-fill {
+                height: 100%;
+                border-radius: 999px;
+                background: #16A34A;
+                transition: width 0.4s ease;
+            }
+            .savings-container .sv-progress-meta {
+                margin-top: 10px;
+                font-size: 0.8rem;
+                color: var(--text-secondary);
+            }
+
+            /* Daftar target */
             .savings-container .savings-list {
-                position: relative;
-                z-index: 1;
                 display: flex;
                 flex-direction: column;
                 gap: 14px;
-                margin-top: -34px;
-                padding: 22px clamp(12px, 5vw, 24px) 110px; /* bawah: ruang bottom nav */
-                min-height: 55vh;
-                background: #f3f4f8;
-                border-radius: 28px 28px 0 0;
-                box-shadow: 0 -4px 18px rgba(0, 0, 0, 0.14);
+                min-width: 0;
+                max-width: 100%;
+                margin: 0;
+                padding: 0 0 110px; /* bawah: ruang bottom nav */
+                box-sizing: border-box;
+            }
+            .savings-container .savings-list .empty-state {
+                padding: 32px 20px;
+                background: var(--bg-secondary);
+                border-radius: 22px;
+                box-shadow: 0 6px 20px rgba(11, 61, 42, 0.08);
             }
 
             /* ===== Kartu tabungan ===== */
@@ -1613,150 +1783,173 @@ function addSavingsStyles() {
                 min-width: 0;
                 box-sizing: border-box;
                 margin: 0 !important;
-                padding: 12px;
-                background: #fff !important;
-                border-radius: 14px !important;
-                box-shadow: 0 3px 12px rgba(20, 30, 70, 0.1) !important;
+                padding: 16px;
+                background: var(--bg-secondary) !important;
+                border: 1px solid rgba(11, 61, 42, 0.06);
+                border-radius: 22px !important;
+                box-shadow: 0 6px 20px rgba(11, 61, 42, 0.08) !important;
                 overflow: hidden;
             }
+            .savings-container .saving-card:hover { transform: none; }
             .savings-container .saving-card > .saving-card-header,
             .savings-container .saving-card > .saving-card-body { display: none !important; }
             .savings-container .sv-card { display: block; min-width: 0; }
 
-            .savings-container .sv-top {
+            .savings-container .sv-row {
                 display: flex;
-                align-items: flex-start;
+                align-items: center;
                 gap: 12px;
                 min-width: 0;
             }
-            .savings-container .sv-thumb {
-                flex: 0 0 31%;
-                min-width: 84px;
-                max-width: 120px;
-                aspect-ratio: 4 / 3;
-                border-radius: 8px;
+            .savings-container .sv-lead { flex: 0 0 52px; width: 52px; }
+            .savings-container .sv-photo {
+                width: 52px;
+                height: 52px;
+                border-radius: 16px;
                 overflow: hidden;
-                background:
-                    radial-gradient(ellipse 24% 13% at 38% 30%, #fff 62%, transparent 64%),
-                    radial-gradient(ellipse 15% 10% at 54% 34%, #fff 62%, transparent 64%),
-                    radial-gradient(ellipse 85% 42% at 25% 105%, #6b9a22 70%, transparent 72%),
-                    radial-gradient(ellipse 75% 36% at 95% 108%, #86b53a 70%, transparent 72%),
-                    linear-gradient(#bfe1f7, #e3f2fc);
+                background: #E6F6EC;
             }
-            .savings-container .sv-thumb.has-photo { background: #eef0f5; }
-            .savings-container .sv-thumb img {
+            .savings-container .sv-photo img {
                 width: 100%;
                 height: 100%;
                 object-fit: cover;
                 display: block;
                 cursor: pointer;
             }
-            .savings-container .sv-main {
-                flex: 1 1 0;
-                min-width: 0;
-                display: flex;
-                flex-direction: column;
-                align-self: stretch;
-            }
+            .savings-container .sv-info { flex: 1 1 0; min-width: 0; }
             .savings-container .sv-name {
-                font-size: 0.95rem;
+                font-size: 1rem;
                 font-weight: 700;
                 line-height: 1.3;
-                color: #111;
+                color: var(--text-primary);
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             .savings-container .sv-desc {
-                margin: 2px 0 8px;
-                font-size: 0.72rem;
+                margin-top: 2px;
+                font-size: 0.78rem;
                 line-height: 1.3;
-                color: #444;
+                color: var(--text-secondary);
+                white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                white-space: nowrap;
             }
-            .savings-container .sv-actions {
-                margin-top: auto;
-                display: flex;
-                flex-wrap: wrap;
-                gap: 5px;
+            .savings-container .sv-pct {
+                flex: none;
+                font-size: 0.95rem;
+                font-weight: 800;
+                color: #16A34A;
             }
-            .savings-container .sv-actions .icon-btn {
-                flex: 0 0 28px;
-                width: 28px !important;
-                height: 28px !important;
-                min-width: 0 !important;
-                min-height: 0 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                display: flex !important;
-                align-items: center;
-                justify-content: center;
-                border: 0 !important;
-                border-radius: 50% !important;
-                background: #d3d6dc !important;
-                color: #fff !important;
-                font-size: 0.75rem !important;
-                box-shadow: none !important;
+            .savings-container .sv-bar {
+                height: 10px;
+                margin-top: 14px;
+                border-radius: 999px;
+                background: var(--border-color);
+                overflow: hidden;
             }
-            .savings-container .sv-actions .delete-saving {
-                background: #ee1c1c !important;
-                color: #3b0707 !important;
+            .savings-container .sv-bar-fill {
+                height: 100%;
+                border-radius: 999px;
+                background: #16A34A;
             }
+            .savings-container .sv-bar-fill.completed { background: #0F5A3A; }
 
             .savings-container .sv-amounts {
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
                 gap: 8px;
-                margin: 12px 0 8px;
+                margin-top: 12px;
             }
             .savings-container .sv-amount { min-width: 0; text-align: left; }
             .savings-container .sv-amount-label {
                 display: block;
-                font-size: 0.64rem;
-                color: #444;
+                font-size: 0.7rem;
+                color: var(--text-secondary);
+                text-transform: capitalize;
             }
             .savings-container .sv-amount-value {
                 display: block;
                 font-size: clamp(9px, calc((100vw - 120px) / 3 / (var(--chars, 12) * 0.62)), 13.5px);
                 font-weight: 700;
-                color: #111;
+                color: var(--text-primary);
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            .savings-container .sv-amount-value.completed { color: #10b981; }
-            .savings-container .sv-progress-text { font-size: 0.7rem; color: #333; }
-            .savings-container .sv-bar {
-                height: 6px;
-                margin-top: 5px;
-                border-radius: 6px;
-                background: #cfd5df;
-                overflow: hidden;
+            .savings-container .sv-amount-value.completed { color: #16A34A; }
+
+            .savings-container .sv-foot {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 14px;
             }
-            .savings-container .sv-bar-fill {
-                height: 100%;
-                border-radius: 6px;
-                background: #1e3a8a;
+            .savings-container .sv-deadline {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.75rem;
+                color: var(--text-secondary);
             }
-            .savings-container .sv-bar-fill.completed { background: #10b981; }
-            .savings-container .sv-deadline { margin-top: 8px; font-size: 0.7rem; color: #555; }
-            .savings-container .sv-deadline.urgent { color: #f59e0b; }
-            .savings-container .sv-deadline.expired { color: #ef4444; }
+            .savings-container .sv-deadline.urgent,
+            .savings-container .sv-deadline.expired { color: #DC4C4C; font-weight: 600; }
+            .savings-container .sv-actions {
+                display: flex;
+                gap: 6px;
+                margin-left: auto;
+            }
+            .savings-container .sv-actions .icon-btn {
+                flex: 0 0 32px;
+                width: 32px;
+                height: 32px;
+                min-width: 0;
+                min-height: 0;
+                margin: 0;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 0;
+                border-radius: 50%;
+                font-size: 0.8rem;
+                box-shadow: none;
+            }
+
+            /* ===== Modal sheet: bagian khusus halaman ini ===== */
+            .modal-container.tx-sheet .saving-photo-upload { margin-top: 0; }
+            .modal-container.tx-sheet .saving-photo-picker {
+                border-color: rgba(255, 255, 255, 0.28);
+                border-radius: 18px;
+                color: #A6B0C2;
+                background: rgba(255, 255, 255, 0.04);
+            }
+            .modal-container.tx-sheet .saving-photo-picker:hover {
+                border-color: rgba(255, 255, 255, 0.5);
+                color: #F4F7FB;
+                background: rgba(255, 255, 255, 0.08);
+            }
+            .modal-container.tx-sheet .saving-photo-preview-wrap img { border-radius: 18px; }
+            .modal-container.tx-sheet .sv-hist-summary {
+                background: rgba(255, 255, 255, 0.06);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+            }
+            .modal-container.tx-sheet .sv-hist-sum-label,
+            .modal-container.tx-sheet .sv-hist-meta,
+            .modal-container.tx-sheet .sv-hist-balance,
+            .modal-container.tx-sheet .empty-state { color: #A6B0C2; }
+            .modal-container.tx-sheet .sv-hist-name,
+            .modal-container.tx-sheet .sv-hist-sum-value:not(.in):not(.out) { color: #F4F7FB; }
+            .modal-container.tx-sheet .sv-hist-row { border-bottom-color: rgba(255, 255, 255, 0.08); }
         }
 
-        /* Layar sangat sempit: foto di atas, info di bawah */
+        /* Layar sangat sempit: tombol aksi turun ke baris sendiri */
         @media (max-width: 340px) {
-            .savings-container .sv-top { flex-direction: column; }
-            .savings-container .sv-thumb {
-                flex: none;
-                width: 100%;
-                max-width: none;
-                aspect-ratio: 16 / 9;
-            }
-            .savings-container .sv-main { width: 100%; align-self: auto; }
-            .savings-container .sv-actions { margin-top: 0; }
+            .savings-container .sv-actions { margin-left: 0; width: 100%; }
+            .savings-container .sv-amounts { gap: 6px; }
         }
     `;
 
@@ -1797,22 +1990,20 @@ function showPhotoLightbox(photoUrl, title = "") {
   overlay.className = "modal-overlay saving-photo-lightbox";
   overlay.innerHTML = `
     <div class="saving-photo-lightbox-content">
-      <button class="saving-photo-lightbox-close" title="Tutup">
+      <button type="button" class="saving-photo-lightbox-close" title="Tutup">
         <i class="fas fa-times"></i>
       </button>
-      <img src="${photoUrl}" alt="${escapeHtml(title)}">
-      ${title ? `<div class="saving-photo-lightbox-title">${escapeHtml(title)}</div>` : ""}
+      <img src="${photoUrl}" alt="${displayText(title)}">
+      ${title ? `<div class="saving-photo-lightbox-title">${displayText(title)}</div>` : ""}
     </div>
   `;
   document.body.appendChild(overlay);
 
+  // Hanya bisa ditutup lewat tombol silang (X); klik area di luar sengaja tidak menutup.
   const close = () => overlay.remove();
   overlay
     .querySelector(".saving-photo-lightbox-close")
     .addEventListener("click", close);
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) close();
-  });
 }
 
 function escapeHtml(text) {

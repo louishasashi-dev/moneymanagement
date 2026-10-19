@@ -19,6 +19,7 @@ import {
   formatMoneyInput,
   parseMoney,
 } from "./utils.js";
+import { ensureTxSheetStyles } from "./modal-sheet.js";
 
 // State
 let allWallets = [];
@@ -221,15 +222,16 @@ function renderWalletsGrid() {
   return html;
 }
 
-// Render single wallet card
+// Render single wallet card (desktop)
 function renderWalletCard(wallet) {
   const balanceClass = wallet.balance >= 0 ? "positive" : "negative";
   const isDefault = DEFAULT_WALLET_IDS.includes(wallet.id);
+  const color = wallet.color || "#3b82f6";
 
   return `
-        <div class="wallet-card" data-id="${wallet.id}">
-            <div class="wallet-card-header" style="background: ${wallet.color}15; border-left: 4px solid ${wallet.color}">
-                <div class="wallet-card-icon ${wallet.photo ? "has-photo" : ""}" style="color: ${wallet.color}">
+        <div class="wallet-card" data-id="${wallet.id}" style="--wm-color: ${color}">
+            <div class="wallet-card-header">
+                <div class="wallet-card-icon ${wallet.photo ? "has-photo" : ""}">
                     ${
                       wallet.photo
                         ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
@@ -241,7 +243,7 @@ function renderWalletCard(wallet) {
                         <h4>${escapeHtml(wallet.name)}</h4>
                         ${isDefault ? '<span class="default-badge">Default</span>' : ""}
                     </div>
-                    <span class="wallet-type-badge">${getWalletTypeName(wallet.type)}</span>
+                    <span class="wallet-type-badge">${escapeHtml(getWalletTypeName(wallet.type))}</span>
                 </div>
                 <div class="wallet-card-actions">
                     <button class="icon-btn edit-wallet" data-id="${wallet.id}" title="Edit Dompet">
@@ -260,12 +262,12 @@ function renderWalletCard(wallet) {
             </div>
             <div class="wallet-card-body">
                 <div class="wallet-balance">
-                <span class="balance-label">Saldo saat ini</span>
-                <span class="balance-amount ${balanceClass}">${formatCurrency(wallet.balance)}</span>
-                <button class="btn-edit-balance" data-id="${wallet.id}" style="margin-top:8px; padding:6px 12px; border-radius:8px; border:1px solid var(--border-color); background:var(--bg-primary); cursor:pointer; font-size:0.75rem; width:100%;">
-                  <i class="fas fa-edit"></i> Edit Saldo
-                </button>
-            </div>
+                    <span class="balance-label">Saldo saat ini</span>
+                    <span class="balance-amount ${balanceClass}">${formatCurrency(wallet.balance)}</span>
+                    <button class="btn-edit-balance" data-id="${wallet.id}" type="button">
+                        <i class="fas fa-edit"></i> Edit Saldo
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -291,6 +293,13 @@ function formatCompactCurrency(value) {
     }
   }
   return formatCurrency(n);
+}
+
+// Saldo di baris daftar mobile: tampil penuh; mulai 1 miliar disingkat agar nama tetap terbaca
+function formatWalletAmount(value) {
+  return Math.abs(Number(value) || 0) >= 1e9
+    ? formatCompactCurrency(value)
+    : formatCurrency(value);
 }
 
 // Buat header mobile benar-benar full (menembus padding #page-content)
@@ -332,39 +341,79 @@ if (!window.__walletFullBleedBound) {
   window.addEventListener("resize", fitWalletMobileFullBleed);
 }
 
+// Pengelompokan daftar dompet mobile (sama dengan tampilan desktop)
+const MOBILE_WALLET_GROUPS = [
+  { type: "cash", title: "Tunai" },
+  { type: "ewallet", title: "E-Wallet" },
+  { type: "bank", title: "Bank" },
+];
+
+function renderMobileWalletSections() {
+  const sorted = getSortedWalletsForDisplay();
+  const knownTypes = MOBILE_WALLET_GROUPS.map((g) => g.type);
+  const groups = MOBILE_WALLET_GROUPS.map((g) => ({
+    title: g.title,
+    wallets: sorted.filter((w) => w.type === g.type),
+  }));
+  const others = sorted.filter((w) => !knownTypes.includes(w.type));
+  if (others.length > 0) groups.push({ title: "Lainnya", wallets: others });
+
+  return groups
+    .filter((g) => g.wallets.length > 0)
+    .map(
+      (g) => `
+            <section class="wm-section">
+                <div class="wm-section-head">
+                    <h3>${g.title}</h3>
+                    <span class="wm-section-count">${g.wallets.length} dompet</span>
+                </div>
+                <div class="wm-list-card">
+                    ${g.wallets.map((w) => renderMobileWalletCard(w)).join("")}
+                </div>
+            </section>`,
+    )
+    .join("");
+}
+
 function renderMobileWallets(totalBalance) {
   const totalText = formatCurrency(totalBalance);
   return `
         <div class="wallet-mobile">
             <div class="wm-hero">
-                <span class="wm-total-label">Total Seluruh Saldo</span>
-                <div class="wm-total-amount" style="--wm-chars: ${totalText.length}">${totalText}</div>
-                <div class="wm-count-pill">
-                    <i class="fas fa-wallet"></i>
-                    <span>${allWallets.length} Dompet Aktif</span>
+                <div class="wm-top">
+                    <span class="wm-avatar"><i class="fas fa-wallet"></i></span>
+                    <div class="wm-top-text">
+                        <span class="wm-greet">Kelola saldo</span>
+                        <h1 class="wm-title">Dompet Saya</h1>
+                    </div>
+                </div>
+
+                <div class="wm-total">
+                    <span class="wm-total-label">Total Seluruh Saldo</span>
+                    <div class="wm-total-amount" style="--wm-chars: ${totalText.length}">${totalText}</div>
+                    <span class="wm-count-chip">
+                        <i class="fas fa-wallet"></i>
+                        <span>${allWallets.length} Dompet Aktif</span>
+                    </span>
+                </div>
+
+                <div class="wm-actions">
+                    <button class="wm-action wm-action-primary" id="wm-add-btn" type="button">
+                        <span class="wm-action-icon"><i class="fas fa-plus"></i></span>
+                        <span class="wm-action-label">Tambah</span>
+                    </button>
+                    <button class="wm-action" id="wm-transfer-btn" type="button">
+                        <span class="wm-action-icon"><i class="fas fa-right-left"></i></span>
+                        <span class="wm-action-label">Transfer</span>
+                    </button>
+                    <button class="wm-action" id="wm-history-btn" type="button">
+                        <span class="wm-action-icon"><i class="fas fa-clock-rotate-left"></i></span>
+                        <span class="wm-action-label">Riwayat</span>
+                    </button>
                 </div>
             </div>
 
-            <div class="wm-actions">
-                <button class="wm-action" id="wm-history-btn" type="button">
-                    <span class="wm-action-icon"><i class="fas fa-clock-rotate-left"></i></span>
-                    <span class="wm-action-label">Riwayat</span>
-                </button>
-                <button class="wm-action" id="wm-transfer-btn" type="button">
-                    <span class="wm-action-icon"><i class="fas fa-right-left"></i></span>
-                    <span class="wm-action-label">Transfer</span>
-                </button>
-                <button class="wm-action" id="wm-add-btn" type="button">
-                    <span class="wm-action-icon"><i class="fas fa-plus"></i></span>
-                    <span class="wm-action-label">Tambah</span>
-                </button>
-            </div>
-
-            <div class="wm-section-title">
-                <i class="fas fa-wallet"></i>
-                <h3>Dompet Saya</h3>
-            </div>
-
+            <div class="wm-body">
             ${
               allWallets.length === 0
                 ? `<div class="wm-empty">
@@ -372,12 +421,9 @@ function renderMobileWallets(totalBalance) {
                         <p>Belum ada dompet</p>
                         <button class="wm-empty-btn" id="wm-empty-add-btn" type="button">Tambah Dompet Sekarang</button>
                    </div>`
-                : `<div class="wm-grid">
-                        ${getSortedWalletsForDisplay()
-                          .map((w) => renderMobileWalletCard(w))
-                          .join("")}
-                   </div>`
+                : renderMobileWalletSections()
             }
+            </div>
         </div>
     `;
 }
@@ -388,29 +434,41 @@ function renderMobileWalletCard(wallet) {
   const negative = wallet.balance < 0;
 
   return `
-        <div class="wm-card" data-id="${wallet.id}" style="--wm-color: ${color}">
-            <div class="wm-card-icon ${wallet.photo ? "has-photo" : ""}">
-                ${
-                  wallet.photo
-                    ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
-                    : `<i class="fas ${wallet.icon || "fa-wallet"}"></i>`
-                }
+        <div class="wm-item" data-id="${wallet.id}" style="--wm-color: ${color}">
+            <div class="wm-item-main">
+                <div class="wm-item-icon ${wallet.photo ? "has-photo" : ""}">
+                    ${
+                      wallet.photo
+                        ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
+                        : `<i class="fas ${wallet.icon || "fa-wallet"}"></i>`
+                    }
+                </div>
+                <div class="wm-item-info">
+                    <div class="wm-item-name-row">
+                        <span class="wm-item-name">${escapeHtml(wallet.name)}</span>
+                        ${isDefault ? '<span class="wm-chip">Default</span>' : ""}
+                    </div>
+                    <span class="wm-item-sub">${escapeHtml(getWalletTypeName(wallet.type))}</span>
+                </div>
+                <span class="wm-item-balance ${negative ? "negative" : ""}" title="${formatCurrency(wallet.balance)}">${formatWalletAmount(wallet.balance)}</span>
             </div>
-            ${
-              !isDefault
-                ? `<button class="wm-tool wm-tool-left delete-wallet" data-id="${wallet.id}" type="button" title="Hapus Dompet">
-                        <i class="fas fa-trash"></i>
-                   </button>`
-                : ""
-            }
-            <button class="wm-tool wm-tool-right edit-wallet" data-id="${wallet.id}" type="button" title="Edit Dompet">
-                <i class="fas fa-pen-to-square"></i>
-            </button>
-            <span class="wm-card-name">${escapeHtml(wallet.name)}</span>
-            <span class="wm-balance-amount ${negative ? "negative" : ""}" title="${formatCurrency(wallet.balance)}">${formatCompactCurrency(wallet.balance)}</span>
-            <button class="wm-pill btn-edit-balance" data-id="${wallet.id}" type="button">
-                Edit Saldo
-            </button>
+            <div class="wm-item-actions">
+                <button class="wm-balance-btn btn-edit-balance" data-id="${wallet.id}" type="button">
+                    <i class="fas fa-coins"></i> Edit Saldo
+                </button>
+                <div class="wm-item-tools">
+                    <button class="wm-tool-btn edit-wallet" data-id="${wallet.id}" type="button" title="Edit Dompet" aria-label="Edit Dompet">
+                        <i class="fas fa-pen-to-square"></i>
+                    </button>
+                    ${
+                      !isDefault
+                        ? `<button class="wm-tool-btn wm-tool-danger delete-wallet" data-id="${wallet.id}" type="button" title="Hapus Dompet" aria-label="Hapus Dompet">
+                                <i class="fas fa-trash"></i>
+                           </button>`
+                        : ""
+                    }
+                </div>
+            </div>
         </div>
     `;
 }
@@ -514,15 +572,16 @@ async function showWalletModal(walletId = null) {
 
   const modalContent = `
         <form id="wallet-form">
+            <div class="tx-sheet-scroll">
             <div class="form-group">
-                <label>Nama Dompet <span class="required">*</span></label>
+                <label>Nama Dompet</label>
                 <input type="text" id="wallet-name" class="form-input" 
                        value="${isEdit ? escapeHtml(wallet.name) : ""}" 
                        placeholder="Contoh: Tunai, OVO, BCA..." required>
             </div>
             
             <div class="form-group">
-                <label>Tipe Dompet <span class="required">*</span></label>
+                <label>Tipe Dompet</label>
                 <div class="type-selector">
                     <button type="button" class="type-btn ${!isEdit || wallet.type === "cash" ? "active" : ""}" data-type="cash">
                         <i class="fas fa-money-bill-wave"></i> Tunai
@@ -546,7 +605,7 @@ async function showWalletModal(walletId = null) {
             </div>
             
             <div class="form-group">
-                <label>Foto Dompet <span style="font-weight:400">(opsional)</span></label>
+                <label>Foto Dompet <span class="form-optional">(opsional)</span></label>
                 <div class="photo-upload">
                     <div class="photo-preview" id="wallet-photo-preview"></div>
                     <div class="photo-actions">
@@ -570,15 +629,20 @@ async function showWalletModal(walletId = null) {
                 <input type="hidden" id="wallet-color" value="${isEdit ? wallet.color : "#3b82f6"}">
             </div>
             
-            <div class="form-group">
+            ${
+              isEdit
+                ? ""
+                : `<div class="form-group">
                 <label>Saldo Awal</label>
                 <input type="text" inputmode="numeric" autocomplete="off" data-money id="wallet-balance" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(wallet.balance) : 0}" 
+                       value="0" 
                        placeholder="0" min="0" step="1000">
-                <small class="form-help">Saldo awal hanya untuk dompet baru. Untuk dompet yang sudah ada, edit saldo melalui transaksi.</small>
+                <small class="form-help">Saldo awal hanya diisi saat membuat dompet baru. Untuk mengubah saldo nanti, gunakan tombol Edit Saldo.</small>
+            </div>`
+            }
             </div>
-            
-            <div class="modal-buttons">
+
+            <div class="modal-buttons tx-sheet-footer">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">${isEdit ? "Simpan Perubahan" : "Tambah Dompet"}</button>
             </div>
@@ -586,10 +650,12 @@ async function showWalletModal(walletId = null) {
     `;
 
   // Create modal
+  ensureTxSheetStyles();
+  ensureWalletSheetStyles();
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-medium">
+        <div class="modal-container modal-medium tx-sheet wallet-modal">
             <div class="modal-header">
                 <h3><i class="fas ${isEdit ? "fa-edit" : "fa-plus-circle"}"></i> ${isEdit ? "Edit Dompet" : "Tambah Dompet Baru"}</h3>
                 <button class="modal-close-btn modal-close-x">&times;</button>
@@ -687,8 +753,9 @@ async function showWalletModal(walletId = null) {
     const type = typeInput.value;
     const icon = iconInput.value;
     const color = colorInput.value;
-    const balance =
-      parseMoney(modal.querySelector("#wallet-balance").value) || 0;
+    // Kolom saldo hanya ada saat membuat dompet baru
+    const balanceInput = modal.querySelector("#wallet-balance");
+    const balance = balanceInput ? parseMoney(balanceInput.value) || 0 : 0;
 
     if (!name) {
       showToast("Nama dompet harus diisi", "error");
@@ -754,9 +821,8 @@ async function showWalletModal(walletId = null) {
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
   });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
 // Generate icon options for selector
@@ -813,26 +879,28 @@ async function editWalletBalance(id) {
     return;
   }
 
+  ensureTxSheetStyles();
+  ensureWalletSheetStyles();
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-    <div class="modal-container" style="max-width:360px;width:95%;">
+    <div class="modal-container tx-sheet wallet-modal wallet-balance-modal">
       <div class="modal-header">
         <h3><i class="fas fa-edit"></i> Edit Saldo — ${escapeHtml(wallet.name)}</h3>
-        <button class="modal-close-x" style="background:none;border:none;font-size:24px;cursor:pointer;">&times;</button>
+        <button type="button" class="modal-close-x">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:16px;">
-          ⚠️ Mengubah saldo secara langsung. Riwayat transaksi tidak terpengaruh.
-        </p>
-        <div class="form-group">
-          <label>Saldo Baru (Rp)</label>
-          <input type="text" inputmode="numeric" autocomplete="off" data-money id="new-balance-input" class="form-input"
-            value="${formatMoneyInput(wallet.balance)}" min="0" style="width:100%;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);">
+        <div class="tx-sheet-scroll">
+          <p class="wb-note">Mengubah saldo secara langsung. Riwayat transaksi tidak terpengaruh.</p>
+          <div class="form-group">
+            <label>Saldo Baru (Rp)</label>
+            <input type="text" inputmode="numeric" autocomplete="off" data-money id="new-balance-input" class="form-input wb-input"
+              value="${formatMoneyInput(wallet.balance)}" min="0">
+          </div>
         </div>
-        <div style="display:flex;gap:12px;margin-top:20px;">
-          <button class="btn-secondary modal-cancel" style="flex:1;padding:10px;border-radius:8px;cursor:pointer;border:none;">Batal</button>
-          <button id="save-balance-btn" class="btn-primary" style="flex:1;padding:10px;border-radius:8px;cursor:pointer;border:none;background:var(--info);color:white;">Simpan</button>
+        <div class="modal-buttons tx-sheet-footer wb-actions">
+          <button type="button" class="btn-secondary modal-cancel">Batal</button>
+          <button type="button" id="save-balance-btn" class="btn-primary">Simpan</button>
         </div>
       </div>
     </div>
@@ -843,9 +911,8 @@ async function editWalletBalance(id) {
   const closeModal = () => modal.remove();
   modal.querySelector(".modal-close-x").addEventListener("click", closeModal);
   modal.querySelector(".modal-cancel").addEventListener("click", closeModal);
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 
   modal
     .querySelector("#save-balance-btn")
@@ -915,56 +982,60 @@ async function showTransferModal() {
 
   const today = getCurrentDateTime().date;
 
+  ensureTxSheetStyles();
+  ensureWalletSheetStyles();
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-medium">
+        <div class="modal-container modal-medium tx-sheet wallet-modal">
             <div class="modal-header">
                 <h3><i class="fas fa-right-left"></i> Transfer Saldo</h3>
                 <button class="modal-close-btn modal-close-x">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="transfer-form">
-                    <div class="form-group">
-                        <label>Dari Dompet <span class="required">*</span></label>
-                        <select id="transfer-from" class="form-input" required>
-                            ${allWallets
-                              .map(
-                                (w) =>
-                                  `<option value="${w.id}">${escapeHtml(w.name)} (${formatCurrency(w.balance)})</option>`,
-                              )
-                              .join("")}
-                        </select>
-                        <small class="form-help" id="transfer-balance-hint"></small>
+                    <div class="tx-sheet-scroll">
+                        <div class="form-group">
+                            <label>Dari Dompet</label>
+                            <select id="transfer-from" class="form-input" required>
+                                ${allWallets
+                                  .map(
+                                    (w) =>
+                                      `<option value="${w.id}">${escapeHtml(w.name)} (${formatCurrency(w.balance)})</option>`,
+                                  )
+                                  .join("")}
+                            </select>
+                            <small class="form-help" id="transfer-balance-hint"></small>
+                        </div>
+
+                        <div class="transfer-arrow">
+                            <i class="fas fa-arrow-down"></i>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Ke Dompet</label>
+                            <select id="transfer-to" class="form-input" required></select>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Nominal Transfer</label>
+                            <input type="text" inputmode="numeric" autocomplete="off" data-money id="transfer-amount" class="form-input"
+                                   placeholder="0" min="1" step="1" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Catatan (opsional)</label>
+                            <input type="text" id="transfer-note" class="form-input"
+                                   placeholder="Contoh: Top up GoPay dari Tunai">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Tanggal</label>
+                            <input type="date" id="transfer-date" class="form-input" value="${today}">
+                        </div>
                     </div>
 
-                    <div class="transfer-arrow">
-                        <i class="fas fa-arrow-down"></i>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Ke Dompet <span class="required">*</span></label>
-                        <select id="transfer-to" class="form-input" required></select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Nominal Transfer <span class="required">*</span></label>
-                        <input type="text" inputmode="numeric" autocomplete="off" data-money id="transfer-amount" class="form-input"
-                               placeholder="0" min="1" step="1" required>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Catatan (opsional)</label>
-                        <input type="text" id="transfer-note" class="form-input"
-                               placeholder="Contoh: Top up GoPay dari Tunai">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Tanggal</label>
-                        <input type="date" id="transfer-date" class="form-input" value="${today}">
-                    </div>
-
-                    <div class="modal-buttons">
+                    <div class="modal-buttons tx-sheet-footer">
                         <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                         <button type="submit" class="btn-primary">Transfer Sekarang</button>
                     </div>
@@ -1091,9 +1162,8 @@ async function showTransferModal() {
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
   });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
 // Tampilkan riwayat transfer
@@ -1101,34 +1171,43 @@ async function showTransferHistoryModal() {
   const transfers = await getAllItems(STORES.TRANSFERS);
   transfers.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
+  ensureTxSheetStyles();
+  ensureWalletSheetStyles();
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-medium">
+        <div class="modal-container modal-medium tx-sheet wallet-modal">
             <div class="modal-header">
                 <h3><i class="fas fa-clock-rotate-left"></i> Riwayat Transfer</h3>
                 <button class="modal-close-btn modal-close-x">&times;</button>
             </div>
-            <div class="modal-body" style="max-height:65vh; overflow-y:auto;">
-                ${
-                  transfers.length === 0
-                    ? `<p class="empty-note" style="text-align:center;padding:24px 0;color:var(--text-secondary);">Belum ada riwayat transfer</p>`
-                    : transfers
-                        .map((t) => renderTransferHistoryItem(t))
-                        .join("")
-                }
+            <div class="modal-body">
+                <div class="tx-sheet-scroll">
+                    ${
+                      transfers.length === 0
+                        ? `<p class="empty-note">Belum ada riwayat transfer</p>`
+                        : transfers
+                            .map((t) => renderTransferHistoryItem(t))
+                            .join("")
+                    }
+                </div>
+                <div class="modal-buttons tx-sheet-footer">
+                    <button type="button" class="btn-secondary modal-close-btn">Tutup</button>
+                </div>
             </div>
         </div>
     `;
 
   document.body.appendChild(modal);
+  addWalletModalStyles();
   addTransferStyles();
 
   const closeModal = () => modal.remove();
-  modal.querySelector(".modal-close-x").addEventListener("click", closeModal);
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
+  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
+    btn.addEventListener("click", closeModal);
   });
+  // Modal hanya bisa ditutup lewat tombol Tutup atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup.
 
   modal.querySelectorAll(".delete-transfer-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1148,7 +1227,7 @@ function renderTransferHistoryItem(t) {
                     <i class="fas fa-arrow-right-long"></i>
                     <span>${escapeHtml(t.toWalletName)}</span>
                 </div>
-                <button class="icon-btn delete-transfer-btn" data-id="${t.id}" title="Hapus & Kembalikan Saldo">
+                <button class="icon-btn delete-transfer-btn" data-id="${t.id}" title="Hapus dan Kembalikan Saldo">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -1215,14 +1294,20 @@ function addTransferStyles() {
         .transfer-arrow {
             text-align: center;
             margin: 4px 0 12px;
-            color: var(--info);
+            color: #16A34A;
             font-size: 1.1rem;
+        }
+
+        .empty-note {
+            text-align: center;
+            padding: 24px 0;
+            color: var(--text-secondary);
         }
 
         .transfer-history-item {
             background: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: 12px;
+            border-radius: 16px;
             padding: 14px;
             margin-bottom: 12px;
         }
@@ -1243,14 +1328,14 @@ function addTransferStyles() {
         }
 
         .transfer-history-route i {
-            color: var(--info);
+            color: #16A34A;
             font-size: 0.8rem;
         }
 
         .transfer-history-amount {
             font-size: 1.15rem;
             font-weight: 700;
-            color: var(--info);
+            color: #16A34A;
             margin: 6px 0;
         }
 
@@ -1264,6 +1349,11 @@ function addTransferStyles() {
 
         .transfer-history-note {
             font-style: italic;
+        }
+
+        .transfer-history-item .delete-transfer-btn:hover {
+            background: #FDEBEA;
+            color: #DC4C4C;
         }
 
         @media (max-width: 768px) {
@@ -1282,6 +1372,7 @@ function addTransferStyles() {
 }
 
 // Add main wallet page styles
+// Palet halaman dompet (desktop + mobile): hijau tua, hijau aksi, lime, merah, tint pastel
 function addWalletStyles() {
   if (document.getElementById("wallet-main-styles")) return;
 
@@ -1289,224 +1380,268 @@ function addWalletStyles() {
   style.id = "wallet-main-styles";
   style.textContent = `
         .wallets-container {
+            --wm-forest: #0B3D2A;
+            --wm-forest-2: #0F5A3A;
+            --wm-green: #16A34A;
+            --wm-lime: #C6F432;
+            --wm-red: #DC4C4C;
+            --wm-green-tint: #E6F6EC;
+            --wm-red-tint: #FDEBEA;
             max-width: 1200px;
             margin: 0 auto;
         }
-        
-        .total-balance-card {
-            background: linear-gradient(135deg, var(--info) 0%, var(--purple) 100%);
-            color: white;
-            text-align: center;
-            margin-bottom: 24px;
-        }
-        
-        .total-balance-header {
-            font-size: 0.875rem;
-            opacity: 0.9;
-            margin-bottom: 8px;
-        }
-        
-        .total-balance-amount {
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
-        
-        .total-balance-footer {
-            font-size: 0.75rem;
-            opacity: 0.8;
-        }
-        
-        .wallet-section {
-            margin-bottom: 28px;
-        }
-        
-        .section-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 16px;
-            padding: 0 8px 0 0;
-            border-bottom: 2px solid var(--border-color);
-            padding-bottom: 8px;
-        }
-        
-        .section-header i {
-            font-size: 1.2rem;
-            color: var(--info);
-        }
-        
-        .section-header h3 {
-            font-size: 1rem;
-            font-weight: 600;
-            margin: 0;
-        }
-        
-        .section-count {
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            background: var(--border-color);
-            padding: 2px 8px;
-            border-radius: 20px;
-        }
-        
-        .wallet-cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 16px;
-        }
-        
-        .wallet-card {
-            background: var(--bg-secondary);
-            border-radius: 16px;
-            overflow: hidden;
-            box-shadow: var(--card-shadow);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        
-        .wallet-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-        }
-        
-        .wallet-card-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 16px;
-        }
-        
-        .wallet-card-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.4rem;
-            background: rgba(0,0,0,0.05);
-        }
-        
-        .wallet-card-info {
-            flex: 1;
-        }
-        
-        .wallet-name-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-bottom: 4px;
-        }
-        
-        .wallet-name-row h4 {
-            font-size: 1rem;
-            margin: 0;
-        }
-        
-        .default-badge {
-            font-size: 0.6rem;
-            padding: 2px 6px;
-            border-radius: 20px;
-            background: var(--info);
-            color: white;
-        }
-        
-        .wallet-type-badge {
-            font-size: 0.7rem;
-            padding: 2px 8px;
-            border-radius: 20px;
-            background: var(--border-color);
-            display: inline-block;
-        }
-        
-        .wallet-card-actions {
-            display: flex;
-            gap: 4px;
-        }
-        
-        .wallet-card-body {
-            padding: 16px;
-            border-top: 1px solid var(--border-color);
-        }
-        
-        .wallet-balance {
-            text-align: center;
-        }
-        
-        .balance-label {
-            display: block;
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            margin-bottom: 6px;
-        }
-        
-        .balance-amount {
-            font-size: 1.5rem;
-            font-weight: 700;
-        }
-        
-        .balance-amount.positive {
-            color: #10b981;
-        }
-        
-        .balance-amount.negative {
-            color: #ef4444;
-        }
-        
-        .form-help {
-            display: block;
-            font-size: 0.7rem;
-            color: var(--text-secondary);
-            margin-top: 4px;
-        }
-        
-        @media (max-width: 768px) {
-            .wallet-cards {
-                grid-template-columns: 1fr;
-            }
-            
-            .balance-amount {
-                font-size: 1.2rem;
-            }
-            
-            .wallet-card-icon {
-                width: 40px;
-                height: 40px;
-                font-size: 1.1rem;
-            }
-            
-            .section-header {
-                margin-bottom: 12px;
-            }
-        }
-    `;
 
-  document.head.appendChild(style);
-}
-
-// Styles khusus tampilan mobile halaman dompet
-function addWalletMobileStyles() {
-  if (document.getElementById("wallet-mobile-styles")) return;
-
-  const style = document.createElement("style");
-  style.id = "wallet-mobile-styles";
-  style.textContent = `
         /* Foto custom pengganti icon dompet */
-        .wallet-card-icon.has-photo,
-        .wm-card-icon.has-photo {
+        .wallets-container .has-photo {
             overflow: hidden;
             padding: 0;
-            border-radius: 14px;
         }
-        .wallet-card-icon.has-photo img,
-        .wm-card-icon.has-photo img {
+        .wallets-container .has-photo img {
             width: 100%;
             height: 100%;
             object-fit: contain;   /* foto tampil utuh, tidak ter-crop */
             display: block;
         }
 
+        .wallets-container .btn-primary {
+            background: var(--wm-green);
+            color: #fff;
+        }
+
+        /* Total saldo: hijau tua yang sama dengan header dashboard */
+        .wallets-container .total-balance-card.card {
+            color: #fff;
+            text-align: center;
+            margin-bottom: 24px;
+            padding: 28px 20px;
+            border: 0;
+            border-radius: 24px;
+            background:
+                radial-gradient(circle at 92% 0%, rgba(198, 244, 50, 0.16) 0%, rgba(198, 244, 50, 0) 45%),
+                linear-gradient(160deg, #0F5A3A 0%, #0B3D2A 70%),
+                #0B3D2A;
+            box-shadow: 0 14px 30px rgba(11, 61, 42, 0.28);
+        }
+
+        .wallets-container .total-balance-header {
+            font-size: 0.875rem;
+            color: rgba(255, 255, 255, 0.75);
+            margin-bottom: 8px;
+        }
+
+        .wallets-container .total-balance-amount {
+            font-size: 2.4rem;
+            font-weight: 800;
+            line-height: 1.15;
+            margin-bottom: 14px;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .wallets-container .total-balance-footer {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: var(--wm-lime);
+            color: var(--wm-forest);
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .wallets-container .wallet-section {
+            margin-bottom: 28px;
+        }
+
+        .wallets-container .section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .wallets-container .section-header i {
+            font-size: 1.2rem;
+            color: var(--wm-green);
+        }
+
+        .wallets-container .section-header h3 {
+            font-size: 1.05rem;
+            font-weight: 800;
+            margin: 0;
+        }
+
+        .wallets-container .section-count {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            background: var(--border-color);
+            padding: 2px 8px;
+            border-radius: 20px;
+        }
+
+        .wallets-container .wallet-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .wallets-container .wallet-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(11, 61, 42, 0.06);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .wallets-container .wallet-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 24px rgba(11, 61, 42, 0.12);
+        }
+
+        .wallets-container .wallet-card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+        }
+
+        .wallets-container .wallet-card-icon {
+            width: 46px;
+            height: 46px;
+            flex-shrink: 0;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            background: var(--bg-primary);
+            background: color-mix(in srgb, var(--wm-color) 12%, transparent);
+            color: var(--wm-color);
+        }
+
+        .wallets-container .wallet-card-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .wallets-container .wallet-name-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 4px;
+        }
+
+        .wallets-container .wallet-name-row h4 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .wallets-container .default-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 20px;
+            background: var(--wm-green-tint);
+            color: var(--wm-green);
+        }
+
+        .wallets-container .wallet-type-badge {
+            font-size: 0.72rem;
+            padding: 2px 8px;
+            border-radius: 20px;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            display: inline-block;
+        }
+
+        .wallets-container .wallet-card-actions {
+            display: flex;
+            gap: 4px;
+        }
+
+        .wallets-container .wallet-card-actions .delete-wallet:hover {
+            background: var(--wm-red-tint);
+            color: var(--wm-red);
+        }
+
+        .wallets-container .wallet-card-body {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .wallets-container .wallet-balance {
+            text-align: center;
+        }
+
+        .wallets-container .balance-label {
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .wallets-container .balance-amount {
+            font-size: 1.5rem;
+            font-weight: 800;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .wallets-container .balance-amount.positive {
+            color: var(--wm-green);
+        }
+
+        .wallets-container .balance-amount.negative {
+            color: var(--wm-red);
+        }
+
+        .wallets-container .btn-edit-balance {
+            display: block;
+            width: 100%;
+            margin-top: 10px;
+            padding: 8px 12px;
+            border: 0;
+            border-radius: 12px;
+            background: var(--wm-green-tint);
+            color: var(--wm-green);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        .wallets-container .btn-edit-balance:hover {
+            opacity: 0.85;
+        }
+
+        .form-help {
+            display: block;
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .form-optional {
+            font-weight: 400;
+        }
+    `;
+
+  document.head.appendChild(style);
+}
+
+// Styles khusus tampilan mobile halaman dompet (header hijau + daftar per jenis)
+function addWalletMobileStyles() {
+  if (document.getElementById("wallet-mobile-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "wallet-mobile-styles";
+  style.textContent = `
         /* Desktop: sembunyikan tampilan mobile */
         .wallet-mobile { display: none; }
 
@@ -1525,22 +1660,21 @@ function addWalletMobileStyles() {
             html:has(.wallet-mobile),
             body:has(.wallet-mobile) { overflow-x: hidden; }
 
-            .wallet-mobile {
+            .wallets-container .wallet-mobile {
                 display: block;
-                --wm-navy: #0b1b4d;
                 /* margin full-bleed diatur otomatis oleh fitWalletMobileFullBleed() */
                 padding-bottom: 110px; /* ruang untuk bottom navigation */
             }
 
-            /* ===== Hero / Total saldo ===== */
-            .wm-hero {
+            /* ===== Header (hero) hijau tua ===== */
+            .wallets-container .wm-hero {
                 position: relative;
                 z-index: 0;
-                text-align: center;
-                padding: 32px 16px 78px;
+                padding: 24px 16px 28px;
+                color: #fff;
             }
 
-            .wm-hero::before {
+            .wallets-container .wm-hero::before {
                 content: "";
                 position: absolute;
                 z-index: -1;
@@ -1550,249 +1684,314 @@ function addWalletMobileStyles() {
                 right: calc(var(--wm-bleed-r, 0px) * -1 - 2px);
                 bottom: 0;
                 background:
-                    linear-gradient(180deg, rgba(10,5,35,0.25) 0%, rgba(10,5,35,0.55) 100%),
-                    url("assets/background/violet.jpg") center / cover no-repeat,
-                    #5b21b6;
-                border-radius: 0;
+                    radial-gradient(circle at 92% 0%, rgba(198, 244, 50, 0.16) 0%, rgba(198, 244, 50, 0) 45%),
+                    linear-gradient(160deg, #0F5A3A 0%, #0B3D2A 70%),
+                    #0B3D2A;
+                border-radius: 0 0 32px 32px;
+                box-shadow: 0 14px 30px rgba(11, 61, 42, 0.28);
             }
 
-            .wm-total-label {
-                display: inline-block;
-                padding: 8px 22px;
-                border-radius: 999px;
-                background: rgba(10, 5, 35, 0.55);
-                border: 1px solid rgba(255,255,255,0.35);
-                color: #fff;
-                text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-                font-size: 0.8rem;
-                font-weight: 600;
-                letter-spacing: 0.12em;
-                text-transform: uppercase;
-            }
-
-            .wm-total-amount {
-                margin: 14px 0 16px;
-                /* otomatis mengecil sesuai jumlah karakter agar selalu 1 baris */
-                font-size: min(2.4rem, calc((100vw - 40px) / (var(--wm-chars, 12) * 0.62)));
-                font-weight: 800;
-                line-height: 1.15;
-                color: #fff;
-                text-shadow: 0 2px 6px rgba(0,0,0,0.65), 0 0 2px rgba(0,0,0,0.6);
-                white-space: nowrap;
-            }
-
-            .wm-count-pill {
-                display: inline-flex;
-                align-items: center;
-                gap: 8px;
-                padding: 9px 20px;
-                border-radius: 999px;
-                /* glass style */
-                background: linear-gradient(135deg, rgba(255,255,255,0.28), rgba(255,255,255,0.08));
-                -webkit-backdrop-filter: blur(14px) saturate(160%);
-                backdrop-filter: blur(14px) saturate(160%);
-                border: 1px solid rgba(255,255,255,0.45);
-                color: #fff;
-                text-shadow: 0 1px 3px rgba(0,0,0,0.45);
-                font-size: 0.85rem;
-                font-weight: 700;
-                box-shadow:
-                    0 8px 24px rgba(10, 5, 35, 0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.5);
-            }
-
-            .wm-count-pill i { color: #fff; }
-
-            /* ===== Aksi cepat ===== */
-            .wm-actions {
-                position: relative;
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                margin: -52px 16px 0;
-                padding: 18px 4px 16px;
-                background: #fff;
-                border-radius: 22px;
-                box-shadow: 0 10px 30px rgba(11, 27, 77, 0.12);
-            }
-
-            .wm-action {
+            .wallets-container .wm-top {
                 display: flex;
-                flex-direction: column;
                 align-items: center;
-                gap: 10px;
-                padding: 0 6px;
-                background: none;
-                border: none;
-                cursor: pointer;
-                font-family: inherit;
-                -webkit-tap-highlight-color: transparent;
+                gap: 12px;
             }
 
-            .wm-action + .wm-action { border-left: 1px solid #e6ecf3; }
-
-            .wm-action-icon {
-                width: 54px;
-                height: 54px;
+            .wallets-container .wm-avatar {
+                width: 48px;
+                height: 48px;
+                flex-shrink: 0;
                 border-radius: 50%;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: #3eeed4;
-                color: #0b4a4a;
-                font-size: 1.3rem;
-                transition: transform 0.15s ease;
+                background: rgba(255, 255, 255, 0.12);
+                border: 2px solid rgba(198, 244, 50, 0.45);
+                color: var(--wm-lime);
+                font-size: 1.1rem;
             }
 
-            .wm-action:active .wm-action-icon { transform: scale(0.92); }
+            .wallets-container .wm-greet {
+                display: block;
+                font-size: 0.8rem;
+                color: rgba(255, 255, 255, 0.72);
+            }
 
-            .wm-action-label {
+            .wallets-container .wm-title {
+                margin: 2px 0 0;
+                font-size: 1.35rem;
+                font-weight: 800;
+                line-height: 1.2;
+                color: #fff;
+            }
+
+            .wallets-container .wm-total {
+                margin-top: 24px;
+                text-align: center;
+            }
+
+            .wallets-container .wm-total-label {
+                display: block;
+                font-size: 0.85rem;
+                color: rgba(255, 255, 255, 0.75);
+            }
+
+            .wallets-container .wm-total-amount {
+                margin: 8px 0 14px;
+                /* otomatis mengecil sesuai jumlah karakter agar selalu 1 baris */
+                font-size: min(2.6rem, calc((100vw - 40px) / (var(--wm-chars, 12) * 0.62)));
+                font-weight: 800;
+                line-height: 1.15;
+                color: #fff;
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .wallets-container .wm-count-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 6px 14px;
+                border-radius: 999px;
+                background: var(--wm-lime);
+                color: var(--wm-forest);
                 font-size: 0.78rem;
                 font-weight: 700;
-                color: var(--wm-navy);
-                text-align: center;
-                line-height: 1.2;
             }
 
-            /* ===== Judul seksi ===== */
-            .wm-section-title {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                margin: 24px 16px 14px;
+            /* ===== Aksi utama (bulat + label) ===== */
+            .wallets-container .wm-actions {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 8px;
+                margin-top: 24px;
             }
 
-            .wm-section-title i { font-size: 1.3rem; color: #51698f; }
-
-            .wm-section-title h3 {
-                margin: 0;
-                font-size: 1.15rem;
-                font-weight: 800;
-                color: var(--wm-navy);
-            }
-
-            /* ===== Grid kartu dompet ===== */
-            .wm-grid {
-                display: flex;
-                flex-direction: column;        /* kartu tersusun ke bawah semua */
-                gap: 44px;                     /* ruang untuk ikon yang keluar kartu */
-                padding: 32px 16px 0;
-            }
-
-            .wm-card {
-                position: relative;
-                width: 100%;
-                box-sizing: border-box;
+            .wallets-container .wm-action {
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-                text-align: center;
-                gap: 6px;
-                padding: 40px 10px 14px;
-                border-radius: 18px;
+                gap: 8px;
+                padding: 0;
+                background: none;
+                border: 0;
                 color: #fff;
-                /* white.jpg diwarnai sesuai warna dompet (multiply) lalu digelapkan */
-                background-color: var(--wm-color);
-                background-image:
-                    linear-gradient(rgba(0,0,0,0.32), rgba(0,0,0,0.32)),
-                    linear-gradient(var(--wm-color), var(--wm-color)),
-                    url("assets/background/white.jpg");
-                background-size: cover, cover, cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                background-blend-mode: normal, multiply, normal;
-                box-shadow: 0 6px 16px rgba(11, 27, 77, 0.15);
+                font-family: inherit;
+                cursor: pointer;
+                -webkit-tap-highlight-color: transparent;
             }
 
-            /* Ikon: 50% di luar kartu, 50% di dalam */
-            .wm-card-icon {
-                position: absolute;
-                top: -28px;
-                left: 50%;
-                transform: translateX(-50%);
+            .wallets-container .wm-action-icon {
                 width: 56px;
                 height: 56px;
                 border-radius: 50%;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: #fff;
-                color: var(--wm-color);
-                font-size: 1.35rem;
-                box-shadow: 0 0 0 4px rgba(255,255,255,0.9), 0 6px 12px rgba(0,0,0,0.18);
+                background: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                color: #fff;
+                font-size: 1.15rem;
+                transition: transform 0.15s ease;
             }
 
-            .wm-tool {
-                position: absolute;
-                top: 8px;
-                width: 26px;
-                height: 26px;
-                padding: 0;
+            .wallets-container .wm-action-primary .wm-action-icon {
+                background: var(--wm-lime);
+                border-color: var(--wm-lime);
+                color: var(--wm-forest);
+            }
+
+            .wallets-container .wm-action:active .wm-action-icon { transform: scale(0.92); }
+
+            .wallets-container .wm-action-label {
+                font-size: 0.75rem;
+                font-weight: 600;
+                line-height: 1.2;
+                color: #fff;
+            }
+
+            /* ===== Konten di bawah header ===== */
+            .wallets-container .wm-body {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+                padding: 24px 16px 0;
+            }
+
+            .wallets-container .wm-section-head {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 12px;
+            }
+
+            .wallets-container .wm-section-head h3 {
+                margin: 0;
+                font-size: 1.1rem;
+                font-weight: 800;
+                color: var(--text-primary);
+            }
+
+            .wallets-container .wm-section-count {
+                font-size: 0.8rem;
+                color: var(--text-secondary);
+            }
+
+            .wallets-container .wm-list-card {
+                padding: 4px 16px;
+                background: var(--bg-secondary);
+                border-radius: 22px;
+                box-shadow: 0 2px 12px rgba(11, 61, 42, 0.06);
+            }
+
+            .wallets-container .wm-item { padding: 14px 0; }
+            .wallets-container .wm-item + .wm-item { border-top: 1px solid var(--border-color); }
+
+            .wallets-container .wm-item-main {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                min-width: 0;
+            }
+
+            .wallets-container .wm-item-icon {
+                width: 42px;
+                height: 42px;
+                flex-shrink: 0;
+                border-radius: 12px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: none;
-                border: none;
-                color: rgba(255,255,255,0.9);
-                font-size: 0.85rem;
-                cursor: pointer;
+                font-size: 1.05rem;
+                background: var(--bg-primary);
+                background: color-mix(in srgb, var(--wm-color) 12%, transparent);
+                color: var(--wm-color);
             }
 
-            .wm-tool-left { left: 8px; }
-            .wm-tool-right { right: 8px; }
+            .wallets-container .wm-item-info {
+                flex: 1;
+                min-width: 0;
+            }
 
-            .wm-card-name {
-                max-width: 100%;
-                font-size: 0.9rem;
+            .wallets-container .wm-item-name-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                min-width: 0;
+            }
+
+            .wallets-container .wm-item-name {
+                min-width: 0;
+                font-size: 0.95rem;
                 font-weight: 700;
+                color: var(--text-primary);
+                white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                white-space: nowrap;
-                text-shadow: 0 1px 3px rgba(0,0,0,0.6);
             }
 
-            .wm-balance-amount {
-                max-width: 100%;
-                font-size: 1.15rem;
-                font-weight: 800;
-                line-height: 1.2;
-                white-space: nowrap;
-                text-shadow: 0 1px 4px rgba(0,0,0,0.65);
-            }
-
-            .wm-balance-amount.negative { color: #ffd6d6; }
-
-            .wm-pill {
-                margin-top: auto;
-                padding: 5px 14px;
+            .wallets-container .wm-chip {
+                flex-shrink: 0;
+                padding: 2px 8px;
                 border-radius: 999px;
-                border: 1px solid rgba(255,255,255,0.35);
-                background: rgba(255,255,255,0.16);
-                color: #fff;
+                background: var(--wm-green-tint);
+                color: var(--wm-green);
+                font-size: 0.65rem;
+                font-weight: 700;
+            }
+
+            .wallets-container .wm-item-sub {
+                display: block;
+                margin-top: 2px;
+                font-size: 0.78rem;
+                color: var(--text-secondary);
+            }
+
+            .wallets-container .wm-item-balance {
+                flex-shrink: 0;
+                font-size: 0.95rem;
+                font-weight: 800;
+                color: var(--text-primary);
+                white-space: nowrap;
+                font-variant-numeric: tabular-nums;
+            }
+
+            .wallets-container .wm-item-balance.negative { color: var(--wm-red); }
+
+            .wallets-container .wm-item-actions {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                margin-top: 12px;
+                padding-left: 54px;
+            }
+
+            .wallets-container .wm-balance-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 7px 14px;
+                border: 0;
+                border-radius: 999px;
+                background: var(--wm-green-tint);
+                color: var(--wm-green);
                 font-family: inherit;
-                font-size: 0.68rem;
+                font-size: 0.75rem;
                 font-weight: 600;
                 cursor: pointer;
             }
 
-            /* ===== Empty state ===== */
-            .wm-empty {
-                margin: 0 16px;
-                padding: 32px 16px;
-                text-align: center;
-                border-radius: 18px;
-                background: var(--bg-secondary, #fff);
-                color: var(--text-secondary, #64748b);
+            .wallets-container .wm-item-tools {
+                display: flex;
+                gap: 8px;
             }
 
-            .wm-empty i { font-size: 2.2rem; margin-bottom: 8px; }
+            .wallets-container .wm-tool-btn {
+                width: 32px;
+                height: 32px;
+                padding: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 0;
+                border-radius: 10px;
+                background: var(--bg-primary);
+                color: var(--text-secondary);
+                font-size: 0.85rem;
+                cursor: pointer;
+            }
 
-            .wm-empty-btn {
+            .wallets-container .wm-tool-btn.wm-tool-danger {
+                background: var(--wm-red-tint);
+                color: var(--wm-red);
+            }
+
+            /* ===== Empty state ===== */
+            .wallets-container .wm-empty {
+                padding: 32px 16px;
+                text-align: center;
+                border-radius: 22px;
+                background: var(--bg-secondary);
+                box-shadow: 0 2px 12px rgba(11, 61, 42, 0.06);
+                color: var(--text-secondary);
+            }
+
+            .wallets-container .wm-empty i {
+                margin-bottom: 8px;
+                font-size: 2.2rem;
+                color: var(--wm-green);
+                opacity: 0.6;
+            }
+
+            .wallets-container .wm-empty-btn {
                 margin-top: 8px;
                 padding: 10px 18px;
-                border: none;
+                border: 0;
                 border-radius: 999px;
-                background: #3eeed4;
-                color: #0b4a4a;
+                background: var(--wm-green);
+                color: #fff;
                 font-weight: 700;
                 cursor: pointer;
             }
@@ -1802,7 +2001,148 @@ function addWalletMobileStyles() {
   document.head.appendChild(style);
 }
 
-// Add modal styles
+// Gaya tambahan modal dompet untuk Bottom Sheet (melengkapi modal-sheet.js)
+function ensureWalletSheetStyles() {
+  if (document.getElementById("wallet-sheet-styles")) return;
+  const style = document.createElement("style");
+  style.id = "wallet-sheet-styles";
+  style.textContent = `
+    /* Modal Edit Saldo: tampilan desktop */
+    .wallet-balance-modal { max-width: 360px; width: 95%; }
+    .wallet-balance-modal .modal-close-x {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .wallet-balance-modal .wb-note {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+    }
+    .wallet-balance-modal .wb-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+    }
+    .wallet-balance-modal .wb-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+    }
+    .wallet-balance-modal .wb-actions button {
+      flex: 1;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: none;
+    }
+
+    /* Desktop: aksen hijau pada modal dompet */
+    @media (min-width: 769px) {
+      .wallet-modal .btn-primary {
+        background: #16A34A;
+        color: #fff;
+      }
+      .wallet-modal .type-btn.active,
+      .wallet-modal .icon-option.selected {
+        background: #16A34A;
+        border-color: #16A34A;
+        color: #fff;
+      }
+      .wallet-modal .color-option.selected {
+        box-shadow: 0 0 0 2px #16A34A;
+      }
+    }
+
+    /* Aurora Glass - Bottom Sheet mobile */
+    @media (max-width: 768px) {
+      .modal-container.tx-sheet .wb-note {
+        color: #A6B0C2;
+        font-size: 0.875rem;
+        margin: 0 0 16px;
+      }
+      .modal-container.tx-sheet .wb-input {
+        padding: 12px 16px;
+      }
+      .modal-container.tx-sheet .form-optional {
+        color: #A6B0C2;
+      }
+      .modal-container.tx-sheet .icon-option {
+        background: rgba(255, 255, 255, 0.04);
+        color: #F4F7FB;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 9999px;
+      }
+      .modal-container.tx-sheet .icon-option.selected {
+        background: rgba(125, 249, 214, 0.18);
+        color: #7DF9D6;
+        border-color: rgba(125, 249, 214, 0.45);
+      }
+      .modal-container.tx-sheet .color-option {
+        border: 2px solid rgba(255, 255, 255, 0.22);
+      }
+      .modal-container.tx-sheet .color-option.selected {
+        border-color: #F4F7FB;
+        box-shadow: 0 0 0 3px rgba(125, 249, 214, 0.65);
+      }
+      .modal-container.tx-sheet .photo-preview {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px dashed rgba(255, 255, 255, 0.22);
+        border-radius: 18px;
+        color: #A6B0C2;
+      }
+      .modal-container.tx-sheet .photo-actions button {
+        background: rgba(255, 255, 255, 0.10);
+        color: #F4F7FB;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 9999px;
+        font-weight: 600;
+      }
+      .modal-container.tx-sheet .icon-option:focus-visible,
+      .modal-container.tx-sheet .color-option:focus-visible,
+      .modal-container.tx-sheet .photo-actions button:focus-visible {
+        outline: 2px solid rgba(125, 249, 214, 0.5);
+        outline-offset: 3px;
+      }
+
+      /* Transfer saldo */
+      .modal-container.tx-sheet .transfer-arrow {
+        margin: 0 0 20px;
+        color: #7DF9D6;
+      }
+
+      /* Riwayat transfer */
+      .modal-container.tx-sheet .empty-note {
+        color: #A6B0C2;
+      }
+      .modal-container.tx-sheet .transfer-history-item {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.10);
+        border-radius: 18px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        color: #F4F7FB;
+      }
+      .modal-container.tx-sheet .transfer-history-route i,
+      .modal-container.tx-sheet .transfer-history-amount {
+        color: #7DF9D6;
+      }
+      .modal-container.tx-sheet .transfer-history-meta {
+        color: #A6B0C2;
+      }
+      .modal-container.tx-sheet .transfer-history-item .delete-transfer-btn:hover,
+      .modal-container.tx-sheet .transfer-history-item .delete-transfer-btn:active {
+        background: transparent;
+        color: #F87171;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function addWalletModalStyles() {
   if (document.getElementById("wallet-modal-styles")) return;
 

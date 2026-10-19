@@ -23,6 +23,8 @@ import {
   formatMoneyInput,
   parseMoney,
 } from "./utils.js";
+import { ensureTxSheetStyles } from "./modal-sheet.js";
+import { renderTypeTriangle } from "./type-icon.js";
 
 // State untuk pagination dan filter
 let currentPage = 1;
@@ -102,7 +104,7 @@ function ensureMobileViewport() {
   // minimum-scale rendah = pengguna bebas zoom out (tidak terkunci di skala "fit")
   meta.setAttribute(
     "content",
-    "width=device-width, initial-scale=1, minimum-scale=0.25, maximum-scale=5, user-scalable=yes",
+    "width=device-width, initial-scale=1, minimum-scale=0.25, maximum-scale=5, user-scalable=yes, interactive-widget=resizes-content",
   );
 }
 
@@ -777,7 +779,6 @@ function renderTransactionsList(transactions) {
 
   container.innerHTML = transactions
     .map((t) => {
-      const triPath = t.type === "income" ? "M12 3L21 18H3Z" : "M3 3H21L12 18Z";
       const fullAmount = formatCurrency(t.amount);
       const mobileAmount =
         t.type === "income"
@@ -788,7 +789,7 @@ function renderTransactionsList(transactions) {
       return `
         <div class="transaction-card" data-id="${t.id}">
             <div class="transaction-card-icon ${t.type}">
-                <svg class="tx-tri" viewBox="0 0 24 21" aria-hidden="true"><path d="${triPath}" fill="currentColor" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/></svg>
+                ${renderTypeTriangle(t.type)}
                 <i class="fas ${t.isMultiItem === true ? "fa-shopping-basket" : t.type === "income" ? "fa-arrow-down" : t.type === "saving" ? "fa-piggy-bank" : "fa-arrow-up"}"></i>
             </div>
             <div class="transaction-card-details">
@@ -1208,6 +1209,7 @@ async function showTransactionModal(transactionId = null) {
 }
 
 async function showTransactionModalImpl(transactionId = null) {
+  ensureTxSheetStyles();
   const isEdit = transactionId !== null;
   let transaction = null;
 
@@ -1229,8 +1231,9 @@ async function showTransactionModalImpl(transactionId = null) {
 
   const modalContent = `
         <form id="transaction-form">
+            <div class="tx-sheet-scroll">
             <div class="form-group">
-                <label>Tipe Transaksi <span class="required">*</span></label>
+                <label>Tipe Transaksi</label>
                 <div class="type-selector">
                     <button type="button" class="type-btn ${!isEdit || transaction.type === "expense" ? "active" : ""}" data-type="expense">
                         <i class="fas fa-arrow-up"></i> Pengeluaran
@@ -1261,7 +1264,7 @@ async function showTransactionModalImpl(transactionId = null) {
             </div>
             
             <div class="form-group">
-                <label>Nominal <span class="required">*</span></label>
+                <label>Nominal</label>
                 <input type="text" inputmode="numeric" autocomplete="off" data-money id="transaction-amount" class="form-input" 
                        value="${isEdit ? formatMoneyInput(transaction.amount / (transaction.quantity || 1)) : ""}" 
                        placeholder="0" min="1" required>
@@ -1286,7 +1289,7 @@ async function showTransactionModalImpl(transactionId = null) {
                 <label>Kategori</label>
                 <select id="transaction-category" class="form-input">
                     <option value="">Pilih Kategori</option>
-                    <optgroup label="📤 Pengeluaran">
+                    <optgroup label="Pengeluaran">
                         ${expenseCategories
                           .map(
                             (cat) => `
@@ -1297,7 +1300,7 @@ async function showTransactionModalImpl(transactionId = null) {
                           )
                           .join("")}
                     </optgroup>
-                    <optgroup label="📥 Pemasukan">
+                    <optgroup label="Pemasukan">
                         ${incomeCategories
                           .map(
                             (cat) => `
@@ -1312,7 +1315,7 @@ async function showTransactionModalImpl(transactionId = null) {
             </div>
             
             <div class="form-group">
-                <label>Metode Pembayaran <span class="required">*</span></label>
+                <label>Metode Pembayaran</label>
                 <select id="transaction-wallet" class="form-input" required>
                     <option value="">Pilih Dompet</option>
                     ${wallets
@@ -1335,12 +1338,12 @@ async function showTransactionModalImpl(transactionId = null) {
             
             <div class="form-row">
                 <div class="form-group half">
-                    <label>📅 Tanggal</label>
+                    <label>Tanggal</label>
                     <input type="date" id="transaction-date" class="form-input" 
                            value="${isEdit ? transaction.date : getCurrentDateTime().date}">
                 </div>
                 <div class="form-group half">
-                    <label>⏰ Jam</label>
+                    <label>Jam</label>
                     <input type="time" id="transaction-time" class="form-input" 
                            value="${isEdit ? transaction.time : getCurrentDateTime().time}">
                 </div>
@@ -1356,8 +1359,9 @@ async function showTransactionModalImpl(transactionId = null) {
                 </label>
             </div>`
             }
+            </div>
 
-            <div class="modal-buttons">
+            <div class="modal-buttons tx-sheet-footer">
                 <button type="button" class="btn-secondary modal-close-btn">Batal</button>
                 <button type="submit" class="btn-primary">${isEdit ? "Simpan Perubahan" : "Tambah Transaksi"}</button>
             </div>
@@ -1366,9 +1370,9 @@ async function showTransactionModalImpl(transactionId = null) {
 
   // Create modal
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-large">
+        <div class="modal-container modal-large tx-sheet">
             <div class="modal-header">
                 <h3><i class="fas ${isEdit ? "fa-edit" : "fa-plus-circle"}"></i> ${isEdit ? "Edit Transaksi" : "Tambah Transaksi Baru"}</h3>
                 <button class="modal-close-btn modal-close-x">&times;</button>
@@ -1848,9 +1852,8 @@ async function showTransactionModalImpl(transactionId = null) {
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
   });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
 // Modal untuk memilih tabungan tujuan (dipakai saat transaksi bertipe "saving")
@@ -1885,7 +1888,7 @@ export async function showSelectSavingGoalModal(
           <div style="font-weight:700;font-size:1.05rem;">${formatCurrency(amount)}</div>
         </div>
         <div class="form-group">
-          <label>Masukkan ke tabungan mana? <span class="required">*</span></label>
+          <label>Masukkan ke tabungan mana?</label>
           <select id="select-saving-goal" class="form-input" required>
             <option value="">Pilih Tabungan</option>
             ${savings
@@ -1913,9 +1916,8 @@ export async function showSelectSavingGoalModal(
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
   });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 
   modal
     .querySelector("#confirm-select-saving")
@@ -2052,6 +2054,7 @@ async function showMultiTransactionModal(transactionId = null) {
 }
 
 async function showMultiTransactionModalImpl(transactionId = null) {
+  ensureTxSheetStyles();
   const isEdit = transactionId !== null;
   let transaction = null;
 
@@ -2121,12 +2124,12 @@ async function showMultiTransactionModalImpl(transactionId = null) {
                 }
             </div>
             <div class="form-group">
-                <label>Nama Barang <span class="required">*</span></label>
+                <label>Nama Barang</label>
                 <input type="text" class="form-input multi-item-name" value="${escapeAttr(it.name)}" placeholder="Contoh: Indomie Goreng" autocomplete="off">
             </div>
             <div class="multi-form-row">
                 <div class="form-group">
-                    <label>Harga Satuan <span class="required">*</span></label>
+                    <label>Harga Satuan</label>
                     <input type="text" inputmode="numeric" autocomplete="off" data-money class="form-input multi-item-price" value="${escapeAttr(formatMoneyInput(it.price))}" placeholder="0">
                 </div>
                 <div class="form-group">
@@ -2143,7 +2146,7 @@ async function showMultiTransactionModalImpl(transactionId = null) {
                 <input type="text" inputmode="numeric" autocomplete="off" class="form-input multi-item-qty-custom" value="${it.qtyOther ? escapeAttr(formatMoneyInput(it.qty)) : ""}" placeholder="Masukkan jumlah" ${it.qtyOther ? "" : "hidden"}>
             </div>
             <div class="form-group">
-                <label>Kategori <span class="required">*</span></label>
+                <label>Kategori</label>
                 <select class="form-input multi-item-category">${categoryOptionsHtml(it.category)}</select>
             </div>
         </div>`;
@@ -2152,21 +2155,22 @@ async function showMultiTransactionModalImpl(transactionId = null) {
   }
 
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-large">
+        <div class="modal-container modal-large tx-sheet">
             <div class="modal-header">
                 <h3><i class="fas fa-shopping-basket"></i> ${isEdit ? "Edit Transaksi Banyak" : "Transaksi Banyak"}</h3>
                 <button class="modal-close-btn modal-close-x">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="multi-transaction-form" novalidate>
+                    <div class="tx-sheet-scroll">
                     <div class="form-group">
                         <label>Nama Transaksi</label>
                         <input type="text" id="multi-name" class="form-input" value="${isEdit ? escapeAttr(transaction.itemName) : ""}" placeholder="${MULTI_DEFAULT_NAME} (contoh: Belanja Indomaret)">
                     </div>
                     <div class="form-group">
-                        <label>Dompet <span class="required">*</span></label>
+                        <label>Dompet</label>
                         <select id="multi-wallet" class="form-input">
                             <option value="">Pilih Dompet</option>
                             ${wallets
@@ -2179,11 +2183,11 @@ async function showMultiTransactionModalImpl(transactionId = null) {
                     </div>
                     <div class="multi-form-row">
                         <div class="form-group">
-                            <label>📅 Tanggal</label>
+                            <label>Tanggal</label>
                             <input type="date" id="multi-date" class="form-input" value="${isEdit ? transaction.date : getCurrentDateTime().date}">
                         </div>
                         <div class="form-group">
-                            <label>⏰ Jam</label>
+                            <label>Jam</label>
                             <input type="time" id="multi-time" class="form-input" value="${isEdit ? transaction.time || "" : getCurrentDateTime().time}">
                         </div>
                     </div>
@@ -2197,8 +2201,9 @@ async function showMultiTransactionModalImpl(transactionId = null) {
                     <button type="button" class="btn-secondary multi-add-btn" id="multi-add-item">
                         <i class="fas fa-plus"></i> Tambah Barang
                     </button>
+                    </div>
 
-                    <div class="multi-footer">
+                    <div class="multi-footer tx-sheet-footer">
                         <div class="multi-total-row">
                             <span>Total Transaksi</span>
                             <span id="multi-total">${formatCurrency(0)}</span>
@@ -2472,9 +2477,8 @@ async function showMultiTransactionModalImpl(transactionId = null) {
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
   });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
-  });
+  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
+  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
 // Detail (read-only) Transaksi Banyak: info parent + daftar barang + total
