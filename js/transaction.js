@@ -24,7 +24,6 @@ import {
   parseMoney,
 } from "./utils.js";
 import { ensureTxSheetStyles } from "./modal-sheet.js";
-import { renderTypeTriangle } from "./type-icon.js";
 
 // State untuk pagination dan filter
 let currentPage = 1;
@@ -58,38 +57,55 @@ const MONTH_NAMES = [
 ];
 
 // ==================== HELPER KHUSUS MOBILE ====================
-const MOBILE_QUERY = "(max-width: 768px)";
+const MOBILE_QUERY = "(max-width: 767px)";
 let periodDefaultApplied = false;
 
-// Singkat nominal untuk ringkasan mobile: 1.000.000 -> "Rp 1jt", 7.450.000 -> "Rp 7,45jt",
-// 40.897.666.666 -> "Rp 40,9M" (rb = ribu, jt = juta, M = miliar, T = triliun)
-function formatCompactCurrency(value) {
-  const num = Number(value) || 0;
-  const sign = num < 0 ? "-" : "";
-  const abs = Math.abs(num);
-  if (abs < 1000) return `${sign}Rp ${Math.round(abs)}`;
+// Total saldo semua dompet = pembanding untuk persentase di bawah ikon
+let walletTotal = 0;
+const HIDE_BALANCE_KEY = "dashboard_hide_balance"; // sama dengan dashboard
 
+// Nominal singkat untuk kartu ringkasan: di bawah 1 juta tampil penuh,
+// mulai 1 juta disingkat: Rp 1jt, Rp 7,45jt, Rp 1M, Rp 2,5T ...
+function formatCurrencyShort(n) {
+  const abs = Math.abs(n || 0);
+  const sign = n < 0 ? "-" : "";
   const units = [
-    { size: 1e3, label: "rb" },
-    { size: 1e6, label: "jt" },
-    { size: 1e9, label: "M" },
-    { size: 1e12, label: "T" },
+    [1e12, "T"],
+    [1e9, "M"],
+    [1e6, "jt"],
   ];
-  let idx = 0;
-  for (let i = units.length - 1; i >= 0; i--) {
-    if (abs >= units[i].size) {
-      idx = i;
-      break;
+  for (const [size, label] of units) {
+    if (abs >= size) {
+      const v = Math.floor((abs / size) * 100) / 100;
+      return `${sign}Rp ${String(v).replace(".", ",")}${label}`;
     }
   }
-  let scaled = Math.round((abs / units[idx].size) * 100) / 100;
-  // Contoh 999.999 -> 1000rb harus naik jadi 1jt
-  if (scaled >= 1000 && idx < units.length - 1) {
-    idx++;
-    scaled = Math.round((abs / units[idx].size) * 100) / 100;
-  }
-  const text = String(scaled).replace(".", ","); // desimal Indonesia
-  return `${sign}Rp ${text}${units[idx].label}`;
+  return formatCurrency(n);
+}
+
+// Ikon tipe transaksi: pengeluaran = segitiga terbalik merah, pemasukan = segitiga ke atas hijau
+function typeTriangle(type) {
+  const up = type === "income";
+  const color = up ? "#16A34A" : "#DC4C4C";
+  const d = up ? "M12 5 L21.5 20 H2.5 Z" : "M12 19 L2.5 4 H21.5 Z";
+  return `<svg class="tri ${up ? "up" : "down"}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}" fill="${color}" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+
+// Persentase nominal terhadap total saldo dompet. Contoh: 2,5% / 12% / <0,1%
+// Saldo nol atau minus tidak bisa dijadikan pembanding, jadi tampil "–".
+function formatPct(amount, balance) {
+  const a = Number(amount) || 0;
+  const b = Number(balance) || 0;
+  if (b <= 0) return "–";
+  const p = (a / b) * 100;
+  if (p === 0) return "0%";
+  if (p < 0.1) return "<0,1%";
+  if (p > 999) return ">999%";
+  const text =
+    p < 10
+      ? p.toFixed(1).replace(/\.0$/, "").replace(".", ",")
+      : String(Math.round(p));
+  return `${text}%`;
 }
 
 // Pastikan viewport mobile normal: lebar = lebar layar, skala awal 1 (muat 1 halaman),
@@ -125,19 +141,31 @@ function monthKey(year, month) {
   return `m:${year}-${String(month).padStart(2, "0")}`;
 }
 
-// Format tanggal kartu mobile: 10 Oktober 2026 - 09.59
+// Format tanggal baris transaksi (bulan disingkat agar muat 1 baris): 10 Okt 2026, 09.59
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "Mei",
+  "Jun",
+  "Jul",
+  "Agu",
+  "Sep",
+  "Okt",
+  "Nov",
+  "Des",
+];
 function formatMobileDateTime(t) {
   const d = (t.date || "").split("-");
-  const monthName = MONTH_NAMES[parseInt(d[1], 10) - 1];
+  const monthName = SHORT_MONTHS[parseInt(d[1], 10) - 1];
   const datePart =
     d.length === 3 && monthName
       ? `${parseInt(d[2], 10)} ${monthName} ${d[0]}`
       : t.date || "-";
-  const timePart = t.time ? ` - ${String(t.time).replace(":", ".")}` : "";
+  const timePart = t.time ? `, ${String(t.time).replace(":", ".")}` : "";
   return datePart + timePart;
 }
-
-const ICON_CALENDAR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4.5" width="18" height="16.5" rx="3"/><path d="M8 2.5v4M16 2.5v4M3 10h18"/><rect x="7.5" y="13.5" width="3.5" height="3.5" rx=".8" fill="currentColor" stroke="none"/></svg>`;
 
 // Label & nilai <select> periode mobile berdasarkan state filter aktif
 function getPeriodSelection() {
@@ -238,55 +266,99 @@ function syncFilterControls() {
   }
 }
 
-// Hero mobile menembus padding #page-content (sama seperti halaman Dompet)
-function fitTxMobileFullBleed() {
-  const el = document.querySelector(".tx-mobile");
-  if (!el || getComputedStyle(el).display === "none") return;
-  const hero = el.querySelector(".tx-hero");
-  if (!hero) return;
+// Header ungu menembus padding #page-content di mobile (sama seperti dashboard)
+function fitTxFullBleed() {
+  const root = document.querySelector(".transactions-container");
+  const hero = root && root.querySelector(".tp-hero");
+  if (!root || !hero) return;
+
+  // Di tablet/desktop header berupa kartu biasa
+  if (window.innerWidth >= 768) {
+    root.style.removeProperty("--tp-bleed-l");
+    root.style.removeProperty("--tp-bleed-r");
+    root.style.removeProperty("--tp-bleed-t");
+    return;
+  }
+
   const rect = hero.getBoundingClientRect();
   const vw = document.documentElement.clientWidth;
   let top = 0;
   for (
-    let n = el.parentElement;
+    let n = root.parentElement;
     n && n !== document.documentElement;
     n = n.parentElement
   ) {
     top += parseFloat(getComputedStyle(n).paddingTop) || 0;
   }
-  el.style.setProperty("--tx-bleed-l", `${Math.max(0, rect.left)}px`);
-  el.style.setProperty("--tx-bleed-r", `${Math.max(0, vw - rect.right)}px`);
-  el.style.setProperty("--tx-bleed-t", `${top}px`);
+  root.style.setProperty("--tp-bleed-l", `${Math.max(0, rect.left)}px`);
+  root.style.setProperty("--tp-bleed-r", `${Math.max(0, vw - rect.right)}px`);
+  root.style.setProperty("--tp-bleed-t", `${top}px`);
 }
 
-function scheduleTxFullBleed() {
-  fitTxMobileFullBleed();
-  requestAnimationFrame(fitTxMobileFullBleed);
-  setTimeout(fitTxMobileFullBleed, 150);
-  setTimeout(fitTxMobileFullBleed, 500);
-}
-
-if (!window.__txFullBleedBound) {
-  window.__txFullBleedBound = true;
-  window.addEventListener("resize", fitTxMobileFullBleed);
-}
-
-// Isi angka ringkasan mobile + set --chars agar ukuran font mengecil otomatis untuk angka besar
-// Angka disingkat tampil 2 baris di dalam circle bar ("Rp" / "7,45jt") dengan ukuran font sama;
-// `share` (0..1) = porsi arc terisi
-function setMobileStat(id, value, share = 0) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const text = formatCompactCurrency(value);
-  const idx = text.indexOf(" ");
-  el.innerHTML = `<span>${text.slice(0, idx)}</span><span>${text.slice(idx + 1)}</span>`;
-  const ring = document.getElementById(`${id}-ring`);
-  if (ring) {
-    const pct = Math.max(0, Math.min(1, share)) * 100;
-    ring.setAttribute("stroke-dashoffset", String(100 - pct));
-    // Nol = tidak ada busur (hindari titik kecil akibat ujung bulat)
-    ring.style.opacity = pct > 0 ? "1" : "0";
+// Kecilkan font total saldo bila terlalu panjang, supaya tetap satu baris
+function fitTxBalanceText() {
+  const el = document.getElementById("tp-wallet-balance");
+  const box = el && el.parentElement;
+  if (!el || !box) return;
+  const avail = Math.min(
+    box.clientWidth,
+    document.documentElement.clientWidth - 40,
+  );
+  el.style.fontSize = "";
+  let size = parseFloat(getComputedStyle(el).fontSize);
+  while (el.offsetWidth > avail && size > 14) {
+    size -= 1;
+    el.style.fontSize = size + "px";
   }
+}
+
+function refitTxHeader() {
+  fitTxFullBleed();
+  fitTxBalanceText();
+}
+
+// Jalankan ulang setelah layout/font selesai agar ukuran bleed akurat
+function scheduleTxFullBleed() {
+  refitTxHeader();
+  requestAnimationFrame(refitTxHeader);
+  setTimeout(refitTxHeader, 150);
+  setTimeout(refitTxHeader, 500);
+}
+
+if (!window.__txHeaderBound) {
+  window.__txHeaderBound = true;
+  window.addEventListener("resize", refitTxHeader);
+}
+
+// Total saldo di header (bisa disembunyikan, pilihan dibagi dengan dashboard)
+function renderBalanceUi() {
+  const amount = document.getElementById("tp-wallet-balance");
+  if (!amount) return;
+  const hidden = localStorage.getItem(HIDE_BALANCE_KEY) === "1";
+  amount.textContent = hidden ? "Rp ••••••" : formatCurrency(walletTotal);
+  const btn = document.getElementById("toggle-balance");
+  const icon = btn && btn.querySelector("i");
+  if (icon) icon.className = hidden ? "fas fa-eye-slash" : "fas fa-eye";
+  if (btn) {
+    btn.setAttribute(
+      "aria-label",
+      hidden ? "Tampilkan saldo" : "Sembunyikan saldo",
+    );
+  }
+  fitTxBalanceText();
+}
+
+// Frasa periode untuk chip header: "hari ini", "bulan ini", "di Agustus 2026", ...
+function periodPhrase() {
+  const sel = getPeriodSelection();
+  const now = new Date();
+  if (sel.value === "today") return "hari ini";
+  if (sel.value === "week") return "minggu ini";
+  if (sel.value === "all" || sel.label === "Semua Waktu") return "semua waktu";
+  if (sel.value === monthKey(now.getFullYear(), now.getMonth() + 1)) {
+    return "bulan ini";
+  }
+  return `di ${sel.label}`;
 }
 
 // Render halaman transaksi utama
@@ -294,7 +366,7 @@ export async function renderTransactionsPage() {
   const container = document.getElementById("page-content");
   if (!container) return;
 
-  // Style harus ada SEBELUM markup dirender (elemen khusus mobile disembunyikan lewat CSS)
+  // Style harus ada SEBELUM markup dirender
   addTransactionStyles();
   ensureMobileViewport();
 
@@ -306,172 +378,156 @@ export async function renderTransactionsPage() {
   // Clear container first
   container.innerHTML = "";
 
-  // Load semua transaksi
+  // Load semua transaksi + total saldo dompet
   await loadTransactions();
 
-  // HTML Template - cleaner structure
+  const tile = (type, label, id) => `
+                            <div class="tp-tile">
+                                <span class="tp-tile-ico ${type}">${type === "saving" ? '<i class="fas fa-piggy-bank"></i>' : typeTriangle(type)}</span>
+                                <span class="tp-pct ${type}" id="${id}-pct" title="Dari total saldo dompet">–</span>
+                                <span class="tp-tile-label">${label}</span>
+                                <span class="tp-tile-value ${type}" id="${id}">Rp 0</span>
+                            </div>`;
+
+  // HTML Template (mengikuti desain dashboard)
   container.innerHTML = `
         <div class="transactions-container">
-            <!-- Header -->
-            <div class="page-header">
-                <h1><i class="fas fa-exchange-alt"></i> Transaksi</h1>
-                <div class="page-header-actions">
-                    <button class="btn-primary btn-add-transaction" id="add-transaction-btn">
-                        <i class="fas fa-plus"></i> Transaksi Baru
-                    </button>
-                    <button class="btn-secondary" id="add-multi-transaction-btn">
-                        <i class="fas fa-shopping-basket"></i> Transaksi Banyak
+            <!-- Header ungu dengan sudut bawah membulat -->
+            <header class="tp-hero">
+                <div class="tp-top">
+                    <div class="tp-avatar"><i class="fas fa-exchange-alt"></i></div>
+                    <div class="tp-greet">
+                        <span class="tp-eyebrow">Riwayat keuangan</span>
+                        <h1>Transaksi</h1>
+                    </div>
+                    <button class="tp-refresh" id="refresh-transactions" type="button" aria-label="Perbarui data" title="Perbarui data">
+                        <i class="fas fa-sync-alt"></i>
                     </button>
                 </div>
-            </div>
-            
-            <!-- ===== Khusus mobile: hero ringkasan + kotak 4 menu (gaya halaman Dompet) ===== -->
-            <div class="m-only tx-mobile">
-                <div class="tx-hero">
-                    <span class="tx-hero-label"><i class="fas fa-exchange-alt"></i> Transaksi</span>
-                    <div class="tx-stats">
-                        ${[
-                          ["Pengeluaran", "expense", "m-total-expense"],
-                          ["Pemasukan", "income", "m-total-income"],
-                          ["Tabungan", "saving", "m-total-saving"],
-                        ]
-                          .map(
-                            ([label, cls, id]) => `
-                        <div class="tx-stat">
-                            <span class="tx-stat-label">${label}</span>
-                            <div class="tx-ring">
-                                <svg viewBox="0 0 100 100" aria-hidden="true">
-                                    <circle class="tx-ring-track" cx="50" cy="50" r="40"/>
-                                    <circle class="tx-ring-bar ${cls}" id="${id}-ring" cx="50" cy="50" r="40" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100" transform="rotate(-90 50 50)"/>
-                                </svg>
-                                <span class="tx-stat-value ${cls}" id="${id}"><span>Rp</span><span>0</span></span>
+
+                <div class="tp-balance">
+                    <span class="tp-label">
+                        Total Saldo
+                        <button type="button" class="tp-eye" id="toggle-balance" aria-label="Sembunyikan saldo" title="Sembunyikan / tampilkan saldo">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                    </span>
+                    <span class="tp-amount" id="tp-wallet-balance">${formatCurrency(walletTotal)}</span>
+                    <span class="tp-chip up" id="tp-net-chip"></span>
+                </div>
+
+                <div class="tp-actions">
+                    <button type="button" class="tp-action primary" id="m-add-transaction-btn" title="Transaksi Baru">
+                        <span class="ico"><i class="fas fa-plus"></i></span>Tambah
+                    </button>
+                    <button type="button" class="tp-action" id="m-add-multi-btn" title="Transaksi Banyak">
+                        <span class="ico"><i class="fas fa-cart-shopping"></i></span>Banyak
+                    </button>
+                    <div class="tp-action tp-period">
+                        <span class="ico"><i class="fas fa-calendar-days"></i></span>Periode
+                        <select id="m-period-select" class="tp-period-select" aria-label="Pilih periode"></select>
+                    </div>
+                    <button type="button" class="tp-action" id="m-filter-btn">
+                        <span class="ico"><i class="fas fa-filter"></i></span>Filter
+                    </button>
+                </div>
+            </header>
+
+            <div class="tp-grid">
+                <div class="tp-col tp-col-side">
+                    <!-- Ringkasan periode -->
+                    <section>
+                        <div class="tp-section-head">
+                            <h2>Ringkasan</h2>
+                            <span class="tp-muted" id="m-period-value"></span>
+                        </div>
+                        <div class="tp-card tp-tiles">
+                            ${tile("income", "Pemasukan", "total-income-summary")}
+                            ${tile("expense", "Pengeluaran", "total-expense-summary")}
+                            ${tile("saving", "Tabungan", "total-saving-summary")}
+                        </div>
+                    </section>
+                </div>
+
+                <div class="tp-col">
+                    <!-- Daftar transaksi -->
+                    <section>
+                        <div class="tp-section-head">
+                            <h2>Daftar Transaksi</h2>
+                            <span class="tp-muted"><span id="total-count">0</span> transaksi</span>
+                        </div>
+                        <div class="tp-card tp-list-card">
+                            <div id="transactions-list" class="tp-list">
+                                <div class="tp-empty">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                    <p>Memuat transaksi...</p>
+                                </div>
                             </div>
-                        </div>`,
-                          )
-                          .join("")}
-                    </div>
-                </div>
-
-                <div class="tx-actions">
-                    <div class="tx-action tx-period">
-                        <span class="tx-action-icon"><i class="fas fa-calendar-days"></i></span>
-                        <span class="tx-action-label">Periode</span>
-                        <span class="tx-action-sub" id="m-period-value"></span>
-                        <select id="m-period-select" class="tx-period-select" aria-label="Pilih periode"></select>
-                    </div>
-                    <button class="tx-action" id="m-filter-btn" type="button">
-                        <span class="tx-action-icon"><i class="fas fa-filter"></i></span>
-                        <span class="tx-action-label">Filter</span>
-                    </button>
-                    <button class="tx-action" id="m-add-transaction-btn" type="button" title="Transaksi Baru">
-                        <span class="tx-action-icon"><i class="fas fa-plus"></i></span>
-                        <span class="tx-action-label">Tambah</span>
-                    </button>
-                    <button class="tx-action" id="m-add-multi-btn" type="button" title="Transaksi Banyak">
-                        <span class="tx-action-icon"><i class="fas fa-cart-shopping"></i></span>
-                        <span class="tx-action-label">Banyak</span>
-                    </button>
-                </div>
-
-                <div class="tx-section-title">Transaksi</div>
-            </div>
-
-            <!-- Tombol Filter (khusus tampil di mobile, buka filter sebagai modal) -->
-            <button class="filter-toggle-btn" id="filter-toggle-btn">
-                <i class="fas fa-filter"></i> Filter & Cari
-            </button>
-
-            <!-- Filter Bar (jadi modal fullscreen di mobile) -->
-            <div class="filter-bar" id="filter-bar">
-                <div class="filter-bar-header">
-                    <span>Filter Transaksi</span>
-                    <button type="button" class="filter-close-btn" id="filter-close-btn">
-                        <i class="fas fa-times"></i>
-                    </button>
-                </div>
-                <div class="search-box">
-                    <i class="fas fa-search"></i>
-                    <input type="text" id="search-transaction" placeholder="Cari transaksi..." class="search-input">
-                </div>
-                <div class="filter-group">
-                    <select id="filter-type" class="filter-select">
-                        <option value="all">Semua Tipe</option>
-                        <option value="income">📥 Pemasukan</option>
-                        <option value="expense">📤 Pengeluaran</option>
-                        <option value="saving">🐷 Tabungan</option>
-                    </select>
-                    <select id="filter-wallet" class="filter-select">
-                        <option value="all">💳 Semua Dompet</option>
-                    </select>
-                    <select id="filter-category" class="filter-select">
-                        <option value="all">📂 Semua Kategori</option>
-                    </select>
-                </div>
-                <div class="period-filter-group">
-                    <select id="filter-period" class="filter-select">
-                        <option value="today">📅 Hari Ini</option>
-                        <option value="week">🗓️ Minggu Ini</option>
-                        <option value="month">🗓️ Bulan Ini</option>
-                        <option value="all">⏳ Semua Waktu</option>
-                        <option value="custom">🎯 Pilih Tanggal</option>
-                    </select>
-                </div>
-                <div class="custom-date-group" id="custom-date-group" style="display: none;">
-                    <select id="filter-custom-day" class="filter-select">
-                        <option value="all">Tanggal</option>
-                        ${Array.from({ length: 31 }, (_, i) => i + 1)
-                          .map((d) => `<option value="${d}">${d}</option>`)
-                          .join("")}
-                    </select>
-                    <select id="filter-custom-month" class="filter-select">
-                        <option value="all">Bulan</option>
-                        ${MONTH_NAMES.map(
-                          (m, i) => `<option value="${i + 1}">${m}</option>`,
-                        ).join("")}
-                    </select>
-                    <select id="filter-custom-year" class="filter-select">
-                        <option value="all">Tahun</option>
-                    </select>
-                </div>
-                <button id="reset-filters" class="btn-secondary" style="width: 100%; margin-top: 10px;">
-                    <i class="fas fa-undo"></i> Reset Filter
-                </button>
-                <button type="button" id="apply-filters" class="btn-primary" style="width: 100%; margin-top: 10px;">
-                    <i class="fas fa-check"></i> Terapkan Filter
-                </button>
-            </div>
-            
-            <!-- Summary -->
-            <div class="transactions-summary card">
-                <div class="summary-item">
-                    <span>📊 Total Transaksi:</span>
-                    <strong id="total-count">0</strong>
-                </div>
-                <div class="summary-item">
-                    <span>💰 Total Pemasukan:</span>
-                    <strong class="income-text" id="total-income-summary">Rp 0</strong>
-                </div>
-                <div class="summary-item">
-                    <span>💸 Total Pengeluaran:</span>
-                    <strong class="expense-text" id="total-expense-summary">Rp 0</strong>
-                </div>
-                <div class="summary-item">
-                    <span>🐷 Total Ditabung:</span>
-                    <strong class="saving-text" id="total-saving-summary">Rp 0</strong>
+                            <div id="pagination" class="pagination"></div>
+                        </div>
+                    </section>
                 </div>
             </div>
-            
-            <!-- Transactions List -->
-            <div class="transactions-list-container card">
-                <div id="transactions-list" class="transactions-list">
-                    <div class="empty-state">
-                        <i class="fas fa-spinner fa-spin"></i>
-                        <p>Memuat transaksi...</p>
+
+            <!-- Filter (sheet di mobile, dialog di desktop) -->
+            <div class="tp-filter" id="filter-bar" aria-hidden="true">
+                <div class="tp-filter-sheet" role="dialog" aria-label="Filter transaksi">
+                    <div class="tp-filter-head">
+                        <h3>Filter Transaksi</h3>
+                        <button type="button" class="tp-close" id="filter-close-btn" aria-label="Tutup">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="tp-filter-body">
+                        <div class="tp-search">
+                            <i class="fas fa-search"></i>
+                            <input type="text" id="search-transaction" placeholder="Cari transaksi..." class="tp-input">
+                        </div>
+                        <select id="filter-type" class="tp-input">
+                            <option value="all">Semua Tipe</option>
+                            <option value="income">Pemasukan</option>
+                            <option value="expense">Pengeluaran</option>
+                            <option value="saving">Tabungan</option>
+                        </select>
+                        <select id="filter-wallet" class="tp-input">
+                            <option value="all">Semua Dompet</option>
+                        </select>
+                        <select id="filter-category" class="tp-input">
+                            <option value="all">Semua Kategori</option>
+                        </select>
+                        <select id="filter-period" class="tp-input">
+                            <option value="today">Hari Ini</option>
+                            <option value="week">Minggu Ini</option>
+                            <option value="month">Bulan Ini</option>
+                            <option value="all">Semua Waktu</option>
+                            <option value="custom">Pilih Tanggal</option>
+                        </select>
+                        <div class="tp-custom-date" id="custom-date-group" style="display: none;">
+                            <select id="filter-custom-day" class="tp-input">
+                                <option value="all">Tanggal</option>
+                                ${Array.from({ length: 31 }, (_, i) => i + 1)
+                                  .map(
+                                    (d) => `<option value="${d}">${d}</option>`,
+                                  )
+                                  .join("")}
+                            </select>
+                            <select id="filter-custom-month" class="tp-input">
+                                <option value="all">Bulan</option>
+                                ${MONTH_NAMES.map(
+                                  (m, i) =>
+                                    `<option value="${i + 1}">${m}</option>`,
+                                ).join("")}
+                            </select>
+                            <select id="filter-custom-year" class="tp-input">
+                                <option value="all">Tahun</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="tp-filter-foot">
+                        <button type="button" id="reset-filters" class="tp-btn">Atur Ulang</button>
+                        <button type="button" id="apply-filters" class="tp-btn primary">Terapkan</button>
                     </div>
                 </div>
-                
-                <!-- Pagination -->
-                <div id="pagination" class="pagination"></div>
             </div>
         </div>
     `;
@@ -485,7 +541,7 @@ export async function renderTransactionsPage() {
   // Load tahun untuk filter tanggal custom
   loadYearsForFilter();
 
-  // Opsi periode mobile + samakan kontrol filter dengan state aktif
+  // Opsi periode + samakan kontrol filter dengan state aktif
   buildMobilePeriodOptions();
   syncFilterControls();
 
@@ -497,11 +553,21 @@ export async function renderTransactionsPage() {
   scheduleTxFullBleed();
 }
 
-// Load semua transaksi dari database
+// Load semua transaksi dari database + total saldo dompet (untuk persentase)
 async function loadTransactions() {
   allTransactions = await getAllItems(STORES.TRANSACTIONS);
-  // Sort by date descending (terbaru di atas)
-  allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Terbaru di atas: tanggal, lalu jam, lalu waktu dibuat
+  allTransactions.sort((a, b) => {
+    const byDate = new Date(b.date) - new Date(a.date);
+    if (byDate !== 0) return byDate;
+    const timeA = a.time || "00:00";
+    const timeB = b.time || "00:00";
+    if (timeA !== timeB) return timeB.localeCompare(timeA);
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+
+  const wallets = await getAllItems(STORES.WALLETS);
+  walletTotal = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
 }
 
 // Load wallets untuk dropdown filter
@@ -708,39 +774,40 @@ function renderFilteredTransactions() {
 
 // Update summary statistics
 function updateSummary(transactions) {
-  const totalIncome = transactions
-    .filter((t) => t.type === "income")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalExpense = transactions
-    .filter((t) => t.type === "expense")
-    .reduce((sum, t) => sum + t.amount, 0);
-  const totalSaving = transactions
-    .filter((t) => t.type === "saving")
-    .reduce((sum, t) => sum + t.amount, 0);
+  const sumOf = (type) =>
+    transactions
+      .filter((t) => t.type === type)
+      .reduce((sum, t) => sum + t.amount, 0);
+  const totalIncome = sumOf("income");
+  const totalExpense = sumOf("expense");
+  const totalSaving = sumOf("saving");
 
-  const totalCount = document.getElementById("total-count");
-  const totalIncomeEl = document.getElementById("total-income-summary");
-  const totalExpenseEl = document.getElementById("total-expense-summary");
-  const totalSavingEl = document.getElementById("total-saving-summary");
+  const countEl = document.getElementById("total-count");
+  if (countEl) countEl.textContent = transactions.length;
 
-  if (totalCount) totalCount.textContent = transactions.length;
-  if (totalIncomeEl) totalIncomeEl.textContent = formatCurrency(totalIncome);
-  if (totalExpenseEl) totalExpenseEl.textContent = formatCurrency(totalExpense);
-  if (totalSavingEl) totalSavingEl.textContent = formatCurrency(totalSaving);
+  [
+    ["total-income-summary", totalIncome],
+    ["total-expense-summary", totalExpense],
+    ["total-saving-summary", totalSaving],
+  ].forEach(([id, value]) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = formatCurrencyShort(value);
+      el.title = formatCurrency(value);
+    }
+    const pct = document.getElementById(`${id}-pct`);
+    if (pct) pct.textContent = formatPct(value, walletTotal);
+  });
 
-  // Ringkasan versi mobile
-  const mExpense = document.getElementById("m-total-expense");
-  const mIncome = document.getElementById("m-total-income");
-  const mSaving = document.getElementById("m-total-saving");
-  // Porsi tiap circle bar = bagian dari total ketiganya
-  const grand = totalExpense + totalIncome + totalSaving;
-  const shareOf = (v) => (grand > 0 ? v / grand : 0);
-  if (mExpense)
-    setMobileStat("m-total-expense", totalExpense, shareOf(totalExpense));
-  if (mIncome)
-    setMobileStat("m-total-income", totalIncome, shareOf(totalIncome));
-  if (mSaving)
-    setMobileStat("m-total-saving", totalSaving, shareOf(totalSaving));
+  // Chip di header: selisih pemasukan - pengeluaran pada periode aktif
+  const net = totalIncome - totalExpense;
+  const chip = document.getElementById("tp-net-chip");
+  if (chip) {
+    chip.className = `tp-chip ${net >= 0 ? "up" : "down"}`;
+    chip.innerHTML = `<i class="fas ${net >= 0 ? "fa-caret-up" : "fa-caret-down"}"></i> ${net >= 0 ? "+" : ""}${formatCurrency(net)} ${periodPhrase()}`;
+  }
+
+  renderBalanceUi();
 }
 
 // Render daftar transaksi
@@ -760,61 +827,56 @@ function renderTransactionsList(transactions) {
       emptyMessages[currentFilters.period] || "Belum ada transaksi";
 
     container.innerHTML = `
-            <div class="empty-state">
+            <div class="tp-empty">
                 <i class="fas fa-receipt"></i>
                 <p>${message}</p>
-                <button class="btn-primary btn-add-transaction" style="margin-top: 12px;">
+                <button type="button" class="tp-btn primary btn-add-transaction">
                     <i class="fas fa-plus"></i> Tambah Transaksi
                 </button>
             </div>
         `;
 
-    // Re-attach add button event
     const addBtn = container.querySelector(".btn-add-transaction");
     if (addBtn) {
       addBtn.addEventListener("click", () => showTransactionModal());
     }
+    container.onclick = null;
+    container.onkeydown = null;
     return;
   }
 
   container.innerHTML = transactions
     .map((t) => {
-      const fullAmount = formatCurrency(t.amount);
-      const mobileAmount =
-        t.type === "income"
-          ? `+ ${fullAmount.replace(/^Rp\s*/, "")}`
-          : t.type === "saving"
-            ? `🐷 ${fullAmount}`
-            : `- ${fullAmount}`;
+      const isMulti = t.isMultiItem === true && Array.isArray(t.items);
+      const sign =
+        t.type === "income" ? "+ " : t.type === "expense" ? "- " : "";
+      const lead =
+        t.type === "saving"
+          ? '<i class="fas fa-piggy-bank"></i>'
+          : typeTriangle(t.type);
+      const mainMeta = isMulti
+        ? `${t.items.length} barang`
+        : t.category || "Umum";
       return `
-        <div class="transaction-card" data-id="${t.id}">
-            <div class="transaction-card-icon ${t.type}">
-                ${renderTypeTriangle(t.type)}
-                <i class="fas ${t.isMultiItem === true ? "fa-shopping-basket" : t.type === "income" ? "fa-arrow-down" : t.type === "saving" ? "fa-piggy-bank" : "fa-arrow-up"}"></i>
+        <div class="tp-row" data-id="${t.id}" role="button" tabindex="0">
+            <div class="tp-lead ${t.type}">
+                <span class="tp-lead-ico">${lead}</span>
+                <span class="tp-pct ${t.type}" title="Dari total saldo dompet">${formatPct(t.amount, walletTotal)}</span>
             </div>
-            <div class="transaction-card-details">
-                <div class="transaction-card-name">${escapeHtml(t.itemName)}</div>
-                <div class="transaction-card-meta">
-                    ${
-                      t.isMultiItem === true && Array.isArray(t.items)
-                        ? `<span class="category-badge d-only">🧺 ${t.items.length} barang</span>`
-                        : `<span class="category-badge d-only">📌 ${t.category || "Umum"}</span>`
-                    }
-                    <span class="date-badge d-only">📅 ${formatDate(t.date)}</span>
-                    ${t.time ? `<span class="time-badge d-only">⏰ ${t.time}</span>` : ""}
-                    <span class="m-only m-date">${ICON_CALENDAR}<span class="m-date-text">${formatMobileDateTime(t)}</span></span>
+            <div class="tp-info">
+                <div class="tp-name">${escapeHtml(t.itemName)}</div>
+                <div class="tp-meta">
+                    <span>${escapeHtml(mainMeta)}</span>
+                    <span>${formatMobileDateTime(t)}</span>
                 </div>
-                ${t.note ? `<div class="transaction-card-note">📝 ${escapeHtml(t.note)}</div>` : ""}
+                ${t.note ? `<div class="tp-note">${escapeHtml(t.note)}</div>` : ""}
             </div>
-            <div class="transaction-card-amount ${t.type}">
-                <span class="d-only">${t.type === "income" ? "+" : t.type === "saving" ? "🐷" : "-"} ${fullAmount}</span>
-                <span class="m-only m-amount">${mobileAmount}</span>
-            </div>
-            <div class="transaction-card-actions">
-                <button class="icon-btn edit-transaction" data-id="${t.id}" title="Edit">
+            <div class="tp-amount ${t.type}">${sign}${formatCurrency(t.amount)}</div>
+            <div class="tp-row-actions">
+                <button type="button" class="tp-icon-btn edit-transaction" data-id="${t.id}" title="Edit" aria-label="Edit transaksi">
                     <i class="fas fa-edit"></i>
                 </button>
-                <button class="icon-btn delete-transaction" data-id="${t.id}" title="Hapus">
+                <button type="button" class="tp-icon-btn danger delete-transaction" data-id="${t.id}" title="Hapus" aria-label="Hapus transaksi">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
@@ -823,30 +885,34 @@ function renderTransactionsList(transactions) {
     })
     .join("");
 
-  // Attach event listeners to edit/delete buttons
-  document.querySelectorAll(".edit-transaction").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const id = parseInt(btn.dataset.id);
-      editTransaction(id);
-    });
-  });
-
-  document.querySelectorAll(".delete-transaction").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const id = parseInt(btn.dataset.id);
-      deleteTransactionById(id);
-    });
-  });
-
-  // Klik card (selain tombol edit/hapus) membuka detail transaksi
-  document.querySelectorAll(".transaction-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      const id = parseInt(card.dataset.id);
-      showTransactionDetailModal(id);
-    });
-  });
+  // Satu handler untuk semua baris (edit / hapus / buka detail)
+  const handleRowAction = (target) => {
+    const editBtn = target.closest(".edit-transaction");
+    if (editBtn) {
+      editTransaction(parseInt(editBtn.dataset.id));
+      return true;
+    }
+    const delBtn = target.closest(".delete-transaction");
+    if (delBtn) {
+      deleteTransactionById(parseInt(delBtn.dataset.id));
+      return true;
+    }
+    return false;
+  };
+  container.onclick = (e) => {
+    if (handleRowAction(e.target)) return;
+    const row = e.target.closest(".tp-row");
+    if (row) showTransactionDetailModal(parseInt(row.dataset.id));
+  };
+  container.onkeydown = (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    if (e.target.closest("button")) return;
+    const row = e.target.closest(".tp-row");
+    if (row) {
+      e.preventDefault();
+      showTransactionDetailModal(parseInt(row.dataset.id));
+    }
+  };
 }
 
 // Modal detail transaksi (read-only) — menampilkan nama, tipe, harga satuan,
@@ -1008,28 +1074,26 @@ function renderPagination(totalPages) {
 }
 
 // Setup event listeners untuk filter
+let filterEscBound = false;
+
 function setupTransactionEventListeners() {
-  // ── Modal filter khusus mobile ──
-  // Di desktop, .filter-bar selalu tampil normal (CSS tidak menyembunyikannya).
-  // Di mobile (<=768px), .filter-bar disembunyikan (display:none) dan cuma
-  // muncul sebagai overlay fullscreen kalau class "filter-bar-open" aktif.
-  const filterToggleBtn = document.getElementById("filter-toggle-btn");
+  // ── Filter: sheet di mobile, dialog di desktop ──
+  // Semua kontrol filter langsung memperbarui daftar; tombol "Terapkan" hanya menutup.
   const filterBar = document.getElementById("filter-bar");
   const filterCloseBtn = document.getElementById("filter-close-btn");
   const applyFiltersBtn = document.getElementById("apply-filters");
 
   const openFilterModal = () => {
-    filterBar?.classList.add("filter-bar-open");
+    filterBar?.classList.add("open");
+    filterBar?.setAttribute("aria-hidden", "false");
     document.body.classList.add("filter-modal-active");
   };
   const closeFilterModal = () => {
-    filterBar?.classList.remove("filter-bar-open");
+    filterBar?.classList.remove("open");
+    filterBar?.setAttribute("aria-hidden", "true");
     document.body.classList.remove("filter-modal-active");
   };
 
-  if (filterToggleBtn) {
-    filterToggleBtn.addEventListener("click", openFilterModal);
-  }
   document
     .getElementById("m-filter-btn")
     ?.addEventListener("click", openFilterModal);
@@ -1042,20 +1106,40 @@ function setupTransactionEventListeners() {
   document
     .getElementById("m-add-multi-btn")
     ?.addEventListener("click", () => showMultiTransactionModal());
-  if (filterCloseBtn) {
-    filterCloseBtn.addEventListener("click", closeFilterModal);
-  }
-  if (applyFiltersBtn) {
-    // Filter lain sudah live-update (langsung re-render tiap select berubah),
-    // tombol ini cuma menutup modalnya di mobile setelah user selesai memilih
-    applyFiltersBtn.addEventListener("click", closeFilterModal);
-  }
-  // Tutup modal kalau klik area backdrop di luar konten filter (mobile)
-  if (filterBar) {
-    filterBar.addEventListener("click", (e) => {
-      if (e.target === filterBar) closeFilterModal();
+  filterCloseBtn?.addEventListener("click", closeFilterModal);
+  applyFiltersBtn?.addEventListener("click", closeFilterModal);
+  // Klik area gelap di luar sheet menutup filter
+  filterBar?.addEventListener("click", (e) => {
+    if (e.target === filterBar) closeFilterModal();
+  });
+  if (!filterEscBound) {
+    filterEscBound = true;
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      const bar = document.getElementById("filter-bar");
+      if (bar?.classList.contains("open")) {
+        bar.classList.remove("open");
+        bar.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("filter-modal-active");
+      }
     });
   }
+
+  // Tombol mata: sembunyikan / tampilkan total saldo
+  document.getElementById("toggle-balance")?.addEventListener("click", () => {
+    const hidden = localStorage.getItem(HIDE_BALANCE_KEY) !== "1";
+    localStorage.setItem(HIDE_BALANCE_KEY, hidden ? "1" : "0");
+    renderBalanceUi();
+  });
+
+  // Perbarui data
+  document
+    .getElementById("refresh-transactions")
+    ?.addEventListener("click", async () => {
+      showToast("Memperbarui data...", "info");
+      await renderTransactionsPage();
+      showToast("Data diperbarui", "success");
+    });
 
   // Search input with debounce
   const searchInput = document.getElementById("search-transaction");
@@ -1176,22 +1260,6 @@ function setupTransactionEventListeners() {
       renderFilteredTransactions();
     });
   }
-
-  // Add transaction button
-  const addBtn = document.getElementById("add-transaction-btn");
-  if (addBtn) {
-    addBtn.addEventListener("click", () => {
-      showTransactionModal();
-    });
-  }
-
-  // Add multi-item transaction button
-  const addMultiBtn = document.getElementById("add-multi-transaction-btn");
-  if (addMultiBtn) {
-    addMultiBtn.addEventListener("click", () => {
-      showMultiTransactionModal();
-    });
-  }
 }
 
 // Show modal untuk tambah/edit transaksi
@@ -1236,10 +1304,10 @@ async function showTransactionModalImpl(transactionId = null) {
                 <label>Tipe Transaksi</label>
                 <div class="type-selector">
                     <button type="button" class="type-btn ${!isEdit || transaction.type === "expense" ? "active" : ""}" data-type="expense">
-                        <i class="fas fa-arrow-up"></i> Pengeluaran
+                        <span class="type-tri">${typeTriangle("expense")}</span> Pengeluaran
                     </button>
                     <button type="button" class="type-btn ${isEdit && transaction.type === "income" ? "active" : ""}" data-type="income">
-                        <i class="fas fa-arrow-down"></i> Pemasukan
+                        <span class="type-tri">${typeTriangle("income")}</span> Pemasukan
                     </button>
                     <button type="button" class="type-btn ${isEdit && transaction.type === "saving" ? "active" : ""}" data-type="saving">
                         <i class="fas fa-piggy-bank"></i> Tabungan
@@ -1837,6 +1905,11 @@ async function showTransactionModalImpl(transactionId = null) {
         async (savingId) => {
           await commitTransaction(savingId);
         },
+        undefined,
+        {
+          previousAmount:
+            isEdit && transaction.type === "saving" ? transaction.amount : 0,
+        },
       );
     } else {
       await commitTransaction(null);
@@ -1856,14 +1929,95 @@ async function showTransactionModalImpl(transactionId = null) {
   // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
-// Modal untuk memilih tabungan tujuan (dipakai saat transaksi bertipe "saving")
+// Style modal "Pilih Tabungan Tujuan" (tambahan di atas gaya sheet transaksi)
+function ensureSavingGoalStyles() {
+  if (document.getElementById("saving-goal-styles")) return;
+  const style = document.createElement("style");
+  style.id = "saving-goal-styles";
+  style.textContent = `
+    .sg-summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(139, 92, 246, 0.1);
+    }
+    .sg-summary-name {
+      min-width: 0;
+      font-size: 0.88rem;
+      color: var(--text-secondary, #6F6F7B);
+      overflow-wrap: anywhere;
+    }
+    .sg-summary-amount {
+      flex: none;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #8b5cf6;
+      white-space: nowrap;
+    }
+    .sg-preview {
+      margin-top: 4px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: var(--bg-primary, #F4F4F7);
+      font-size: 0.82rem;
+      color: var(--text-primary, #242333);
+    }
+    .sg-preview[hidden] { display: none; }
+    .sg-preview-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .sg-preview-top span { color: var(--text-secondary, #6F6F7B); }
+    .sg-preview-top strong { font-variant-numeric: tabular-nums; }
+    .sg-bar {
+      height: 8px;
+      border-radius: 999px;
+      background: var(--border-color, #E4E4EA);
+      overflow: hidden;
+    }
+    .sg-bar > span {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+      background: #8b5cf6;
+      transition: width 0.25s ease;
+    }
+    .sg-bar.done > span { background: #16A34A; }
+  `;
+  document.head.appendChild(style);
+}
+
+// Naikkan overlay di atas semua modal yang sedang terbuka (mis. modal transaksi),
+// supaya modal pilih tabungan tidak tertimpa modal di bawahnya
+function raiseAboveOverlays(modal) {
+  let top = 0;
+  document.querySelectorAll(".modal-overlay").forEach((el) => {
+    if (el === modal) return;
+    const z = parseInt(getComputedStyle(el).zIndex, 10);
+    if (!isNaN(z) && z > top) top = z;
+  });
+  if (top > 0)
+    modal.style.setProperty("z-index", String(top + 10), "important");
+}
+
+// Modal untuk memilih tabungan tujuan (dipakai saat transaksi bertipe "saving").
+// Tampil di atas modal transaksi dengan desain sheet yang sama.
+// options.previousAmount: nominal transaksi lama saat edit (agar pratinjau tidak dobel hitung)
 export async function showSelectSavingGoalModal(
   amount,
   itemName,
   preselectedId,
   onConfirm,
   helpText = "Nominal transaksi ini akan langsung ditambahkan ke tabungan yang dipilih.",
+  options = {},
 ) {
+  ensureTxSheetStyles();
   const savings = await getAllItems(STORES.SAVINGS);
 
   if (savings.length === 0) {
@@ -1874,43 +2028,66 @@ export async function showSelectSavingGoalModal(
     return;
   }
 
+  ensureSavingGoalStyles();
+  // Cegah modal ganda kalau tombol ditekan berulang
+  document.getElementById("saving-goal-modal")?.remove();
+
+  const previousAmount = Number(options.previousAmount) || 0;
+  const baseOf = (s) =>
+    s.id === preselectedId
+      ? Math.max(0, (s.currentAmount || 0) - previousAmount)
+      : s.currentAmount || 0;
+
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.id = "saving-goal-modal";
+  modal.className = "modal-overlay tx-sheet-overlay";
   modal.innerHTML = `
-    <div class="modal-container modal-small">
+    <div class="modal-container modal-large tx-sheet">
       <div class="modal-header">
         <h3><i class="fas fa-piggy-bank"></i> Pilih Tabungan Tujuan</h3>
-        <button class="modal-close-btn modal-close-x">&times;</button>
+        <button type="button" class="modal-close-btn modal-close-x" aria-label="Tutup">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="info-box">
-          <div>${escapeHtml(itemName)}</div>
-          <div style="font-weight:700;font-size:1.05rem;">${formatCurrency(amount)}</div>
-        </div>
-        <div class="form-group">
-          <label>Masukkan ke tabungan mana?</label>
-          <select id="select-saving-goal" class="form-input" required>
-            <option value="">Pilih Tabungan</option>
-            ${savings
-              .map(
-                (s) => `
-              <option value="${s.id}" ${preselectedId === s.id ? "selected" : ""}>
-                ${escapeHtml(s.name)} (${formatCurrency(s.currentAmount)} / ${formatCurrency(s.targetAmount)})
-              </option>`,
-              )
-              .join("")}
-          </select>
-          <small class="form-help">${helpText}</small>
-        </div>
-        <div class="modal-buttons">
-          <button type="button" class="btn-secondary modal-close-btn">Batal</button>
-          <button type="button" class="btn-primary" id="confirm-select-saving">Konfirmasi</button>
-        </div>
+        <form id="saving-goal-form">
+          <div class="tx-sheet-scroll">
+            <div class="sg-summary">
+              <span class="sg-summary-name">${escapeHtml(itemName)}</span>
+              <strong class="sg-summary-amount">${formatCurrency(amount)}</strong>
+            </div>
+            <div class="form-group">
+              <label for="select-saving-goal">Masukkan ke tabungan mana?</label>
+              <select id="select-saving-goal" class="form-input" required>
+                <option value="">Pilih Tabungan</option>
+                ${savings
+                  .map(
+                    (s) => `
+                  <option value="${s.id}" ${preselectedId === s.id ? "selected" : ""}>
+                    ${escapeHtml(s.name)} (${formatCurrency(s.currentAmount)} / ${formatCurrency(s.targetAmount)})
+                  </option>`,
+                  )
+                  .join("")}
+              </select>
+              <small class="form-help">${helpText}</small>
+            </div>
+            <div class="sg-preview" id="sg-preview" hidden>
+              <div class="sg-preview-top">
+                <span>Setelah ditabung</span>
+                <strong id="sg-preview-text"></strong>
+              </div>
+              <div class="sg-bar" id="sg-bar"><span id="sg-bar-fill" style="width:0%"></span></div>
+            </div>
+          </div>
+          <div class="modal-buttons tx-sheet-footer">
+            <button type="button" class="btn-secondary modal-close-btn">Batal</button>
+            <button type="submit" class="btn-primary" id="confirm-select-saving">Konfirmasi</button>
+          </div>
+        </form>
       </div>
     </div>
   `;
 
   document.body.appendChild(modal);
+  raiseAboveOverlays(modal);
 
   const closeModal = () => modal.remove();
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
@@ -1919,10 +2096,35 @@ export async function showSelectSavingGoalModal(
   // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
   // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 
+  const select = modal.querySelector("#select-saving-goal");
+  const preview = modal.querySelector("#sg-preview");
+  const updatePreview = () => {
+    const saving = savings.find((s) => String(s.id) === select.value);
+    if (!saving) {
+      preview.hidden = true;
+      return;
+    }
+    const after = baseOf(saving) + amount;
+    const target = saving.targetAmount || 0;
+    const pct =
+      target > 0 ? Math.min(100, Math.round((after / target) * 100)) : 0;
+    modal.querySelector("#sg-preview-text").textContent =
+      `${formatCurrency(after)} / ${formatCurrency(target)} (${pct}%)`;
+    modal.querySelector("#sg-bar-fill").style.width = `${pct}%`;
+    modal
+      .querySelector("#sg-bar")
+      .classList.toggle("done", target > 0 && after >= target);
+    preview.hidden = false;
+  };
+  select.addEventListener("change", updatePreview);
+  updatePreview();
+  select.focus();
+
   modal
-    .querySelector("#confirm-select-saving")
-    .addEventListener("click", async () => {
-      const savingIdRaw = modal.querySelector("#select-saving-goal").value;
+    .querySelector("#saving-goal-form")
+    .addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const savingIdRaw = select.value;
       if (!savingIdRaw) {
         showToast("Pilih tabungan tujuan dulu", "error");
         return;
@@ -2621,492 +2823,553 @@ async function deleteTransactionById(id) {
 }
 
 // Helper functions
-// Style untuk halaman transaksi: warna ikon & nominal per tipe
-// (income/expense/saving) - sebelumnya class ini belum ada CSS-nya sama sekali
+// Style halaman transaksi: mengikuti desain dashboard (header hijau, kartu, tile, daftar bergaris tipis)
 function addTransactionStyles() {
   if (document.getElementById("transaction-styles")) return;
 
   const style = document.createElement("style");
   style.id = "transaction-styles";
   style.textContent = `
-    .transaction-card-icon {
-      width: 42px;
-      height: 42px;
-      border-radius: 12px;
+    .transactions-container {
+      --d-brand: #0B3D2A;
+      --d-brand-2: #0F5A3A;
+      --d-lime: #C6F432;
+      --d-accent: #16A34A;
+      --d-red: #DC4C4C;
+      --d-green: #16A34A;
+      --d-purple: #8b5cf6;
+      --d-surface: var(--bg-secondary, #fff);
+      --d-soft: var(--bg-primary, #F4F4F7);
+      --d-text: var(--text-primary, #242333);
+      --d-muted: var(--text-secondary, #6F6F7B);
+      --d-line: var(--border-color, #EEEEF3);
+      --tp-pad: 16px;
+      width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ---------- Header ---------- */
+    .tp-hero {
+      position: relative;
+      z-index: 0;
+      color: #fff;
+      margin: 0;
+      padding: 28px 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    /* Latar header: melebar sampai tepi layar (diatur oleh fitTxFullBleed) */
+    .tp-hero::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      top: calc(var(--tp-bleed-t, 0px) * -1 - 2px);
+      left: calc(var(--tp-bleed-l, 0px) * -1 - 2px);
+      right: calc(var(--tp-bleed-r, 0px) * -1 - 2px);
+      bottom: 0;
+      background:
+        radial-gradient(circle at 92% 0%, rgba(198, 244, 50, 0.16) 0%, rgba(198, 244, 50, 0) 45%),
+        linear-gradient(160deg, var(--d-brand-2) 0%, var(--d-brand) 70%);
+      border-radius: 0 0 32px 32px;
+      box-shadow: 0 14px 30px rgba(11, 61, 42, 0.28);
+      pointer-events: none;
+    }
+    .tp-hero > * { position: relative; }
+    .tp-top { display: flex; align-items: center; gap: 12px; }
+    .tp-avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.12);
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      color: #fff;
+    }
+    .tp-greet { flex: 1; min-width: 0; }
+    .tp-hero .tp-eyebrow { display: block; font-size: 0.72rem; color: #B7D9C6 !important; }
+    .tp-hero .tp-greet h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #fff !important;
+      letter-spacing: -0.01em;
+    }
+    .tp-hero .tp-refresh {
+      width: 40px;
+      height: 40px;
+      flex: none;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+      cursor: pointer;
+      transition: transform 0.3s ease;
+    }
+    .tp-hero .tp-refresh:hover { transform: rotate(180deg); }
+    .tp-balance {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+      min-width: 0;
+      max-width: 100%;
+      contain: inline-size; /* lebar alami nominal tidak ikut melebarkan header */
+    }
+    .tp-hero .tp-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #B7D9C6 !important;
+    }
+    .tp-eye {
+      padding: 2px;
+      border: 0;
+      background: none;
+      color: #B7D9C6;
+      font-size: 0.85rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .tp-eye:hover { color: #fff; }
+    .tp-hero .tp-amount {
+      font-size: clamp(1.3rem, 7vw, 2.2rem);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      color: #fff !important;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .tp-hero .tp-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+    .tp-hero .tp-chip.up { background: var(--d-lime); color: var(--d-brand) !important; }
+    .tp-hero .tp-chip.down { background: rgba(255, 156, 152, 0.22); color: #FFB8B5 !important; }
+    .tp-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .tp-hero .tp-action {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 0;
+      border: 0;
+      background: none;
+      color: #fff !important;
+      font-family: inherit;
+      font-size: 0.72rem !important;
+      font-weight: 500 !important;
+      line-height: 1.2;
+      text-align: center;
+      text-decoration: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tp-hero .tp-action .ico {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      font-size: 1.05rem;
+    }
+    .tp-hero .tp-action.primary .ico {
+      background: var(--d-lime);
+      border-color: var(--d-lime);
+      color: var(--d-brand);
+    }
+    /* Pilihan periode: <select> transparan menutupi tombol */
+    .tp-period-select {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      font-size: 16px;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    /* ---------- Layout & section ---------- */
+    .tp-grid { display: flex; flex-direction: column; gap: 20px; }
+    .tp-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+    .tp-section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0 2px 10px;
+    }
+    .tp-section-head h2 {
+      margin: 0;
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: var(--d-text);
+    }
+    .tp-muted { font-size: 0.8rem; color: var(--d-muted); }
+    .tp-card {
+      background: var(--d-surface);
+      border-radius: 22px;
+      padding: 16px;
+      border: 1px solid var(--d-line);
+      box-shadow: 0 1px 2px rgba(15, 40, 28, 0.04), 0 8px 24px rgba(15, 40, 28, 0.05);
+    }
+
+    /* ---------- Tile ringkasan ---------- */
+    .tp-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .tp-tile {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      text-align: center;
+      min-width: 0;
+    }
+    .tp-tile-ico {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+    .tp-tile-ico svg { width: 22px; height: 22px; display: block; }
+    .tp-tile-ico.income { background: #E6F6EC; color: var(--d-green); }
+    .tp-tile-ico.expense { background: #FDEBEA; color: var(--d-red); }
+    .tp-tile-ico.saving { background: #F0EAFE; color: var(--d-purple); }
+    .tp-tile .tp-pct { margin-top: -2px; font-size: 0.72rem; }
+    .tp-tile-label { font-size: 0.72rem; font-weight: 500; color: var(--d-muted); }
+    .tp-tile-value {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--d-text);
+      font-variant-numeric: tabular-nums;
+      word-break: break-word;
+    }
+    .tp-tile-value.income { color: var(--d-green); }
+    .tp-tile-value.saving { color: var(--d-purple); }
+
+    /* Persentase terhadap total saldo */
+    .tp-pct {
+      font-size: 0.68rem;
+      font-weight: 700;
+      line-height: 1.2;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .tp-pct.income { color: var(--d-green); }
+    .tp-pct.expense { color: var(--d-red); }
+    .tp-pct.saving { color: var(--d-purple); }
+
+    /* ---------- Daftar transaksi: tanpa kotak, dipisah garis tipis ---------- */
+    .tp-list-card { padding: 6px 16px; }
+    .tp-list { display: flex; flex-direction: column; }
+    .tp-row {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr) auto;
+      grid-template-areas:
+        "lead info amount"
+        "lead info actions";
+      column-gap: 12px;
+      row-gap: 4px;
+      align-items: start;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--d-line);
+      background: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tp-row:last-child { border-bottom: 0; }
+    .tp-row:focus-visible { outline: 2px solid var(--d-accent); outline-offset: 2px; border-radius: 8px; }
+    .tp-lead {
+      grid-area: lead;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding-top: 2px;
+    }
+    .tp-lead-ico {
+      height: 20px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 1.05rem;
-      flex-shrink: 0;
     }
-
-    .transaction-card-icon.income {
-      background: rgba(16, 185, 129, 0.12);
-      color: #10b981;
+    .tp-lead-ico svg { width: 18px; height: 18px; display: block; }
+    .tp-lead.saving .tp-lead-ico { color: var(--d-purple); }
+    .tp-info { grid-area: info; min-width: 0; }
+    .tp-name {
+      font-weight: 600;
+      font-size: 0.92rem;
+      color: var(--d-text);
+      overflow-wrap: anywhere;
     }
-
-    .transaction-card-icon.expense {
-      background: rgba(239, 68, 68, 0.12);
-      color: #ef4444;
+    .tp-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px 10px;
+      margin-top: 2px;
+      font-size: 0.75rem;
+      color: var(--d-muted);
     }
-
-    .transaction-card-icon.saving {
-      background: rgba(139, 92, 246, 0.12);
-      color: #8b5cf6;
-    }
-
-    .transaction-card-amount {
-      font-weight: 700;
-      font-size: 0.95rem;
+    .tp-meta span { white-space: nowrap; }
+    .tp-note {
+      margin-top: 4px;
+      font-size: 0.75rem;
+      color: var(--d-muted);
       white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-
-    .transaction-card-amount.income {
-      color: #10b981;
+    .tp-amount {
+      grid-area: amount;
+      justify-self: end;
+      font-weight: 700;
+      font-size: 0.9rem;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
-
-    .transaction-card-amount.expense {
-      color: #ef4444;
+    .tp-amount.income { color: var(--d-green); }
+    .tp-amount.expense { color: var(--d-text); }
+    .tp-amount.saving { color: var(--d-purple); }
+    .tp-row-actions {
+      grid-area: actions;
+      justify-self: end;
+      align-self: end;
+      display: flex;
+      gap: 6px;
     }
-
-    .transaction-card-amount.saving {
-      color: #8b5cf6;
+    .tp-icon-btn {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--d-soft);
+      color: var(--d-muted);
+      font-size: 0.75rem;
+      cursor: pointer;
     }
-
-    .saving-text {
-      color: #8b5cf6;
+    .tp-icon-btn:hover { color: var(--d-text); }
+    .tp-icon-btn.danger:hover { background: rgba(220, 76, 76, 0.12); color: var(--d-red); }
+    .tp-empty {
+      text-align: center;
+      padding: 28px 0;
+      color: var(--d-muted);
+      font-size: 0.88rem;
     }
+    .tp-empty i { display: block; margin-bottom: 8px; font-size: 1.8rem; opacity: 0.35; }
+    .tp-empty p { margin: 0; }
+    .tp-empty .tp-btn { margin-top: 14px; }
 
-    /* ===== Elemen khusus mobile: disembunyikan di desktop ===== */
-    .transactions-container .m-only { display: none; }
-    .transactions-container .tx-tri { display: none; }
+    /* ---------- Tombol & pagination ---------- */
+    .tp-btn {
+      min-height: 46px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--d-soft);
+      color: var(--d-text);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .tp-btn.primary { background: var(--d-brand); color: #fff; }
+    .transactions-container .pagination {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 4px 0 10px;
+    }
+    .transactions-container .pagination:empty { display: none; }
+    .transactions-container .pagination .page-btn {
+      min-width: 36px;
+      height: 36px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--d-soft);
+      color: var(--d-text);
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .transactions-container .pagination .page-btn.active { background: var(--d-brand); color: #fff; }
+    .transactions-container .pagination .page-btn:disabled { opacity: 0.4; cursor: default; }
 
-    /* ===== TAMPILAN MOBILE (<= 768px) ===== */
-    @media (max-width: 768px) {
-      .transactions-container {
-        --m-blue: #0d58cc;
-        --m-blue-bright: #1a62de;
-        --m-ink: #0f1b3d;
-        --m-muted: #6b7490;
-        --m-red: #f0384a;
-        --m-green: #2fbf71;
-        --m-purple: #8b5cf6;
-        --m-red-on-blue: #ff3b4e;
-        --m-green-on-blue: #3dd16f;
-        --m-purple-on-blue: #a074ff;
-      }
+    /* ---------- Filter ---------- */
+    .tp-filter {
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(15, 28, 22, 0.45);
+    }
+    .tp-filter.open { display: flex; }
+    .tp-filter-sheet {
+      width: 100%;
+      max-width: 480px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--d-surface);
+      color: var(--d-text);
+      border-radius: 28px 28px 0 0;
+      box-shadow: 0 -10px 40px rgba(15, 40, 28, 0.2);
+    }
+    .tp-filter-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px 8px;
+    }
+    .tp-filter-head h3 { margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--d-text); }
+    .tp-close {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--d-soft);
+      color: var(--d-muted);
+      cursor: pointer;
+    }
+    .tp-filter-body {
+      display: grid;
+      gap: 10px;
+      padding: 8px 20px;
+      overflow-y: auto;
+    }
+    .tp-input {
+      width: 100%;
+      box-sizing: border-box;
+      height: 46px;
+      padding: 0 14px;
+      border: 1.5px solid transparent;
+      border-radius: 14px;
+      background: var(--d-soft);
+      color: var(--d-text);
+      font-family: inherit;
+      font-size: 16px;
+      outline: none;
+    }
+    .tp-input:focus {
+      border-color: var(--d-brand);
+      box-shadow: 0 0 0 4px rgba(11, 61, 42, 0.12);
+    }
+    .tp-search { position: relative; }
+    .tp-search i {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--d-muted);
+      pointer-events: none;
+    }
+    .tp-search .tp-input { padding-left: 40px; }
+    .tp-custom-date { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .tp-filter-foot { display: flex; gap: 10px; padding: 12px 20px 20px; }
+    .tp-filter-foot .tp-btn { flex: 1; }
 
-      .transactions-container .d-only,
-      .transactions-container .page-header-actions,
-      .transactions-container .filter-toggle-btn,
-      .transactions-container .transactions-summary { display: none !important; }
+    /* ---------- Ikon tipe di pemilih tipe modal transaksi ---------- */
+    .type-selector .type-btn .type-tri {
+      width: 16px;
+      height: 16px;
+      margin-right: 2px;
+      flex: none;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      vertical-align: middle;
+      background: #fff;
+    }
+    .type-selector .type-btn .type-tri svg { width: 10px; height: 10px; display: block; }
 
-      /* Hapus padding halaman agar hero bisa full ke tepi (sama seperti Dompet) */
-      #page-content:has(.tx-mobile),
-      body *:has(.tx-mobile) {
+    /* ---------- Mobile ---------- */
+    @media (max-width: 767px) {
+      /* Hilangkan padding halaman agar header bisa full ke tepi */
+      #page-content:has(.transactions-container),
+      body *:has(.transactions-container) {
         padding-left: 0 !important;
         padding-right: 0 !important;
         padding-top: 0 !important;
         border-top-left-radius: 0 !important;
         border-top-right-radius: 0 !important;
       }
-      html:has(.tx-mobile),
-      body:has(.tx-mobile) { overflow-x: clip; max-width: 100%; }
-      .transactions-container,
-      .transactions-container .tx-mobile { max-width: 100%; overflow-x: clip; }
+      /* Potong kelebihan latar header tanpa mengunci scroll/zoom halaman */
+      #page-content:has(.transactions-container) { overflow-x: clip; }
 
-      .transactions-container .page-header { display: none !important; }
-
-      .transactions-container .tx-mobile {
-        display: block;
-        --tx-navy: #0b1b4d;
-      }
-
-      /* ===== Hero ===== */
-      .transactions-container .tx-hero {
-        position: relative;
-        z-index: 0;
-        text-align: center;
-        padding: 32px 16px 78px;
-      }
-      .transactions-container .tx-hero::before {
-        content: "";
-        position: absolute;
-        z-index: -1;
-        top: calc(var(--tx-bleed-t, 0px) * -1 - 2px);
-        left: calc(var(--tx-bleed-l, 0px) * -1 - 2px);
-        right: calc(var(--tx-bleed-r, 0px) * -1 - 2px);
-        bottom: 0;
-        background:
-          linear-gradient(180deg, rgba(10,5,35,0.25) 0%, rgba(10,5,35,0.55) 100%),
-          url("assets/background/violet.jpg") center / cover no-repeat,
-          #5b21b6;
-        border-radius: 0;
-      }
-      .transactions-container .tx-hero-label {
-        display: inline-block;
-        padding: 8px 22px;
-        border-radius: 999px;
-        background: rgba(10, 5, 35, 0.55);
-        border: 1px solid rgba(255,255,255,0.35);
-        color: #fff;
-        text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-        font-size: 0.8rem;
-        font-weight: 600;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-      }
-      .transactions-container .tx-stats {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        margin-top: 16px;
-        padding: 12px 4px;
-        border-radius: 18px;
-        background: linear-gradient(135deg, rgba(255,255,255,0.28), rgba(255,255,255,0.08));
-        -webkit-backdrop-filter: blur(14px) saturate(160%);
-        backdrop-filter: blur(14px) saturate(160%);
-        border: 1px solid rgba(255,255,255,0.45);
-        box-shadow: 0 8px 24px rgba(10, 5, 35, 0.25), inset 0 1px 0 rgba(255,255,255,0.5);
-      }
-      .transactions-container .tx-stat {
-        min-width: 0;
-        padding: 0 4px;
-      }
-      .transactions-container .tx-stat + .tx-stat { border-left: 1px solid rgba(255,255,255,0.3); }
-      .transactions-container .tx-stat-label {
-        display: block;
-        font-size: 0.72rem;
-        font-weight: 600;
-        color: #fff;
-        text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-      }
-      .transactions-container .tx-stat-value {
-        display: block;
-        margin-top: 4px;
-        /* mengecil otomatis sesuai jumlah karakter agar selalu 1 baris */
-        font-size: clamp(9px, calc((100vw - 64px) / 3 / (var(--chars, 12) * 0.62)), 16px);
-        font-weight: 800;
-        line-height: 1.3;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        text-shadow: 0 1px 4px rgba(0,0,0,0.65);
-      }
-      .transactions-container .tx-stat-value.expense { color: #ff7a88; }
-      .transactions-container .tx-stat-value.income { color: #5eea9a; }
-      .transactions-container .tx-stat-value.saving { color: #c4b5fd; }
-
-      /* ===== Circle bar ringkasan (glass tetap dari .tx-stats) ===== */
-      .transactions-container .tx-stats { padding: 14px 4px 16px; }
-      .transactions-container .tx-ring {
-        position: relative;
-        width: 74px;
-        max-width: 100%;
-        aspect-ratio: 1 / 1;
-        margin: 10px auto 0;
-      }
-      .transactions-container .tx-stat { overflow: hidden; }
-      .transactions-container .tx-ring svg {
-        position: absolute !important;
-        inset: 0;
-        width: 100% !important;
-        height: 100% !important;
-        max-width: 100% !important;
-        display: block;
-        overflow: hidden;
-      }
-      .transactions-container .tx-ring circle {
-        fill: rgba(10, 5, 35, 0.25);
-        stroke-width: 8;
-      }
-      .transactions-container .tx-ring .tx-ring-track {
-        stroke: rgba(255, 255, 255, 0.28);
-      }
-      .transactions-container .tx-ring .tx-ring-bar {
-        fill: none;
-        stroke-linecap: round;
-        transition: stroke-dashoffset 0.5s ease;
-      }
-      .transactions-container .tx-ring .tx-ring-bar.expense { stroke: #ff7a88; }
-      .transactions-container .tx-ring .tx-ring-bar.income { stroke: #5eea9a; }
-      .transactions-container .tx-ring .tx-ring-bar.saving { stroke: #c4b5fd; }
-      .transactions-container .tx-ring .tx-stat-value {
-        position: absolute;
-        inset: 0;
-        margin: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        font-size: 10px; /* sama untuk ketiganya */
-        line-height: 1.3;
-        padding: 0 12px;
-        box-sizing: border-box;
-        overflow: visible;
-        text-overflow: clip;
-      }
-
-      /* ===== Kotak 4 menu ===== */
-      .transactions-container .tx-actions {
-        position: relative;
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        margin: -52px 16px 0;
-        padding: 16px 2px 14px;
-        background: #fff;
-        border-radius: 22px;
-        box-shadow: 0 10px 30px rgba(11, 27, 77, 0.12);
-      }
-      .transactions-container .tx-action {
-        position: relative;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
-        margin: 0;
-        padding: 0 4px;
-        background: none;
-        border: none;
-        cursor: pointer;
-        font-family: inherit;
-        -webkit-tap-highlight-color: transparent;
-      }
-      .transactions-container .tx-action + .tx-action { border-left: 1px solid #e6ecf3; }
-      .transactions-container .tx-action-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #3eeed4;
-        color: #0b4a4a;
-        font-size: 1.15rem;
-        transition: transform 0.15s ease;
-      }
-      .transactions-container .tx-action:active .tx-action-icon { transform: scale(0.92); }
-      .transactions-container .tx-action-label {
-        max-width: 100%;
-        font-size: 0.74rem;
-        font-weight: 700;
-        line-height: 1.2;
-        color: var(--tx-navy);
-        text-align: center;
-      }
-      .transactions-container .tx-action-sub {
-        max-width: 100%;
-        margin-top: -6px;
-        font-size: 0.64rem;
-        font-weight: 600;
-        line-height: 1.2;
-        color: #51698f;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .transactions-container .tx-period-select {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        opacity: 0;
-        cursor: pointer;
-        font-size: 16px;
-        -webkit-appearance: none;
-        appearance: none;
-      }
-
-      .transactions-container .tx-section-title {
-        margin: 24px 16px 14px;
-        font-size: 1.15rem;
-        font-weight: 800;
-        color: var(--tx-navy);
-      }
-
-      /* Daftar transaksi */
-      .transactions-container .transactions-list-container.card {
-        background: transparent !important;
-        box-shadow: none !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-        padding: 0 !important;
-        margin: 0 16px 110px !important; /* sisi kiri-kanan + ruang bottom nav */
-      }
-      .transactions-container .transactions-list {
-        display: flex !important;
-        flex-direction: column;
-        gap: 14px;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      .transactions-container .transaction-card {
-        display: grid !important;
-        grid-template-columns: 44px minmax(0, 1fr) auto auto;
-        align-items: start;
-        margin: 0 !important;
-        padding: 8px 8px 8px 12px !important;
-        background: #fff !important;
-        border: 1px solid rgba(15, 27, 61, 0.04) !important;
-        border-radius: 14px !important;
-        box-shadow: 0 2px 10px rgba(40, 70, 140, 0.08) !important;
-      }
-      .transactions-container .transaction-card-icon {
-        grid-column: 1;
-        grid-row: 1 / span 3;
-        width: 44px !important;
-        height: 14px !important;
-        margin: 14px 0 0 !important;
-        padding: 0 !important;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: none !important;
-        border-radius: 0 !important;
-      }
-      .transactions-container .transaction-card-icon i { display: none !important; }
-      .transactions-container .transaction-card-icon .tx-tri {
-        display: block;
-        width: 16px;
-        height: 14px;
-      }
-      .transactions-container .transaction-card-icon.expense { color: var(--m-red) !important; }
-      .transactions-container .transaction-card-icon.income { color: var(--m-green) !important; }
-      .transactions-container .transaction-card-icon.saving { color: var(--m-purple) !important; }
-
-      .transactions-container .transaction-card-details { display: contents !important; }
-      .transactions-container .transaction-card-name {
-        grid-column: 2;
-        grid-row: 1;
-        margin: 0 !important;
-        padding-right: 8px;
-        font-size: 16px;
-        font-weight: 700;
-        line-height: 22px;
-        color: var(--m-ink);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .transactions-container .transaction-card-meta {
-        grid-column: 2;
-        grid-row: 2;
-        display: flex !important;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 4px;
-        margin: 2px 0 0 !important;
-        min-width: 0;
-        max-width: 100%;
-      }
-      .transactions-container .m-date { max-width: 100%; min-width: 0; }
-      .transactions-container .m-date {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 13px;
-        line-height: 18px;
-        color: var(--m-muted);
-      }
-      .transactions-container .m-date svg { width: 13px; height: 13px; flex-shrink: 0; }
-      .transactions-container .transaction-card-note {
-        grid-column: 2;
-        grid-row: 3;
-        margin-top: 4px;
-        font-size: 12px;
-        color: var(--m-muted);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .transactions-container .transaction-card-amount {
-        grid-column: 3;
-        grid-row: 1;
-        margin: 0 12px 0 0;
-        text-align: right;
-        font-size: 15px;
-        font-weight: 800;
-        line-height: 22px;
-        white-space: nowrap;
-      }
-      .transactions-container .transaction-card-amount.expense { color: var(--m-red); }
-      .transactions-container .transaction-card-amount.income { color: var(--m-green); }
-      .transactions-container .transaction-card-amount.saving { color: var(--m-purple); }
-      .transactions-container .m-amount { display: inline; }
-
-      .transactions-container .transaction-card-actions {
-        grid-column: 4;
-        grid-row: 1 / span 2;
-        display: flex !important;
-        align-items: flex-start !important;
-        gap: 5px;
-        margin: 12px 0 0 !important;
-        padding: 0 !important;
-      }
-      .transactions-container .transaction-card-actions .icon-btn {
-        width: 22px !important;
-        height: 22px !important;
-        min-width: 0 !important;
-        min-height: 0 !important;
-        max-height: 22px !important;
-        flex: 0 0 22px !important;
-        box-sizing: border-box !important;
-        align-self: flex-start !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        display: flex !important;
-        align-items: center;
-        justify-content: center;
-        background: #e5e9f2 !important;
-        color: #5d6788 !important;
-        border: 0 !important;
-        border-radius: 6px !important;
-        box-shadow: none !important;
-        font-size: 12px !important;
-      }
+      .transactions-container { padding-bottom: 110px; } /* ruang untuk bottom navigation */
+      .tp-grid { padding: 0 var(--tp-pad); }
     }
 
-    /* ===== Layar sempit (< 380px): nama dapat lebar penuh, nominal turun ke bawah nama ===== */
-    @media (max-width: 379px) {
-      .transactions-container .tx-action-icon { width: 42px; height: 42px; font-size: 1rem; }
-      .transactions-container .tx-action-label { font-size: 0.68rem; }
-      .transactions-container .tx-action-sub { font-size: 0.58rem; }
-      .transactions-container .tx-stat-label { font-size: 0.66rem; }
-
-      .transactions-container .transaction-card {
-        grid-template-columns: 32px minmax(0, 1fr) auto;
-        padding: 10px 8px 10px 6px !important;
+    /* ---------- Tablet / desktop ---------- */
+    @media (min-width: 768px) {
+      .tp-hero {
+        padding: 26px 28px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas: "top top" "balance actions";
+        align-items: center;
+        gap: 22px 24px;
       }
-      .transactions-container .transaction-card-icon {
-        grid-row: 1 / span 4;
-        width: 32px !important;
-        margin-top: 26px !important;
+      .tp-hero::before {
+        top: 0;
+        left: 0;
+        right: 0;
+        border-radius: 28px;
       }
-      .transactions-container .transaction-card-name {
-        grid-column: 2;
-        grid-row: 1;
-        font-size: 15px;
+      .tp-top { grid-area: top; }
+      .tp-balance { grid-area: balance; align-items: flex-start; text-align: left; }
+      .tp-actions { grid-area: actions; width: 340px; }
+      .tp-hero .tp-amount { font-size: 2.8rem; }
+      .tp-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.4fr);
+        gap: 20px;
+        align-items: start;
       }
-      .transactions-container .transaction-card-amount {
-        grid-column: 2;
-        grid-row: 2;
-        margin: 0;
-        text-align: left;
-        font-size: 14px;
-      }
-      .transactions-container .transaction-card-meta {
-        grid-column: 2;
-        grid-row: 3;
-        margin-top: 4px !important;
-      }
-      .transactions-container .transaction-card-note { grid-row: 4; }
-      .transactions-container .transaction-card-actions {
-        grid-column: 3;
-        grid-row: 1 / span 2;
-        margin-top: 0 !important;
-      }
-      .transactions-container .m-date { font-size: 12px; }
+      .tp-col-side { position: sticky; top: 16px; }
+      .tp-filter { align-items: center; }
+      .tp-filter-sheet { border-radius: 28px; }
     }
   `;
   document.head.appendChild(style);

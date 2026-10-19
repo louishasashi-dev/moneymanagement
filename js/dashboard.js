@@ -137,17 +137,20 @@ export async function renderDashboard() {
                         <div class="dash-section-head"><h2>Ringkasan Bulan Ini</h2></div>
                         <div class="dash-card dash-tiles">
                             <div class="dash-tile income-card">
-                                <span class="tile-ico in"><i class="fas fa-arrow-down"></i></span>
+                                <span class="tile-ico in">${typeTriangle("income")}</span>
+                                <span class="tile-pct in" title="Dari total saldo dompet">${formatPct(stats.income, totalWalletBalance)}</span>
                                 <span class="tile-label">Pemasukan</span>
                                 <span class="tile-value" id="total-income" title="${formatCurrency(stats.income)}">${formatCurrencyShort(stats.income)}</span>
                             </div>
                             <div class="dash-tile expense-card">
-                                <span class="tile-ico out"><i class="fas fa-arrow-up"></i></span>
+                                <span class="tile-ico out">${typeTriangle("expense")}</span>
+                                <span class="tile-pct out" title="Dari total saldo dompet">${formatPct(stats.expense, totalWalletBalance)}</span>
                                 <span class="tile-label">Pengeluaran</span>
                                 <span class="tile-value" id="total-expense" title="${formatCurrency(stats.expense)}">${formatCurrencyShort(stats.expense)}</span>
                             </div>
                             <div class="dash-tile balance-card">
                                 <span class="tile-ico flow"><i class="fas fa-wallet"></i></span>
+                                <span class="tile-pct" aria-hidden="true">&nbsp;</span>
                                 <span class="tile-label">Arus kas</span>
                                 <span class="tile-value ${stats.balance >= 0 ? "positive" : "negative"}" id="total-balance" title="${formatCurrency(stats.balance)}">${formatCurrencyShort(stats.balance)}</span>
                             </div>
@@ -196,7 +199,7 @@ export async function renderDashboard() {
                             <a href="#" data-page="transactions" class="dash-link">Lihat Semua</a>
                         </div>
                         <div class="dash-card transactions-list" id="recent-transactions">
-                            ${renderTransactionsList(top5Recent)}
+                            ${renderTransactionsList(top5Recent, totalWalletBalance)}
                         </div>
                     </section>
                 </div>
@@ -234,6 +237,31 @@ export async function renderDashboard() {
   });
 }
 
+// Ikon tipe transaksi: pengeluaran = segitiga terbalik merah, pemasukan = segitiga ke atas hijau
+function typeTriangle(type) {
+  const up = type === "income";
+  const color = up ? "#16A34A" : "#DC4C4C";
+  const d = up ? "M12 5 L21.5 20 H2.5 Z" : "M12 19 L2.5 4 H21.5 Z";
+  return `<svg class="tri ${up ? "up" : "down"}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}" fill="${color}" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+
+// Persentase nominal terhadap total saldo dompet. Contoh: 2,5% / 12% / <0,1%
+// Saldo nol atau minus tidak bisa dijadikan pembanding, jadi tampil "–".
+function formatPct(amount, balance) {
+  const a = Number(amount) || 0;
+  const b = Number(balance) || 0;
+  if (b <= 0) return "–";
+  const p = (a / b) * 100;
+  if (p === 0) return "0%";
+  if (p < 0.1) return "<0,1%";
+  if (p > 999) return ">999%";
+  const text =
+    p < 10
+      ? p.toFixed(1).replace(/\.0$/, "").replace(".", ",")
+      : String(Math.round(p));
+  return `${text}%`;
+}
+
 // Render wallets list (hanya tampilkan dompet yang saldonya tidak nol)
 function renderWalletsList(wallets) {
   const walletsWithBalance = (wallets || []).filter(
@@ -263,31 +291,37 @@ function renderWalletsList(wallets) {
 }
 
 // Render transactions list
-function renderTransactionsList(transactions) {
+function renderTransactionsList(transactions, walletTotal = 0) {
   if (!transactions || transactions.length === 0) {
     return '<div class="empty-state">Belum ada transaksi</div>';
   }
 
   return transactions
-    .map(
-      (t) => `
+    .map((t) => {
+      const sign = t.type === "income" ? "+ " : t.type === "expense" ? "- " : "";
+      const lead =
+        t.type === "saving"
+          ? '<i class="fas fa-piggy-bank"></i>'
+          : typeTriangle(t.type);
+      return `
         <div class="transaction-item">
-            <div class="transaction-icon ${t.type}">
-                <i class="fas ${t.type === "income" ? "fa-arrow-down" : "fa-arrow-up"}"></i>
+            <div class="transaction-lead ${t.type}">
+                <span class="transaction-icon ${t.type}">${lead}</span>
+                <span class="transaction-pct ${t.type}" title="Dari total saldo dompet">${formatPct(t.amount, walletTotal)}</span>
             </div>
             <div class="transaction-info">
                 <div class="transaction-name">${escapeHtml(t.itemName)}</div>
                 <div class="transaction-meta">
-                    <span class="transaction-category">${t.category || "Umum"}</span>
+                    <span class="transaction-category">${escapeHtml(t.category || "Umum")}</span>
                     <span class="transaction-date">${formatDate(t.date)}</span>
                 </div>
             </div>
             <div class="transaction-amount ${t.type}">
-                ${t.type === "income" ? "+" : "-"} ${formatCurrency(t.amount)}
+                ${sign}${formatCurrency(t.amount)}
             </div>
         </div>
-    `,
-    )
+    `;
+    })
     .join("");
 }
 
@@ -1198,6 +1232,16 @@ function addDashboardStyles() {
         }
         .tile-ico.in { background: #E6F6EC; color: var(--d-green); }
         .tile-ico.out { background: #FDEBEA; color: var(--d-red); }
+        .tile-ico svg { width: 22px; height: 22px; display: block; }
+        .tile-pct {
+            margin-top: -2px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.2;
+        }
+        .tile-pct.in { color: var(--d-green); }
+        .tile-pct.out { color: var(--d-red); }
         .tile-ico.flow { background: #EAF0FF; color: #3B6FE0; }
         .tile-label { font-size: 0.72rem; font-weight: 500; color: var(--d-muted); }
         .tile-value {
@@ -1302,8 +1346,7 @@ function addDashboardStyles() {
         }
         .wallet-item:last-child,
         .transaction-item:last-child { border-bottom: 0; }
-        .wallet-icon,
-        .transaction-icon {
+        .wallet-icon {
             width: 44px;
             height: 44px;
             border-radius: 14px;
@@ -1313,8 +1356,34 @@ function addDashboardStyles() {
             justify-content: center;
             font-size: 1.05rem;
         }
-        .transaction-icon.income { background: #E6F6EC; color: var(--d-green); }
-        .transaction-icon.expense { background: #FDEBEA; color: var(--d-red); }
+        /* Ikon transaksi: segitiga polos tanpa kotak, persentase di bawahnya */
+        .transaction-lead {
+            width: 48px;
+            flex: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .transaction-icon {
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.05rem;
+        }
+        .transaction-icon svg { width: 18px; height: 18px; display: block; }
+        .transaction-icon.saving { color: #8b5cf6; }
+        .transaction-pct {
+            font-size: 0.68rem;
+            font-weight: 700;
+            line-height: 1.2;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .transaction-pct.income { color: var(--d-green); }
+        .transaction-pct.expense { color: var(--d-red); }
+        .transaction-pct.saving { color: #8b5cf6; }
         .wallet-info, .transaction-info { flex: 1; min-width: 0; }
         .wallet-name, .transaction-name {
             font-weight: 600;
@@ -1333,6 +1402,7 @@ function addDashboardStyles() {
         }
         .transaction-amount.income { color: var(--d-green); }
         .transaction-amount.expense { color: var(--d-text); }
+        .transaction-amount.saving { color: #8b5cf6; }
         .dashboard-container .empty-state {
             text-align: center;
             padding: 24px 0;
