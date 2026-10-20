@@ -39,6 +39,7 @@ let currentFilters = {
   customYear: "all",
 };
 let allTransactions = [];
+let walletMap = new Map(); // id dompet -> data dompet (untuk pil dompet di daftar)
 
 // Label bulan untuk filter custom
 const MONTH_NAMES = [
@@ -167,7 +168,22 @@ function formatMobileDateTime(t) {
   return datePart + timePart;
 }
 
-// Label & nilai <select> periode mobile berdasarkan state filter aktif
+// Judul grup tanggal: 1 Oktober 2026
+function formatLongDate(dateStr) {
+  const d = (dateStr || "").split("-");
+  const m = MONTH_NAMES[parseInt(d[1], 10) - 1];
+  if (d.length !== 3 || !m) return dateStr || "Tanpa tanggal";
+  return `${parseInt(d[2], 10)} ${m} ${d[0]}`;
+}
+
+// Pil nama dompet, warnanya mengikuti warna dompet
+function walletPillHtml(w) {
+  if (!w) return "";
+  const c = escapeAttr(w.color || "#3b82f6");
+  return `<span class="tp-wallet-pill" style="--wc:${c}">${escapeHtml(w.name)}</span>`;
+}
+
+// Label & nilai periode mobile berdasarkan state filter aktif
 function getPeriodSelection() {
   const { period, customDay, customMonth, customYear } = currentFilters;
   const now = new Date();
@@ -196,33 +212,53 @@ function getPeriodSelection() {
   };
 }
 
-function buildMobilePeriodOptions() {
-  const select = document.getElementById("m-period-select");
-  if (!select) return;
+function updateMobilePeriodUi() {
+  const valueEl = document.getElementById("m-period-value");
+  if (valueEl) valueEl.textContent = getPeriodSelection().label;
+}
+
+// Isi daftar pilihan periode di modal (dibangun ulang tiap dibuka)
+function renderPeriodOptions() {
+  const list = document.getElementById("period-options");
+  if (!list) return;
   let earliestYear = 2024;
   allTransactions.forEach((t) => {
     const y = t.date ? parseInt(t.date.split("-")[0], 10) : NaN;
     if (!isNaN(y) && y < earliestYear) earliestYear = y;
   });
   const now = new Date();
-  let html = `<option value="today">Hari Ini</option><option value="week">Minggu Ini</option>`;
+  const current = getPeriodSelection().value;
+  const opt = (value, label) =>
+    `<button type="button" class="tp-opt ${value === current ? "active" : ""}" data-value="${value}"><span>${label}</span>${value === current ? '<i class="fas fa-check"></i>' : ""}</button>`;
+
+  let html = opt("today", "Hari Ini") + opt("week", "Minggu Ini");
   for (let y = now.getFullYear(); y >= earliestYear; y--) {
+    html += `<div class="tp-opt-group">${y}</div>`;
     const last = y === now.getFullYear() ? now.getMonth() : 11;
     for (let m = last; m >= 0; m--) {
-      html += `<option value="${monthKey(y, m + 1)}">${MONTH_NAMES[m]} ${y}</option>`;
+      html += opt(monthKey(y, m + 1), `${MONTH_NAMES[m]} ${y}`);
     }
   }
-  html += `<option value="all">Semua Waktu</option><option value="custom" hidden>Kustom</option>`;
-  select.innerHTML = html;
+  html += `<div class="tp-opt-group">Lainnya</div>` + opt("all", "Semua Waktu");
+  list.innerHTML = html;
 }
 
-function updateMobilePeriodUi() {
-  const valueEl = document.getElementById("m-period-value");
-  const select = document.getElementById("m-period-select");
-  if (!valueEl || !select) return;
-  const sel = getPeriodSelection();
-  valueEl.textContent = sel.label;
-  select.value = sel.value;
+function openPeriodModal() {
+  const bar = document.getElementById("period-bar");
+  if (!bar) return;
+  renderPeriodOptions();
+  bar.classList.add("open");
+  bar.setAttribute("aria-hidden", "false");
+  document.body.classList.add("filter-modal-active");
+  bar.querySelector(".tp-opt.active")?.scrollIntoView({ block: "center" });
+}
+
+function closePeriodModal() {
+  const bar = document.getElementById("period-bar");
+  if (!bar) return;
+  bar.classList.remove("open");
+  bar.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("filter-modal-active");
 }
 
 function applyMobilePeriod(value) {
@@ -423,10 +459,9 @@ export async function renderTransactionsPage() {
                     <button type="button" class="tp-action" id="m-add-multi-btn" title="Transaksi Banyak">
                         <span class="ico"><i class="fas fa-cart-shopping"></i></span>Banyak
                     </button>
-                    <div class="tp-action tp-period">
+                    <button type="button" class="tp-action" id="m-period-btn" aria-label="Pilih periode">
                         <span class="ico"><i class="fas fa-calendar-days"></i></span>Periode
-                        <select id="m-period-select" class="tp-period-select" aria-label="Pilih periode"></select>
-                    </div>
+                    </button>
                     <button type="button" class="tp-action" id="m-filter-btn">
                         <span class="ico"><i class="fas fa-filter"></i></span>Filter
                     </button>
@@ -456,7 +491,7 @@ export async function renderTransactionsPage() {
                             <h2>Daftar Transaksi</h2>
                             <span class="tp-muted"><span id="total-count">0</span> transaksi</span>
                         </div>
-                        <div class="tp-card tp-list-card">
+                        <div class="tp-list-card">
                             <div id="transactions-list" class="tp-list">
                                 <div class="tp-empty">
                                     <i class="fas fa-spinner fa-spin"></i>
@@ -466,6 +501,19 @@ export async function renderTransactionsPage() {
                             <div id="pagination" class="pagination"></div>
                         </div>
                     </section>
+                </div>
+            </div>
+
+            <!-- Pilih periode (sheet di mobile, dialog di desktop) -->
+            <div class="tp-filter" id="period-bar" aria-hidden="true">
+                <div class="tp-filter-sheet" role="dialog" aria-label="Pilih periode">
+                    <div class="tp-filter-head">
+                        <h3>Pilih Periode</h3>
+                        <button type="button" class="tp-close" id="period-close-btn" aria-label="Tutup">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="tp-filter-body tp-opt-list" id="period-options"></div>
                 </div>
             </div>
 
@@ -542,7 +590,6 @@ export async function renderTransactionsPage() {
   loadYearsForFilter();
 
   // Opsi periode + samakan kontrol filter dengan state aktif
-  buildMobilePeriodOptions();
   syncFilterControls();
 
   // Render transactions
@@ -568,6 +615,7 @@ async function loadTransactions() {
 
   const wallets = await getAllItems(STORES.WALLETS);
   walletTotal = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
+  walletMap = new Map(wallets.map((w) => [w.id, w]));
 }
 
 // Load wallets untuk dropdown filter
@@ -728,6 +776,7 @@ function renderFilteredTransactions() {
       (t) =>
         normalizeString(t.itemName).includes(searchTerm) ||
         (t.note && normalizeString(t.note).includes(searchTerm)) ||
+        (t.location && normalizeString(t.location).includes(searchTerm)) ||
         (Array.isArray(t.items) &&
           t.items.some(
             (i) =>
@@ -845,19 +894,20 @@ function renderTransactionsList(transactions) {
     return;
   }
 
-  container.innerHTML = transactions
-    .map((t) => {
-      const isMulti = t.isMultiItem === true && Array.isArray(t.items);
-      const sign =
-        t.type === "income" ? "+ " : t.type === "expense" ? "- " : "";
-      const lead =
-        t.type === "saving"
-          ? '<i class="fas fa-piggy-bank"></i>'
-          : typeTriangle(t.type);
-      const mainMeta = isMulti
-        ? `${t.items.length} barang`
-        : t.category || "Umum";
-      return `
+  const rowHtml = (t) => {
+    const isMulti = t.isMultiItem === true && Array.isArray(t.items);
+    const sign = t.type === "income" ? "+ " : t.type === "expense" ? "- " : "";
+    const lead =
+      t.type === "saving"
+        ? '<i class="fas fa-piggy-bank"></i>'
+        : typeTriangle(t.type);
+    const mainMeta = isMulti ? `${t.items.length} barang` : t.category || "Umum";
+    const timeText = t.time ? String(t.time).replace(":", ".") : "";
+    const pill = walletPillHtml(walletMap.get(t.walletId));
+    const loc = t.location
+      ? `<span class="tp-loc"><i class="fas fa-location-dot"></i>${escapeHtml(t.location)}</span>`
+      : "";
+    return `
         <div class="tp-row" data-id="${t.id}" role="button" tabindex="0">
             <div class="tp-lead ${t.type}">
                 <span class="tp-lead-ico">${lead}</span>
@@ -867,8 +917,9 @@ function renderTransactionsList(transactions) {
                 <div class="tp-name">${escapeHtml(t.itemName)}</div>
                 <div class="tp-meta">
                     <span>${escapeHtml(mainMeta)}</span>
-                    <span>${formatMobileDateTime(t)}</span>
+                    ${timeText ? `<span>${timeText}</span>` : ""}
                 </div>
+                ${pill || loc ? `<div class="tp-tags">${pill}${loc}</div>` : ""}
                 ${t.note ? `<div class="tp-note">${escapeHtml(t.note)}</div>` : ""}
             </div>
             <div class="tp-amount ${t.type}">${sign}${formatCurrency(t.amount)}</div>
@@ -880,9 +931,25 @@ function renderTransactionsList(transactions) {
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
-        </div>
-    `;
-    })
+        </div>`;
+  };
+
+  // Kelompokkan per tanggal (data sudah terurut terbaru di atas)
+  const groups = [];
+  transactions.forEach((t) => {
+    const last = groups[groups.length - 1];
+    if (last && last.date === t.date) last.items.push(t);
+    else groups.push({ date: t.date, items: [t] });
+  });
+
+  container.innerHTML = groups
+    .map(
+      (g) => `
+        <section class="tp-day">
+            <div class="tp-day-head">${formatLongDate(g.date)}</div>
+            ${g.items.map(rowHtml).join("")}
+        </section>`,
+    )
     .join("");
 
   // Satu handler untuk semua baris (edit / hapus / buka detail)
@@ -915,17 +982,14 @@ function renderTransactionsList(transactions) {
   };
 }
 
-// Modal detail transaksi (read-only) — menampilkan nama, tipe, harga satuan,
-// quantity, total, kategori, wallet, catatan, tanggal, dan waktu.
+// Modal detail transaksi (read-only), gaya sama dengan modal tambah transaksi
+// tetapi mengambang di tengah halaman.
 async function showTransactionDetailModal(id) {
   const transaction = await getItem(STORES.TRANSACTIONS, id);
   if (!transaction) {
     showToast("Transaksi tidak ditemukan", "error");
     return;
   }
-
-  const quantity = transaction.quantity || 1;
-  const unitPrice = transaction.amount / quantity;
 
   const wallet = transaction.walletId
     ? await getItem(STORES.WALLETS, transaction.walletId)
@@ -936,75 +1000,96 @@ async function showTransactionDetailModal(id) {
     return;
   }
 
+  const quantity = transaction.quantity || 1;
+  const unitPrice = transaction.amount / quantity;
+
+  openDetailModal({
+    transaction,
+    wallet,
+    icon: "fa-receipt",
+    bodyHtml: detailRowsHtml([
+      ["Harga Satuan", formatCurrency(unitPrice)],
+      ["Jumlah", quantity],
+      ["Total", formatCurrency(transaction.amount)],
+      ["Kategori", escapeHtml(transaction.category || "Umum")],
+      ["Dompet", walletPillHtml(wallet) || "-"],
+      transaction.location
+        ? ["Lokasi Transaksi", escapeHtml(transaction.location)]
+        : null,
+      transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
+      ["Tanggal", formatDate(transaction.date)],
+      ["Waktu", transaction.time || "-"],
+    ]),
+  });
+}
+
+function detailRowsHtml(rows) {
+  return rows
+    .filter(Boolean)
+    .map(
+      ([label, value]) => `
+        <div class="td-row">
+            <span class="td-label">${label}</span>
+            <span class="td-value">${value}</span>
+        </div>`,
+    )
+    .join("");
+}
+
+// Kerangka modal detail (dipakai transaksi biasa & transaksi banyak)
+function openDetailModal({ transaction, wallet, icon, bodyHtml }) {
+  ensureTxSheetStyles();
+  document.querySelector(".tx-detail-overlay")?.remove();
+
   const typeLabel =
     transaction.type === "income"
       ? "Pemasukan"
       : transaction.type === "saving"
         ? "Tabungan"
         : "Pengeluaran";
+  const sign =
+    transaction.type === "income"
+      ? "+ "
+      : transaction.type === "expense"
+        ? "- "
+        : "";
 
   const modal = document.createElement("div");
-  modal.className = "modal-overlay";
+  modal.className = "modal-overlay tx-sheet-overlay tx-detail-overlay";
   modal.innerHTML = `
-        <div class="modal-container">
+        <div class="modal-container modal-large tx-sheet tx-detail">
             <div class="modal-header">
-                <h3><i class="fas fa-receipt"></i> Detail Transaksi</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
+                <h3><i class="fas ${icon}"></i> Detail Transaksi</h3>
+                <button type="button" class="modal-close-btn modal-close-x" aria-label="Tutup">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Nama</span>
-                    <span class="transaction-detail-value">${escapeHtml(transaction.itemName)}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Tipe</span>
-                    <span class="transaction-detail-value">${typeLabel}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Harga Satuan</span>
-                    <span class="transaction-detail-value">${formatCurrency(unitPrice)}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Jumlah</span>
-                    <span class="transaction-detail-value">${quantity}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Total</span>
-                    <span class="transaction-detail-value">${formatCurrency(transaction.amount)}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Kategori</span>
-                    <span class="transaction-detail-value">${escapeHtml(transaction.category || "Umum")}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Wallet</span>
-                    <span class="transaction-detail-value">${wallet ? escapeHtml(wallet.name) : "-"}</span>
-                </div>
-                ${
-                  transaction.note
-                    ? `<div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Catatan</span>
-                    <span class="transaction-detail-value">${escapeHtml(transaction.note)}</span>
-                </div>`
-                    : ""
-                }
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Tanggal</span>
-                    <span class="transaction-detail-value">${formatDate(transaction.date)}</span>
-                </div>
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">Waktu</span>
-                    <span class="transaction-detail-value">${transaction.time || "-"}</span>
-                </div>
+                <form id="transaction-detail-form" novalidate>
+                    <div class="tx-sheet-scroll">
+                        <div class="td-hero ${transaction.type}">
+                            <span class="td-hero-type">${typeLabel}</span>
+                            <span class="td-hero-amount">${sign}${formatCurrency(transaction.amount)}</span>
+                            <span class="td-hero-name">${escapeHtml(transaction.itemName)}</span>
+                        </div>
+                        ${bodyHtml}
+                    </div>
+                    <div class="modal-buttons tx-sheet-footer">
+                        <button type="button" class="btn-secondary modal-close-btn">Tutup</button>
+                        <button type="button" class="btn-primary" id="td-edit-btn">Edit</button>
+                    </div>
+                </form>
             </div>
         </div>
     `;
-
   document.body.appendChild(modal);
 
   const closeModal = () => modal.remove();
+  modal.querySelector("form").addEventListener("submit", (e) => e.preventDefault());
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
+  });
+  modal.querySelector("#td-edit-btn").addEventListener("click", () => {
+    closeModal();
+    editTransaction(transaction.id);
   });
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
@@ -1097,9 +1182,21 @@ function setupTransactionEventListeners() {
   document
     .getElementById("m-filter-btn")
     ?.addEventListener("click", openFilterModal);
+  const periodBar = document.getElementById("period-bar");
   document
-    .getElementById("m-period-select")
-    ?.addEventListener("change", (e) => applyMobilePeriod(e.target.value));
+    .getElementById("m-period-btn")
+    ?.addEventListener("click", openPeriodModal);
+  document
+    .getElementById("period-close-btn")
+    ?.addEventListener("click", closePeriodModal);
+  periodBar?.addEventListener("click", (e) => {
+    if (e.target === periodBar) return closePeriodModal();
+    const opt = e.target.closest(".tp-opt");
+    if (opt) {
+      applyMobilePeriod(opt.dataset.value);
+      closePeriodModal();
+    }
+  });
   document
     .getElementById("m-add-transaction-btn")
     ?.addEventListener("click", () => showTransactionModal());
@@ -1116,6 +1213,7 @@ function setupTransactionEventListeners() {
     filterEscBound = true;
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
+      closePeriodModal();
       const bar = document.getElementById("filter-bar");
       if (bar?.classList.contains("open")) {
         bar.classList.remove("open");
@@ -1399,6 +1497,13 @@ async function showTransactionModalImpl(transactionId = null) {
             </div>
             
             <div class="form-group">
+                <label>Lokasi Transaksi</label>
+                <input type="text" id="transaction-location" class="form-input" autocomplete="off"
+                       value="${isEdit ? escapeAttr(transaction.location || "") : ""}"
+                       placeholder="Opsional, contoh: Indomaret, Warung Bu Siti">
+            </div>
+
+            <div class="form-group">
                 <label>Catatan (Opsional)</label>
                 <textarea id="transaction-note" class="form-input" rows="2" 
                           placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea>
@@ -1680,6 +1785,7 @@ async function showTransactionModalImpl(transactionId = null) {
     let category = modal.querySelector("#transaction-category").value;
     const walletId = modal.querySelector("#transaction-wallet").value;
     const note = modal.querySelector("#transaction-note").value;
+    const location = modal.querySelector("#transaction-location").value.trim();
     const date = modal.querySelector("#transaction-date").value;
     const time = modal.querySelector("#transaction-time").value;
     const saveAsTemplate =
@@ -1794,6 +1900,7 @@ async function showTransactionModalImpl(transactionId = null) {
         category,
         walletId,
         note,
+        location,
         date,
         time,
         savingId: type === "saving" ? savingId : null,
@@ -2394,6 +2501,10 @@ async function showMultiTransactionModalImpl(transactionId = null) {
                         </div>
                     </div>
                     <div class="form-group">
+                        <label>Lokasi Transaksi</label>
+                        <input type="text" id="multi-location" class="form-input" autocomplete="off" value="${isEdit ? escapeAttr(transaction.location || "") : ""}" placeholder="Opsional, contoh: Indomaret, Warung Bu Siti">
+                    </div>
+                    <div class="form-group">
                         <label>Catatan (Opsional)</label>
                         <textarea id="multi-note" class="form-input" rows="2" placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea>
                     </div>
@@ -2546,6 +2657,7 @@ async function showMultiTransactionModalImpl(transactionId = null) {
     const date = modal.querySelector("#multi-date").value;
     const time = modal.querySelector("#multi-time").value;
     const note = modal.querySelector("#multi-note").value;
+    const location = modal.querySelector("#multi-location").value.trim();
 
     if (!walletId) {
       showToast("Pilih dompet", "error");
@@ -2610,6 +2722,7 @@ async function showMultiTransactionModalImpl(transactionId = null) {
       category: MULTI_DEFAULT_NAME,
       walletId,
       note,
+      location,
       date,
       time,
       savingId: null,
@@ -2683,62 +2796,39 @@ async function showMultiTransactionModalImpl(transactionId = null) {
   // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
-// Detail (read-only) Transaksi Banyak: info parent + daftar barang + total
+// Detail (read-only) Transaksi Banyak: info parent + daftar barang
 function showMultiTransactionDetailModal(transaction, wallet) {
-  const row = (label, value) => `
-                <div class="transaction-detail-row">
-                    <span class="transaction-detail-label">${label}</span>
-                    <span class="transaction-detail-value">${value}</span>
-                </div>`;
-
   const itemsHtml = transaction.items
     .map((it) => {
       const qty = it.quantity || 1;
       return `
-                <div class="multi-detail-item">
-                    <div class="multi-detail-item-name">${escapeHtml(it.itemName)}</div>
-                    ${row("Harga Satuan", formatCurrency(it.amount))}
-                    ${row("Jumlah", qty)}
-                    ${row("Total", formatCurrency(it.amount * qty))}
-                    ${row("Kategori", escapeHtml(it.category || "Umum"))}
-                </div>`;
+        <div class="td-item">
+            <div class="td-item-name">${escapeHtml(it.itemName)}</div>
+            ${detailRowsHtml([
+              ["Harga Satuan", formatCurrency(it.amount)],
+              ["Jumlah", qty],
+              ["Total", formatCurrency(it.amount * qty)],
+              ["Kategori", escapeHtml(it.category || "Umum")],
+            ])}
+        </div>`;
     })
     .join("");
 
-  const modal = document.createElement("div");
-  modal.className = "modal-overlay";
-  modal.innerHTML = `
-        <div class="modal-container">
-            <div class="modal-header">
-                <h3><i class="fas fa-shopping-basket"></i> Detail Transaksi</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
-            </div>
-            <div class="modal-body">
-                ${row("Nama", escapeHtml(transaction.itemName))}
-                ${row("Tipe", "Pengeluaran")}
-                ${row("Dompet", wallet ? escapeHtml(wallet.name) : "-")}
-                ${transaction.note ? row("Catatan", escapeHtml(transaction.note)) : ""}
-                ${row("Tanggal", formatDate(transaction.date))}
-                ${row("Waktu", transaction.time || "-")}
-
-                <div class="multi-section-title">Barang yang Dibeli</div>
-                ${itemsHtml}
-
-                <div class="multi-total-row multi-detail-total">
-                    <span>Total Transaksi</span>
-                    <span>${formatCurrency(transaction.amount)}</span>
-                </div>
-            </div>
-        </div>
-    `;
-  document.body.appendChild(modal);
-
-  const closeModal = () => modal.remove();
-  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
-    btn.addEventListener("click", closeModal);
-  });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
+  openDetailModal({
+    transaction,
+    wallet,
+    icon: "fa-shopping-basket",
+    bodyHtml:
+      detailRowsHtml([
+        ["Dompet", walletPillHtml(wallet) || "-"],
+        transaction.location
+          ? ["Lokasi Transaksi", escapeHtml(transaction.location)]
+          : null,
+        transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
+        ["Tanggal", formatDate(transaction.date)],
+        ["Waktu", transaction.time || "-"],
+      ]) +
+      `<div class="td-section">Barang yang Dibeli</div>${itemsHtml}`,
   });
 }
 
@@ -3001,19 +3091,6 @@ function addTransactionStyles() {
       border-color: var(--d-lime);
       color: var(--d-brand);
     }
-    /* Pilihan periode: <select> transparan menutupi tombol */
-    .tp-period-select {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
-      font-size: 16px;
-      -webkit-appearance: none;
-      appearance: none;
-    }
-
     /* ---------- Layout & section ---------- */
     .tp-grid { display: flex; flex-direction: column; gap: 20px; }
     .tp-col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
@@ -3086,7 +3163,15 @@ function addTransactionStyles() {
     .tp-pct.saving { color: var(--d-purple); }
 
     /* ---------- Daftar transaksi: tanpa kotak, dipisah garis tipis ---------- */
-    .tp-list-card { padding: 6px 16px; }
+    .tp-list-card { padding: 0; background: none; border: 0; box-shadow: none; border-radius: 0; }
+    .tp-day { margin-bottom: 18px; }
+    .tp-day:last-child { margin-bottom: 0; }
+    .tp-day-head {
+      margin: 0 2px 2px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--d-muted);
+    }
     .tp-list { display: flex; flex-direction: column; }
     .tp-row {
       display: grid;
@@ -3138,6 +3223,37 @@ function addTransactionStyles() {
       color: var(--d-muted);
     }
     .tp-meta span { white-space: nowrap; }
+    .tp-tags {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px 8px;
+      margin-top: 6px;
+    }
+    .tp-wallet-pill {
+      display: inline-block;
+      max-width: 100%;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      line-height: 1.5;
+      color: var(--wc);
+      background: color-mix(in srgb, var(--wc) 14%, transparent);
+      border: 1px solid color-mix(in srgb, var(--wc) 35%, transparent);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tp-loc {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      font-size: 0.72rem;
+      color: var(--d-muted);
+    }
+    .tp-loc i { font-size: 0.68rem; flex: none; }
     .tp-note {
       margin-top: 4px;
       font-size: 0.75rem;
@@ -3304,6 +3420,33 @@ function addTransactionStyles() {
       pointer-events: none;
     }
     .tp-search .tp-input { padding-left: 40px; }
+    /* ---------- Modal pilih periode ---------- */
+    .tp-opt-list { gap: 6px; padding-bottom: 20px; }
+    .tp-opt {
+      width: 100%;
+      min-height: 46px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--d-soft);
+      color: var(--d-text);
+      font-family: inherit;
+      font-size: 0.92rem;
+      font-weight: 500;
+      text-align: left;
+      cursor: pointer;
+    }
+    .tp-opt.active { background: var(--d-brand); color: #fff; font-weight: 600; }
+    .tp-opt-group {
+      margin: 8px 4px 0;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: var(--d-muted);
+    }
     .tp-custom-date { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     .tp-filter-foot { display: flex; gap: 10px; padding: 12px 20px 20px; }
     .tp-filter-foot .tp-btn { flex: 1; }
@@ -3322,6 +3465,80 @@ function addTransactionStyles() {
       background: #fff;
     }
     .type-selector .type-btn .type-tri svg { width: 10px; height: 10px; display: block; }
+
+    /* ---------- Modal detail transaksi (mengambang di tengah) ---------- */
+    .modal-overlay.tx-detail-overlay {
+      align-items: center !important;
+      justify-content: center !important;
+      padding: 16px !important;
+    }
+    .tx-detail-overlay .modal-container.tx-detail {
+      width: 100%;
+      max-width: 440px;
+      margin: 0 !important;
+      max-height: 86vh;
+      border-radius: 24px !important;
+    }
+    .td-hero {
+      --hc: #DC4C4C;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 8px;
+      padding: 18px 16px;
+      border-radius: 18px;
+      text-align: center;
+      background: color-mix(in srgb, var(--hc) 10%, transparent);
+    }
+    .td-hero.income { --hc: #16A34A; }
+    .td-hero.saving { --hc: #8b5cf6; }
+    .td-hero-type { font-size: 0.75rem; font-weight: 600; color: var(--hc); }
+    .td-hero-amount {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--hc);
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+    .td-hero-name {
+      font-size: 0.88rem;
+      color: var(--text-primary, #242333);
+      overflow-wrap: anywhere;
+    }
+    .td-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 12px 2px;
+      border-bottom: 1px solid var(--border-color, #EEEEF3);
+    }
+    .td-row:last-child { border-bottom: 0; }
+    .td-label { flex: none; font-size: 0.82rem; color: var(--text-secondary, #6F6F7B); }
+    .td-value {
+      min-width: 0;
+      font-size: 0.88rem;
+      font-weight: 600;
+      text-align: right;
+      color: var(--text-primary, #242333);
+      overflow-wrap: anywhere;
+    }
+    .td-section {
+      margin: 16px 2px 0;
+      font-size: 0.74rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-secondary, #6F6F7B);
+    }
+    .td-item {
+      margin-top: 8px;
+      padding: 2px 14px;
+      border-radius: 14px;
+      background: var(--bg-primary, #F4F4F7);
+    }
+    .td-item-name { padding-top: 10px; font-size: 0.9rem; font-weight: 700; color: var(--text-primary, #242333); }
 
     /* ---------- Mobile ---------- */
     @media (max-width: 767px) {
