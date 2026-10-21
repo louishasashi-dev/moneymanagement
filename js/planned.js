@@ -21,7 +21,12 @@ import {
   generateId,
 } from "./utils.js";
 import { getTemplatesByType } from "./template.js";
-import { showSelectSavingGoalModal } from "./transaction.js";
+import {
+  showSelectSavingGoalModal,
+  openMultiItemForm,
+  saveMultiTransactionAtomic,
+  MULTI_DEFAULT_NAME,
+} from "./transaction.js";
 
 const PLANNED_STORE = "planned_transactions";
 const PLAN_STORE = STORES.PLANNED_PLANS;
@@ -116,6 +121,18 @@ async function plannedClearAll() {
 // planId efektif sebuah item (item lama tanpa planId => plan legacy)
 function planIdOf(item) {
   return item.planId || LEGACY_PLAN_ID;
+}
+
+// Rencana banyak = satu item rencana berisi beberapa barang
+function isMultiPlanned(item) {
+  return item.isMultiItem === true && Array.isArray(item.items);
+}
+
+// Ringkasan nama barang: "Beras, Telur, Minyak +2"
+function multiNames(item) {
+  const names = item.items.map((i) => i.itemName);
+  const shown = names.slice(0, 3).join(", ");
+  return names.length > 3 ? `${shown} +${names.length - 3}` : shown;
 }
 
 async function planGetAll() {
@@ -312,6 +329,11 @@ async function confirmPlanned(id) {
   const item = items.find((i) => i.id === id);
   if (!item) return;
 
+  if (isMultiPlanned(item)) {
+    await confirmPlannedMulti(item);
+    return;
+  }
+
   const wallet = await getItem(STORES.WALLETS, item.walletId);
   if (!wallet) {
     showToast("Dompet tidak ditemukan", "error");
@@ -392,6 +414,62 @@ async function confirmPlanned(id) {
   }
 
   // Tandai planned sebagai confirmed
+  item.status = "confirmed";
+  await plannedUpdate(item);
+
+  showToast("Transaksi berhasil dikonfirmasi dan disimpan!", "success");
+  await renderPlannedView();
+}
+
+// Konfirmasi rencana banyak: SATU record transaksi banyak + saldo dipotong sekali,
+// dalam satu transaksi IndexedDB (sama persis dengan simpan di halaman Transaksi)
+async function confirmPlannedMulti(item) {
+  const wallet = await getItem(STORES.WALLETS, item.walletId);
+  if (!wallet) {
+    showToast("Dompet tidak ditemukan", "error");
+    return;
+  }
+
+  const at = getCurrentDateTime();
+  const record = {
+    itemName: item.itemName,
+    amount: item.amount, // total semua barang
+    quantity: 1,
+    type: "expense",
+    category: item.category || MULTI_DEFAULT_NAME,
+    walletId: item.walletId,
+    note: item.note || "",
+    location: item.location || "",
+    date: at.date,
+    time: at.time,
+    savingId: null,
+    isMultiItem: true,
+    items: item.items.map((i) => ({ ...i })),
+    createdAt: at.timestamp,
+  };
+
+  let result;
+  try {
+    result = await saveMultiTransactionAtomic(record, null);
+  } catch (err) {
+    console.error("Gagal mengonfirmasi rencana banyak:", err);
+    result = { ok: false, error: "exception" };
+  }
+
+  if (!result.ok) {
+    if (result.error === "insufficient") {
+      showToast(
+        `Saldo ${result.wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(result.wallet.balance)})`,
+        "error",
+      );
+    } else if (result.error === "wallet-missing") {
+      showToast("Dompet tidak ditemukan", "error");
+    } else {
+      showToast("Gagal mengonfirmasi. Tidak ada data yang diubah.", "error");
+    }
+    return;
+  }
+
   item.status = "confirmed";
   await plannedUpdate(item);
 
@@ -603,7 +681,7 @@ function ensurePlanListStyles() {
       }
       .pd-mobile *, .pd-mobile *::before, .pd-mobile *::after { box-sizing: border-box; }
 
-      .pd-hero { position: relative; z-index: 0; color: #fff; padding: 26px 16px 150px; }
+      .pd-hero { position: relative; z-index: 0; color: #fff; padding: 26px 16px 196px; }
       .pd-hero::before {
         content: "";
         position: absolute; z-index: -1;
@@ -621,7 +699,7 @@ function ensurePlanListStyles() {
         margin: 0; min-width: 0; font-size: 1.35rem; font-weight: 700; color: #fff;
         text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .pd-actions { display: flex; gap: 8px; margin-top: 16px; }
+      .pd-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
       .pd-btn {
         flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px;
         padding: 11px 6px; border: none; border-radius: 12px; cursor: pointer;
@@ -630,6 +708,7 @@ function ensurePlanListStyles() {
       .pd-btn span { overflow: hidden; text-overflow: ellipsis; }
       .pd-btn i { font-size: .8rem; flex-shrink: 0; }
       .pd-btn-light { background: #fff; color: #0f1f3d; box-shadow: 0 4px 10px rgba(0,0,0,.12); }
+      .pd-btn-ghost { background: rgba(255,255,255,.14); color: #fff; border: 1px solid rgba(255,255,255,.4); }
       .pd-btn-primary { background: #2f6df0; color: #fff; box-shadow: 0 6px 14px rgba(20,60,160,.45); }
       .pd-btn:active { transform: translateY(1px); }
       .pd-info { margin: 16px 0 0; font-size: .76rem; font-weight: 600; line-height: 1.55; color: rgba(255,255,255,.95); }
@@ -699,6 +778,7 @@ function ensurePlanListStyles() {
       .pd-item-name { font-weight: 700; font-size: .95rem; line-height: 1.3; color: #0f1f3d; }
       .pd-item-meta { margin-top: 2px; font-size: .76rem; line-height: 1.4; color: #64748b; }
       .pd-item-note { font-style: italic; }
+      .pd-item-ico.multi { font-size: 1.2rem; }
       .pd-item-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; }
       .pd-item-amt { font-weight: 800; font-size: .88rem; white-space: nowrap; }
       .pd-acts { display: flex; gap: 6px; }
@@ -1084,6 +1164,9 @@ async function renderPlanDetail() {
           <button class="btn-secondary" id="reset-planned-btn" title="Reset semua rencana transaksi di plan ini sekarang">
             <i class="fas fa-rotate-left"></i> Reset Manual
           </button>
+          <button class="btn-secondary" id="add-planned-multi-btn" title="Rencana dengan beberapa barang sekaligus">
+            <i class="fas fa-cart-shopping"></i> Rencana Banyak
+          </button>
           <button class="btn-primary" id="add-planned-btn">
             <i class="fas fa-plus"></i> Rencana Baru
           </button>
@@ -1266,6 +1349,7 @@ async function renderPlanDetail() {
           <button type="button" class="pd-btn pd-btn-light pd-back"><i class="fas fa-arrow-left"></i><span>Kembali</span></button>
           <button type="button" class="pd-btn pd-btn-light pd-reset"><i class="fas fa-rotate-left"></i><span>Reset Manual</span></button>
           <button type="button" class="pd-btn pd-btn-primary pd-add"><i class="fas fa-plus"></i><span>Rencana Baru</span></button>
+          <button type="button" class="pd-btn pd-btn-ghost pd-add-multi"><i class="fas fa-cart-shopping"></i><span>Rencana Banyak</span></button>
         </div>
         <p class="pd-info ${daysToReset <= 3 ? "urgent" : ""}">${pdInfoText}</p>
       </header>
@@ -1345,6 +1429,10 @@ async function renderPlanDetail() {
   });
 
   document
+    .getElementById("add-planned-multi-btn")
+    ?.addEventListener("click", () => showPlannedMultiModal());
+
+  document
     .getElementById("reset-planned-btn")
     ?.addEventListener("click", () => {
       manualResetPlanned();
@@ -1360,6 +1448,9 @@ async function renderPlanDetail() {
   document
     .querySelectorAll(".pd-add")
     .forEach((b) => b.addEventListener("click", () => showPlannedModal()));
+  document
+    .querySelectorAll(".pd-add-multi")
+    .forEach((b) => b.addEventListener("click", () => showPlannedMultiModal()));
   document
     .querySelectorAll(".pd-reset")
     .forEach((b) => b.addEventListener("click", () => manualResetPlanned()));
@@ -1451,6 +1542,7 @@ function renderWalletUsageStats(allItems, wallets) {
 function renderPlannedItem(item, isConfirmed = false) {
   const isIncome = item.type === "income";
   const isSaving = item.type === "saving";
+  const isMulti = isMultiPlanned(item);
   const quantity = item.quantity || 1;
   const amountColor = isIncome
     ? "var(--success,#10b981)"
@@ -1472,14 +1564,15 @@ function renderPlannedItem(item, isConfirmed = false) {
         display:flex;align-items:center;justify-content:center;
         font-size:1.1rem;
       ">
-        <i class="fas ${isIncome ? "fa-arrow-down" : isSaving ? "fa-piggy-bank" : "fa-arrow-up"}" style="color:${amountColor};"></i>
+        <i class="fas ${isIncome ? "fa-arrow-down" : isSaving ? "fa-piggy-bank" : isMulti ? "fa-cart-shopping" : "fa-arrow-up"}" style="color:${amountColor};"></i>
       </div>
       <div style="flex:1;min-width:0;">
         <div style="font-weight:600;font-size:.95rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
           ${escapeHtml(item.itemName)}
         </div>
         <div style="font-size:.78rem;color:var(--text-secondary);margin-top:2px;">
-          ${item.category || "-"}${isSaving && savingNameById.get(item.savingId) ? ` • ke ${escapeHtml(savingNameById.get(item.savingId))}` : ""}${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
+          ${isMulti ? `${item.items.length} barang` : item.category || "-"}${isSaving && savingNameById.get(item.savingId) ? ` • ke ${escapeHtml(savingNameById.get(item.savingId))}` : ""}${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}${item.date ? ` • ${item.date} ${item.time || ""}` : ""}
+          ${isMulti ? `<br>${escapeHtml(multiNames(item))}` : ""}
           ${item.note ? `<br><span style="font-style:italic;">${escapeHtml(item.note)}</span>` : ""}
         </div>
       </div>
@@ -1516,29 +1609,32 @@ function renderPlannedItem(item, isConfirmed = false) {
 function renderPlannedItemMobile(item, isConfirmed = false) {
   const isIncome = item.type === "income";
   const isSaving = item.type === "saving";
+  const isMulti = isMultiPlanned(item);
   const quantity = item.quantity || 1;
   const icoClass = isIncome ? "inc" : isSaving ? "sav" : "exp";
   const icoName = isIncome
     ? "fa-caret-up"
     : isSaving
       ? "fa-piggy-bank"
-      : "fa-caret-down";
+      : isMulti
+        ? "fa-cart-shopping"
+        : "fa-caret-down";
   const amtClass = isIncome ? "pd-pos" : isSaving ? "" : "pd-neg";
   const amtStyle = isSaving ? ' style="color:#6366f1"' : "";
   const sign = isIncome ? "+" : "-";
 
   const meta =
-    `${item.category || "-"}` +
+    `${isMulti ? `${item.items.length} barang` : item.category || "-"}` +
     `${isSaving && savingNameById.get(item.savingId) ? ` • ke ${escapeHtml(savingNameById.get(item.savingId))}` : ""}` +
     `${quantity > 1 ? ` • ${formatMoneyInput(quantity)} × ${formatCurrency(item.amount / quantity)}` : ""}` +
     `${item.date ? ` • ${item.date} ${item.time || ""}` : ""}`;
 
   return `
     <div class="pd-item planned-item ${isConfirmed ? "done" : ""}" data-id="${item.id}">
-      <div class="pd-item-ico ${icoClass}"><i class="fas ${icoName}"></i></div>
+      <div class="pd-item-ico ${icoClass}${isMulti ? " multi" : ""}"><i class="fas ${icoName}"></i></div>
       <div class="pd-item-main">
         <div class="pd-item-name">${escapeHtml(item.itemName)}</div>
-        <div class="pd-item-meta">${meta}${item.note ? `<br><span class="pd-item-note">${escapeHtml(item.note)}</span>` : ""}</div>
+        <div class="pd-item-meta">${meta}${isMulti ? `<br>${escapeHtml(multiNames(item))}` : ""}${item.note ? `<br><span class="pd-item-note">${escapeHtml(item.note)}</span>` : ""}</div>
       </div>
       <div class="pd-item-side">
         <div class="pd-item-amt ${amtClass}"${amtStyle}>${sign}${formatCurrency(item.amount)}</div>
@@ -1601,6 +1697,10 @@ async function showPlannedModal(plannedId = null) {
     item = items.find((i) => i.id === plannedId);
     if (!item) {
       showToast("Data tidak ditemukan", "error");
+      return;
+    }
+    if (isMultiPlanned(item)) {
+      await showPlannedMultiModal(plannedId);
       return;
     }
   }
@@ -1946,6 +2046,93 @@ async function showPlannedModal(plannedId = null) {
     } else {
       await savePlanned();
     }
+  });
+}
+
+// ───────────────────────────────────────────────
+// Rencana banyak: satu rencana berisi beberapa barang.
+// Disimpan sebagai SATU item planned (amount = total semua barang);
+// saldo & transaksi baru berubah saat dikonfirmasi (confirmPlannedMulti).
+// ───────────────────────────────────────────────
+async function showPlannedMultiModal(plannedId = null) {
+  if (document.querySelector(".mx-overlay")) return;
+  const isEdit = plannedId !== null;
+  let item = null;
+
+  if (isEdit) {
+    item = (await plannedGetAll()).find((i) => i.id === plannedId);
+    if (!item || !isMultiPlanned(item)) {
+      showToast("Data tidak ditemukan", "error");
+      return;
+    }
+  }
+
+  const wallets = await getAllItems(STORES.WALLETS);
+  const categories = await getAllItems(STORES.CATEGORIES);
+  const expenseCategories = categories.filter((c) => c.type === "expense");
+
+  openMultiItemForm({
+    title: isEdit ? "Edit rencana banyak" : "Rencana banyak",
+    subtitle: "Belum masuk ke transaksi sampai kamu konfirmasi",
+    submitLabel: isEdit ? "Simpan perubahan" : "Simpan rencana",
+    accent: "#1d4ed8",
+    highlight: "#BBD1FF",
+    showDateTime: false,
+    wallets,
+    expenseCategories,
+    initial: isEdit
+      ? {
+          name: item.itemName,
+          walletId: item.walletId,
+          location: item.location || "",
+          note: item.note || "",
+          items: item.items,
+        }
+      : {},
+    onSubmit: async (p) => {
+      const data = {
+        itemName: p.name,
+        amount: p.amount, // total semua barang
+        quantity: 1,
+        type: "expense",
+        category: MULTI_DEFAULT_NAME,
+        walletId: p.walletId,
+        note: p.note,
+        location: p.location,
+        isMultiItem: true,
+        items: p.items,
+        // Multi-plan: create => plan yang sedang dibuka; edit => pertahankan plan item
+        ...(isEdit
+          ? item.planId
+            ? { planId: item.planId }
+            : {}
+          : { planId: currentPlanId }),
+        ...(isEdit && item.date ? { date: item.date, time: item.time } : {}),
+        status: "pending",
+        createdAt: isEdit ? item.createdAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      try {
+        if (isEdit) {
+          data.id = item.id;
+          await plannedUpdate(data);
+        } else {
+          await plannedAdd(data);
+        }
+      } catch (err) {
+        console.error("Gagal menyimpan rencana banyak:", err);
+        return { ok: false, message: "Gagal menyimpan rencana. Coba lagi." };
+      }
+      return {
+        ok: true,
+        successMessage: isEdit
+          ? "Rencana transaksi diperbarui"
+          : "Rencana transaksi disimpan!",
+      };
+    },
+    afterSave: async () => {
+      await renderPlannedView();
+    },
   });
 }
 

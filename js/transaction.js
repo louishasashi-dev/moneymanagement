@@ -901,7 +901,9 @@ function renderTransactionsList(transactions) {
       t.type === "saving"
         ? '<i class="fas fa-piggy-bank"></i>'
         : typeTriangle(t.type);
-    const mainMeta = isMulti ? `${t.items.length} barang` : t.category || "Umum";
+    const mainMeta = isMulti
+      ? `${t.items.length} barang`
+      : t.category || "Umum";
     const timeText = t.time ? String(t.time).replace(":", ".") : "";
     const pill = walletPillHtml(walletMap.get(t.walletId));
     const loc = t.location
@@ -1083,7 +1085,9 @@ function openDetailModal({ transaction, wallet, icon, bodyHtml }) {
   document.body.appendChild(modal);
 
   const closeModal = () => modal.remove();
-  modal.querySelector("form").addEventListener("submit", (e) => e.preventDefault());
+  modal
+    .querySelector("form")
+    .addEventListener("submit", (e) => e.preventDefault());
   modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
     btn.addEventListener("click", closeModal);
   });
@@ -1363,7 +1367,8 @@ function setupTransactionEventListeners() {
 // Show modal untuk tambah/edit transaksi
 // Pembungkus anti-ganda: abaikan klik/tap kedua selama modal masih dibuka/dimuat
 async function showTransactionModal(transactionId = null) {
-  if (txModalOpening || document.querySelector("[data-tx-modal]")) return;
+  if (txModalOpening || document.querySelector("[data-tx-modal], .mx-overlay"))
+    return;
   txModalOpening = true;
   try {
     await showTransactionModalImpl(transactionId);
@@ -2251,11 +2256,11 @@ export async function showSelectSavingGoalModal(
 // items = [{ itemName, amount (harga satuan), quantity, category }].
 // Tidak ada record per barang, sehingga saldo/report/summary otomatis hanya
 // melihat parent.amount satu kali.
-const MULTI_DEFAULT_NAME = "Transaksi Banyak";
+export const MULTI_DEFAULT_NAME = "Transaksi Banyak";
 const MULTI_MIN_ITEMS = 2;
 
 function newBlankMultiItem() {
-  return { name: "", price: "", qty: "1", qtyOther: false, category: "" };
+  return { name: "", price: "", qty: "1", category: "" };
 }
 
 // Escape untuk dipakai di dalam atribut HTML (kutip ikut di-escape)
@@ -2283,7 +2288,7 @@ function idbRequest(request) {
 // Jika ada langkah yang gagal, seluruhnya dibatalkan (tidak ada data setengah jadi).
 // oldRecord != null berarti edit: efek lama dibalikkan, efek baru diterapkan,
 // semuanya di transaksi yang sama.
-function saveMultiTransactionAtomic(record, oldRecord) {
+export function saveMultiTransactionAtomic(record, oldRecord) {
   return initDB().then(
     (db) =>
       new Promise((resolve) => {
@@ -2349,21 +2354,488 @@ function saveMultiTransactionAtomic(record, oldRecord) {
   );
 }
 
-// Form tambah/edit Transaksi Banyak
+// ==================== FORM TRANSAKSI BANYAK (dipakai Transaksi & Rencana) ====================
+// Satu komponen form untuk dua tempat. Yang berbeda hanya konfigurasi:
+// judul, warna, tampil/tidaknya tanggal-jam, dan apa yang dilakukan saat disimpan.
+//
+// config: {
+//   title, subtitle, submitLabel, accent, highlight, showDateTime,
+//   wallets, expenseCategories,
+//   initial: { name, walletId, date, time, location, note, items: [{itemName, amount, quantity, category}] },
+//   onSubmit: async (payload) => ({ ok, message?, successMessage? }),
+//   afterSave: async () => {}
+// }
+// payload: { name, walletId, date, time, location, note, amount, items }
+export function openMultiItemForm(config) {
+  ensureMultiSheetStyles();
+  document.querySelector(".mx-overlay")?.remove();
+
+  const {
+    title,
+    subtitle = "",
+    submitLabel = "Simpan",
+    accent = "#0B3D2A",
+    highlight = "#C6F432",
+    showDateTime = true,
+    wallets = [],
+    expenseCategories = [],
+    initial = {},
+  } = config;
+
+  const isEdit = Array.isArray(initial.items) && initial.items.length > 0;
+  const now = getCurrentDateTime();
+
+  // State barang = sumber kebenaran; DOM hanyalah cerminannya
+  const items = (initial.items || []).map((i) => ({
+    name: i.itemName || "",
+    price: formatMoneyInput(i.amount),
+    qty: String(i.quantity || 1),
+    category: i.category || "",
+  }));
+  while (items.length < MULTI_MIN_ITEMS) items.push(newBlankMultiItem());
+  // Tambah baru: barang pertama langsung terbuka. Edit: semua terlipat agar mudah dipindai.
+  let openIndex = isEdit ? -1 : 0;
+
+  const categoryOptionsHtml = (selected) => {
+    // Kategori lama yang sudah dihapus tetap tampil agar data tidak hilang diam-diam
+    const extra =
+      selected && !expenseCategories.some((c) => c.name === selected)
+        ? `<option value="${escapeAttr(selected)}" selected>${escapeHtml(selected)}</option>`
+        : "";
+    return (
+      `<option value="">Pilih kategori</option>` +
+      extra +
+      expenseCategories
+        .map(
+          (c) =>
+            `<option value="${escapeAttr(c.name)}" ${c.name === selected ? "selected" : ""}>${escapeHtml(c.name)}</option>`,
+        )
+        .join("")
+    );
+  };
+
+  const parseQty = (it) => (/^\d+$/.test(it.qty) ? parseInt(it.qty, 10) : 0);
+  const isComplete = (it) =>
+    it.name.trim() && calcMultiItemTotal(it) > 0 && it.category;
+
+  // Isi baris ringkas (yang selalu terlihat, bahkan saat item terlipat)
+  const barInner = (it, i) => {
+    const total = calcMultiItemTotal(it);
+    const name = it.name.trim();
+    const sub = isComplete(it)
+      ? `<span>${formatMoneyInput(parseQty(it))} × ${formatCurrency(parseMoney(it.price))}</span><span>${escapeHtml(it.category)}</span>`
+      : `<span class="mx-warn">Belum lengkap</span>`;
+    return `
+      <span class="mx-item-main">
+        <span class="mx-item-title${name ? "" : " is-empty"}">${name ? escapeHtml(name) : `Barang ${i + 1}`}</span>
+        <span class="mx-item-sub">${sub}</span>
+      </span>
+      <span class="mx-item-total">${total > 0 ? formatCurrency(total) : ""}</span>
+      <i class="fas fa-chevron-down mx-chev" aria-hidden="true"></i>`;
+  };
+
+  const itemHtml = (it, i) => {
+    const open = i === openIndex;
+    const canRemove = items.length > MULTI_MIN_ITEMS;
+    return `
+      <div class="mx-item${open ? " is-open" : ""}" data-index="${i}">
+        <button type="button" class="mx-item-bar" aria-expanded="${open}">${barInner(it, i)}</button>
+        <div class="mx-item-body"${open ? "" : " hidden"}>
+          <label class="mx-field">
+            <span class="mx-lbl">Nama barang</span>
+            <input type="text" class="mx-input mx-i-name" value="${escapeAttr(it.name)}" placeholder="Contoh: Indomie goreng" autocomplete="off">
+          </label>
+          <div class="mx-grid2">
+            <label class="mx-field mx-f-price">
+              <span class="mx-lbl">Harga satuan</span>
+              <span class="mx-money"><b>Rp</b><input type="text" inputmode="numeric" autocomplete="off" data-money class="mx-i-price" value="${escapeAttr(formatMoneyInput(it.price))}" placeholder="0"></span>
+            </label>
+            <div class="mx-field mx-f-qty">
+              <span class="mx-lbl">Jumlah</span>
+              <div class="mx-stepper" role="group" aria-label="Jumlah">
+                <button type="button" class="mx-step" data-step="-1" aria-label="Kurangi jumlah"><i class="fas fa-minus"></i></button>
+                <input type="text" inputmode="numeric" autocomplete="off" class="mx-i-qty" value="${escapeAttr(it.qty)}" aria-label="Jumlah barang">
+                <button type="button" class="mx-step" data-step="1" aria-label="Tambah jumlah"><i class="fas fa-plus"></i></button>
+              </div>
+            </div>
+          </div>
+          <label class="mx-field mx-f-cat">
+            <span class="mx-lbl">Kategori</span>
+            <select class="mx-input mx-i-cat">${categoryOptionsHtml(it.category)}</select>
+          </label>
+          <div class="mx-item-foot">
+            ${canRemove ? `<button type="button" class="mx-link danger mx-i-remove"><i class="fas fa-trash"></i> Hapus barang</button>` : "<span></span>"}
+            <span>Subtotal<strong class="mx-i-subtotal">${formatCurrency(calcMultiItemTotal(it))}</strong></span>
+          </div>
+        </div>
+      </div>`;
+  };
+
+  const hasExtra = Boolean(initial.location || initial.note);
+  const overlay = document.createElement("div");
+  overlay.className = "mx-overlay";
+  overlay.style.setProperty("--mx-accent", accent);
+  overlay.style.setProperty("--mx-hi", highlight);
+  overlay.innerHTML = `
+    <form class="mx-sheet" role="dialog" aria-modal="true" aria-labelledby="mx-title" novalidate>
+      <header class="mx-head">
+        <span class="mx-grab" aria-hidden="true"></span>
+        <div class="mx-head-row">
+          <span class="mx-head-ico"><i class="fas fa-cart-shopping"></i></span>
+          <div class="mx-head-text">
+            <h3 id="mx-title">${escapeHtml(title)}</h3>
+            ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ""}
+          </div>
+          <button type="button" class="mx-x mx-close" aria-label="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+      </header>
+
+      <div class="mx-body">
+        <section class="mx-fields">
+          <label class="mx-field">
+            <span class="mx-lbl">Nama transaksi</span>
+            <input type="text" id="mx-name" class="mx-input" autocomplete="off" value="${escapeAttr(initial.name || "")}" placeholder="${MULTI_DEFAULT_NAME}, contoh: Belanja Indomaret">
+          </label>
+          <label class="mx-field" id="mx-wallet-field">
+            <span class="mx-lbl">Dompet</span>
+            <select id="mx-wallet" class="mx-input">
+              <option value="">Pilih dompet</option>
+              ${wallets
+                .map(
+                  (w) =>
+                    `<option value="${escapeAttr(w.id)}" ${initial.walletId === w.id ? "selected" : ""}>${escapeHtml(w.name)} - ${formatCurrency(w.balance)}</option>`,
+                )
+                .join("")}
+            </select>
+          </label>
+          ${
+            showDateTime
+              ? `<div class="mx-grid2">
+                  <label class="mx-field"><span class="mx-lbl">Tanggal</span>
+                    <input type="date" id="mx-date" class="mx-input" value="${escapeAttr(initial.date || now.date)}"></label>
+                  <label class="mx-field"><span class="mx-lbl">Jam</span>
+                    <input type="time" id="mx-time" class="mx-input" value="${escapeAttr(isEdit ? initial.time || "" : now.time)}"></label>
+                </div>`
+              : ""
+          }
+          <details class="mx-more"${hasExtra ? " open" : ""}>
+            <summary>Lokasi dan catatan</summary>
+            <div class="mx-more-body">
+              <label class="mx-field"><span class="mx-lbl">Lokasi</span>
+                <input type="text" id="mx-location" class="mx-input" autocomplete="off" value="${escapeAttr(initial.location || "")}" placeholder="Contoh: Indomaret, Warung Bu Siti"></label>
+              <label class="mx-field"><span class="mx-lbl">Catatan</span>
+                <textarea id="mx-note" class="mx-input" rows="2" placeholder="Tambahkan catatan...">${escapeHtml(initial.note || "")}</textarea></label>
+            </div>
+          </details>
+        </section>
+
+        <section>
+          <div class="mx-sec-head"><h4>Barang</h4><span class="mx-count" id="mx-count"></span></div>
+          <div class="mx-items" id="mx-items"></div>
+          <button type="button" class="mx-add" id="mx-add"><i class="fas fa-plus"></i> Tambah barang</button>
+        </section>
+      </div>
+
+      <footer class="mx-foot">
+        <div class="mx-total">
+          <span class="mx-total-label">Total</span>
+          <strong class="mx-total-amt" id="mx-total">${formatCurrency(0)}</strong>
+        </div>
+        <div class="mx-btns">
+          <button type="button" class="mx-btn ghost mx-close">Batal</button>
+          <button type="submit" class="mx-btn primary" id="mx-submit">${escapeHtml(submitLabel)}</button>
+        </div>
+      </footer>
+    </form>`;
+  document.body.appendChild(overlay);
+
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  const close = () => {
+    overlay.remove();
+    document.body.style.overflow = prevOverflow;
+  };
+
+  const $ = (sel) => overlay.querySelector(sel);
+  const form = $(".mx-sheet");
+  const itemsEl = $("#mx-items");
+  const totalEl = $("#mx-total");
+  const countEl = $("#mx-count");
+  const submitBtn = $("#mx-submit");
+
+  const updateTotals = () => {
+    totalEl.textContent = formatCurrency(
+      items.reduce((sum, it) => sum + calcMultiItemTotal(it), 0),
+    );
+    countEl.textContent = `${items.length} barang`;
+  };
+
+  const renderItems = () => {
+    itemsEl.innerHTML = items.map(itemHtml).join("");
+    updateTotals();
+  };
+
+  const blockOf = (el) => el.closest(".mx-item");
+  const indexOf = (el) => {
+    const b = blockOf(el);
+    return b ? Number(b.dataset.index) : -1;
+  };
+
+  // Perbarui baris ringkas + subtotal tanpa merender ulang (fokus input tidak hilang)
+  const syncItem = (block, i) => {
+    const it = items[i];
+    block.querySelector(".mx-item-bar").innerHTML = barInner(it, i);
+    block.querySelector(".mx-i-subtotal").textContent = formatCurrency(
+      calcMultiItemTotal(it),
+    );
+    block.classList.remove("has-error");
+    block
+      .querySelectorAll(".is-invalid")
+      .forEach((el) => el.classList.remove("is-invalid"));
+    updateTotals();
+  };
+
+  const focusItem = (i, selector) => {
+    const block = itemsEl.querySelector(`.mx-item[data-index="${i}"]`);
+    if (!block) return null;
+    block.scrollIntoView({ block: "nearest" });
+    block.querySelector(selector)?.focus({ preventScroll: true });
+    return block;
+  };
+
+  itemsEl.addEventListener("input", (e) => {
+    const i = indexOf(e.target);
+    if (i < 0) return;
+    const it = items[i];
+    if (e.target.classList.contains("mx-i-name")) {
+      it.name = e.target.value;
+    } else if (e.target.classList.contains("mx-i-price")) {
+      it.price = e.target.value;
+    } else if (e.target.classList.contains("mx-i-qty")) {
+      const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
+      e.target.value = digits;
+      it.qty = digits;
+    } else {
+      return;
+    }
+    syncItem(blockOf(e.target), i);
+  });
+
+  itemsEl.addEventListener("change", (e) => {
+    if (!e.target.classList.contains("mx-i-cat")) return;
+    const i = indexOf(e.target);
+    if (i < 0) return;
+    items[i].category = e.target.value;
+    syncItem(blockOf(e.target), i);
+  });
+
+  // Jumlah kosong/0 tidak valid: kembalikan ke 1 saat fokus pergi
+  itemsEl.addEventListener("focusout", (e) => {
+    if (!e.target.classList.contains("mx-i-qty")) return;
+    const i = indexOf(e.target);
+    if (i < 0 || /^[1-9]\d*$/.test(items[i].qty)) return;
+    items[i].qty = "1";
+    e.target.value = "1";
+    syncItem(blockOf(e.target), i);
+  });
+
+  itemsEl.addEventListener("click", (e) => {
+    const removeBtn = e.target.closest(".mx-i-remove");
+    if (removeBtn) {
+      const i = indexOf(removeBtn);
+      if (i >= 0 && items.length > MULTI_MIN_ITEMS) {
+        items.splice(i, 1);
+        if (i < openIndex) openIndex -= 1;
+        else if (i === openIndex) openIndex = -1;
+        renderItems();
+      }
+      return;
+    }
+
+    const stepBtn = e.target.closest(".mx-step");
+    if (stepBtn) {
+      const i = indexOf(stepBtn);
+      if (i < 0) return;
+      const next = Math.min(
+        999999,
+        Math.max(1, parseQty(items[i]) + Number(stepBtn.dataset.step)),
+      );
+      items[i].qty = String(next);
+      const block = blockOf(stepBtn);
+      block.querySelector(".mx-i-qty").value = items[i].qty;
+      syncItem(block, i);
+      return;
+    }
+
+    const bar = e.target.closest(".mx-item-bar");
+    if (bar) {
+      const i = indexOf(bar);
+      openIndex = openIndex === i ? -1 : i;
+      renderItems();
+      if (openIndex === i) {
+        focusItem(i, items[i].name ? ".mx-i-price" : ".mx-i-name");
+      }
+    }
+  });
+
+  $("#mx-add").addEventListener("click", () => {
+    items.push(newBlankMultiItem());
+    openIndex = items.length - 1;
+    renderItems();
+    focusItem(openIndex, ".mx-i-name");
+  });
+
+  overlay.querySelectorAll(".mx-close").forEach((btn) => {
+    btn.addEventListener("click", close);
+  });
+  // Sama seperti sebelumnya: klik area gelap sengaja tidak menutup form
+  // agar input tidak hilang. Tutup lewat Batal atau tombol silang.
+
+  renderItems();
+  $("#mx-name").focus({ preventScroll: true });
+
+  // Tandai satu barang bermasalah: buka, beri bingkai merah, fokus ke kolomnya
+  const failItem = (i, selector, fieldClass, message) => {
+    openIndex = i;
+    renderItems();
+    const block = focusItem(i, selector);
+    block?.classList.add("has-error");
+    block?.querySelector(fieldClass)?.classList.add("is-invalid");
+    showToast(message, "error");
+  };
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const name = $("#mx-name").value.trim() || MULTI_DEFAULT_NAME;
+    const walletId = $("#mx-wallet").value;
+    const date = showDateTime ? $("#mx-date").value : "";
+    const time = showDateTime ? $("#mx-time").value : "";
+    const note = $("#mx-note").value;
+    const location = $("#mx-location").value.trim();
+
+    if (!walletId) {
+      $("#mx-wallet-field").classList.add("is-invalid");
+      $("#mx-wallet").focus();
+      showToast("Pilih dompet", "error");
+      return;
+    }
+    $("#mx-wallet-field").classList.remove("is-invalid");
+    if (showDateTime && !date) {
+      showToast("Tanggal harus diisi", "error");
+      return;
+    }
+    if (items.length < MULTI_MIN_ITEMS) {
+      showToast(`Minimal ${MULTI_MIN_ITEMS} barang`, "error");
+      return;
+    }
+
+    // Validasi SEMUA barang dulu; satu saja tidak valid = tidak ada yang disimpan
+    const cleanItems = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const label = `Barang ${i + 1}`;
+      const itemName = it.name.trim();
+      const price = parseMoney(it.price);
+      const qty = /^\d+$/.test(it.qty) ? parseInt(it.qty, 10) : NaN;
+
+      if (!itemName) {
+        return failItem(
+          i,
+          ".mx-i-name",
+          ".mx-input.mx-i-name",
+          `${label}: nama barang harus diisi`,
+        );
+      }
+      if (!Number.isSafeInteger(price) || price <= 0) {
+        return failItem(
+          i,
+          ".mx-i-price",
+          ".mx-f-price",
+          `${label}: harga harus lebih dari 0`,
+        );
+      }
+      if (!Number.isSafeInteger(qty) || qty <= 0) {
+        return failItem(
+          i,
+          ".mx-i-qty",
+          ".mx-f-qty",
+          `${label}: jumlah harus berupa angka positif`,
+        );
+      }
+      if (!it.category) {
+        return failItem(
+          i,
+          ".mx-i-cat",
+          ".mx-f-cat",
+          `${label}: pilih kategori`,
+        );
+      }
+      cleanItems.push({
+        itemName,
+        amount: price, // harga satuan
+        quantity: qty,
+        category: it.category,
+      });
+    }
+
+    const amount = cleanItems.reduce((s, it) => s + it.amount * it.quantity, 0);
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      showToast("Total transaksi tidak valid", "error");
+      return;
+    }
+
+    submitBtn.disabled = true;
+    let result;
+    try {
+      result = await config.onSubmit({
+        name,
+        walletId,
+        date,
+        time,
+        location,
+        note,
+        amount,
+        items: cleanItems,
+      });
+    } catch (err) {
+      console.error("Gagal menyimpan transaksi banyak:", err);
+      result = {
+        ok: false,
+        message: "Gagal menyimpan. Tidak ada data yang diubah.",
+      };
+    }
+    submitBtn.disabled = false;
+
+    if (!result || !result.ok) {
+      // Form tetap terbuka, input tidak hilang
+      showToast(
+        result?.message || "Gagal menyimpan. Tidak ada data yang diubah.",
+        "error",
+      );
+      return;
+    }
+    showToast(result.successMessage || "Tersimpan", "success");
+    close();
+    if (config.afterSave) await config.afterSave();
+  });
+
+  return overlay;
+}
+
+// Form tambah/edit Transaksi Banyak (halaman Transaksi)
 async function showMultiTransactionModal(transactionId = null) {
-  if (txModalOpening || document.querySelector("[data-tx-modal]")) return;
+  if (txModalOpening || document.querySelector("[data-tx-modal], .mx-overlay"))
+    return;
   txModalOpening = true;
   try {
     await showMultiTransactionModalImpl(transactionId);
-    const overlays = document.querySelectorAll(".modal-overlay");
-    overlays[overlays.length - 1]?.setAttribute("data-tx-modal", "1");
   } finally {
     txModalOpening = false;
   }
 }
 
 async function showMultiTransactionModalImpl(transactionId = null) {
-  ensureTxSheetStyles();
   const isEdit = transactionId !== null;
   let transaction = null;
 
@@ -2379,457 +2851,386 @@ async function showMultiTransactionModalImpl(transactionId = null) {
   const categories = await getAllItems(STORES.CATEGORIES);
   const expenseCategories = categories.filter((c) => c.type === "expense");
 
-  // State barang (sumber kebenaran form; DOM hanya cerminannya)
-  const items =
-    isEdit && Array.isArray(transaction.items)
-      ? transaction.items.map((i) => {
-          const qty = String(i.quantity || 1);
-          return {
-            name: i.itemName || "",
-            price: formatMoneyInput(i.amount),
-            qty,
-            qtyOther: !["1", "2", "3", "4", "5"].includes(qty),
-            category: i.category || "",
-          };
-        })
-      : [];
-  while (items.length < MULTI_MIN_ITEMS) items.push(newBlankMultiItem());
+  openMultiItemForm({
+    title: isEdit ? "Edit transaksi banyak" : "Transaksi banyak",
+    subtitle: "Satu belanja, beberapa barang, saldo dipotong sekali",
+    submitLabel: isEdit ? "Simpan perubahan" : "Simpan transaksi",
+    accent: "#0B3D2A",
+    highlight: "#C6F432",
+    showDateTime: true,
+    wallets,
+    expenseCategories,
+    initial: isEdit
+      ? {
+          name: transaction.itemName,
+          walletId: transaction.walletId,
+          date: transaction.date,
+          time: transaction.time || "",
+          location: transaction.location || "",
+          note: transaction.note || "",
+          items: transaction.items,
+        }
+      : {},
+    onSubmit: async (p) => {
+      const payload = {
+        itemName: p.name,
+        amount: p.amount, // TOTAL seluruh barang (bukan harga satuan)
+        quantity: 1,
+        type: "expense",
+        category: MULTI_DEFAULT_NAME,
+        walletId: p.walletId,
+        note: p.note,
+        location: p.location,
+        date: p.date,
+        time: p.time,
+        savingId: null,
+        isMultiItem: true,
+        items: p.items,
+      };
 
-  function categoryOptionsHtml(selected) {
-    // Kategori lama yang sudah dihapus tetap ditampilkan agar data tidak hilang diam-diam
-    const extra =
-      selected && !expenseCategories.some((c) => c.name === selected)
-        ? `<option value="${escapeAttr(selected)}" selected>${escapeHtml(selected)}</option>`
-        : "";
-    return (
-      `<option value="">Pilih Kategori</option>` +
-      extra +
-      expenseCategories
-        .map(
-          (c) =>
-            `<option value="${escapeAttr(c.name)}" ${c.name === selected ? "selected" : ""}>${escapeHtml(c.name)}</option>`,
-        )
-        .join("")
-    );
-  }
-
-  function itemsHtml() {
-    return items
-      .map((it, i) => {
-        const qtyBtns = ["1", "2", "3", "4", "5"]
-          .map(
-            (q) =>
-              `<button type="button" class="qty-btn ${!it.qtyOther && it.qty === q ? "active" : ""}" data-qty="${q}">${q}</button>`,
-          )
-          .join("");
-        return `
-        <div class="multi-item" data-index="${i}">
-            <div class="multi-item-header">
-                <span class="multi-item-title">Barang ${i + 1}</span>
-                ${
-                  items.length > MULTI_MIN_ITEMS
-                    ? `<button type="button" class="icon-btn multi-item-remove" title="Hapus barang" aria-label="Hapus Barang ${i + 1}"><i class="fas fa-trash"></i></button>`
-                    : ""
-                }
-            </div>
-            <div class="form-group">
-                <label>Nama Barang</label>
-                <input type="text" class="form-input multi-item-name" value="${escapeAttr(it.name)}" placeholder="Contoh: Indomie Goreng" autocomplete="off">
-            </div>
-            <div class="multi-form-row">
-                <div class="form-group">
-                    <label>Harga Satuan</label>
-                    <input type="text" inputmode="numeric" autocomplete="off" data-money class="form-input multi-item-price" value="${escapeAttr(formatMoneyInput(it.price))}" placeholder="0">
-                </div>
-                <div class="form-group">
-                    <label>Total Barang</label>
-                    <div class="multi-item-total">${formatCurrency(calcMultiItemTotal(it))}</div>
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Jumlah</label>
-                <div class="quantity-selector">
-                    ${qtyBtns}
-                    <button type="button" class="qty-btn ${it.qtyOther ? "active" : ""}" data-qty="other">Lainnya</button>
-                </div>
-                <input type="text" inputmode="numeric" autocomplete="off" class="form-input multi-item-qty-custom" value="${it.qtyOther ? escapeAttr(formatMoneyInput(it.qty)) : ""}" placeholder="Masukkan jumlah" ${it.qtyOther ? "" : "hidden"}>
-            </div>
-            <div class="form-group">
-                <label>Kategori</label>
-                <select class="form-input multi-item-category">${categoryOptionsHtml(it.category)}</select>
-            </div>
-        </div>`;
-      })
-      .join("");
-  }
-
-  const modal = document.createElement("div");
-  modal.className = "modal-overlay tx-sheet-overlay";
-  modal.innerHTML = `
-        <div class="modal-container modal-large tx-sheet">
-            <div class="modal-header">
-                <h3><i class="fas fa-shopping-basket"></i> ${isEdit ? "Edit Transaksi Banyak" : "Transaksi Banyak"}</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="multi-transaction-form" novalidate>
-                    <div class="tx-sheet-scroll">
-                    <div class="form-group">
-                        <label>Nama Transaksi</label>
-                        <input type="text" id="multi-name" class="form-input" value="${isEdit ? escapeAttr(transaction.itemName) : ""}" placeholder="${MULTI_DEFAULT_NAME} (contoh: Belanja Indomaret)">
-                    </div>
-                    <div class="form-group">
-                        <label>Dompet</label>
-                        <select id="multi-wallet" class="form-input">
-                            <option value="">Pilih Dompet</option>
-                            ${wallets
-                              .map(
-                                (w) =>
-                                  `<option value="${escapeAttr(w.id)}" ${isEdit && transaction.walletId === w.id ? "selected" : ""}>${escapeHtml(w.name)} - ${formatCurrency(w.balance)}</option>`,
-                              )
-                              .join("")}
-                        </select>
-                    </div>
-                    <div class="multi-form-row">
-                        <div class="form-group">
-                            <label>Tanggal</label>
-                            <input type="date" id="multi-date" class="form-input" value="${isEdit ? transaction.date : getCurrentDateTime().date}">
-                        </div>
-                        <div class="form-group">
-                            <label>Jam</label>
-                            <input type="time" id="multi-time" class="form-input" value="${isEdit ? transaction.time || "" : getCurrentDateTime().time}">
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>Lokasi Transaksi</label>
-                        <input type="text" id="multi-location" class="form-input" autocomplete="off" value="${isEdit ? escapeAttr(transaction.location || "") : ""}" placeholder="Opsional, contoh: Indomaret, Warung Bu Siti">
-                    </div>
-                    <div class="form-group">
-                        <label>Catatan (Opsional)</label>
-                        <textarea id="multi-note" class="form-input" rows="2" placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea>
-                    </div>
-
-                    <div class="multi-section-title">Barang yang Dibeli</div>
-                    <div id="multi-items">${itemsHtml()}</div>
-                    <button type="button" class="btn-secondary multi-add-btn" id="multi-add-item">
-                        <i class="fas fa-plus"></i> Tambah Barang
-                    </button>
-                    </div>
-
-                    <div class="multi-footer tx-sheet-footer">
-                        <div class="multi-total-row">
-                            <span>Total Transaksi</span>
-                            <span id="multi-total">${formatCurrency(0)}</span>
-                        </div>
-                        <div class="modal-buttons">
-                            <button type="button" class="btn-secondary modal-close-btn">Batal</button>
-                            <button type="submit" class="btn-primary" id="multi-submit">${isEdit ? "Simpan Perubahan" : "Simpan Transaksi"}</button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    `;
-  document.body.appendChild(modal);
-
-  const itemsContainer = modal.querySelector("#multi-items");
-  const totalEl = modal.querySelector("#multi-total");
-
-  function updateTotals() {
-    const grand = items.reduce((sum, it) => sum + calcMultiItemTotal(it), 0);
-    totalEl.textContent = formatCurrency(grand);
-  }
-
-  function rerenderItems() {
-    itemsContainer.innerHTML = itemsHtml();
-    updateTotals();
-  }
-
-  function itemIndexOf(el) {
-    const block = el.closest(".multi-item");
-    return block ? Number(block.dataset.index) : -1;
-  }
-
-  // Sinkronkan tampilan Jumlah satu barang tanpa merender ulang seluruh daftar
-  function syncQtyUi(block, it) {
-    block.querySelectorAll(".qty-btn").forEach((b) => {
-      b.classList.toggle(
-        "active",
-        it.qtyOther ? b.dataset.qty === "other" : b.dataset.qty === it.qty,
-      );
-    });
-    const custom = block.querySelector(".multi-item-qty-custom");
-    custom.hidden = !it.qtyOther;
-    if (it.qtyOther) custom.value = formatMoneyInput(it.qty);
-  }
-
-  itemsContainer.addEventListener("input", (e) => {
-    const i = itemIndexOf(e.target);
-    if (i < 0) return;
-    const it = items[i];
-    const block = e.target.closest(".multi-item");
-
-    if (e.target.classList.contains("multi-item-name")) {
-      it.name = e.target.value;
-    } else if (e.target.classList.contains("multi-item-price")) {
-      it.price = e.target.value;
-      block.querySelector(".multi-item-total").textContent = formatCurrency(
-        calcMultiItemTotal(it),
-      );
-    } else if (e.target.classList.contains("multi-item-qty-custom")) {
-      // Tampilan "1.000", nilai state tetap digit murni "1000"
-      const digits = e.target.value.replace(/\D/g, "");
-      e.target.value = formatMoneyInput(digits);
-      it.qty = digits;
-      block.querySelector(".multi-item-total").textContent = formatCurrency(
-        calcMultiItemTotal(it),
-      );
-    } else {
-      return;
-    }
-    updateTotals();
-  });
-
-  itemsContainer.addEventListener("change", (e) => {
-    if (!e.target.classList.contains("multi-item-category")) return;
-    const i = itemIndexOf(e.target);
-    if (i >= 0) items[i].category = e.target.value;
-  });
-
-  itemsContainer.addEventListener("click", (e) => {
-    const removeBtn = e.target.closest(".multi-item-remove");
-    if (removeBtn) {
-      const i = itemIndexOf(removeBtn);
-      if (i >= 0 && items.length > MULTI_MIN_ITEMS) {
-        items.splice(i, 1);
-        rerenderItems();
-      }
-      return;
-    }
-
-    const qtyBtn = e.target.closest(".qty-btn");
-    if (qtyBtn) {
-      const i = itemIndexOf(qtyBtn);
-      if (i < 0) return;
-      const it = items[i];
-      const block = qtyBtn.closest(".multi-item");
-      if (qtyBtn.dataset.qty === "other") {
-        // Sama seperti form transaksi biasa: pindah dari preset ke "Lainnya"
-        // mengosongkan input custom; jika sudah mode "Lainnya", angka dipertahankan
-        if (!it.qtyOther) it.qty = "";
-        it.qtyOther = true;
-        syncQtyUi(block, it);
-        block.querySelector(".multi-item-qty-custom").focus();
+      let record;
+      if (isEdit) {
+        record = { ...transaction, ...payload };
+        record.updatedAt = getCurrentDateTime().datetime;
       } else {
-        it.qtyOther = false;
-        it.qty = qtyBtn.dataset.qty;
-        syncQtyUi(block, it);
+        record = { ...payload, createdAt: getCurrentDateTime().timestamp };
       }
-      block.querySelector(".multi-item-total").textContent = formatCurrency(
-        calcMultiItemTotal(it),
-      );
-      updateTotals();
-    }
-  });
 
-  modal.querySelector("#multi-add-item").addEventListener("click", () => {
-    items.push(newBlankMultiItem());
-    rerenderItems();
-    const blocks = itemsContainer.querySelectorAll(".multi-item");
-    const last = blocks[blocks.length - 1];
-    if (last) {
-      last.scrollIntoView({ block: "nearest" });
-      last.querySelector(".multi-item-name").focus();
-    }
-  });
-
-  updateTotals();
-
-  const form = modal.querySelector("#multi-transaction-form");
-  const submitBtn = modal.querySelector("#multi-submit");
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-
-    const name =
-      modal.querySelector("#multi-name").value.trim() || MULTI_DEFAULT_NAME;
-    const walletId = modal.querySelector("#multi-wallet").value;
-    const date = modal.querySelector("#multi-date").value;
-    const time = modal.querySelector("#multi-time").value;
-    const note = modal.querySelector("#multi-note").value;
-    const location = modal.querySelector("#multi-location").value.trim();
-
-    if (!walletId) {
-      showToast("Pilih dompet", "error");
-      return;
-    }
-    if (!date) {
-      showToast("Tanggal harus diisi", "error");
-      return;
-    }
-    if (items.length < MULTI_MIN_ITEMS) {
-      showToast(`Minimal ${MULTI_MIN_ITEMS} barang`, "error");
-      return;
-    }
-
-    // Validasi SEMUA barang dulu; satu saja invalid = tidak ada yang disimpan
-    const cleanItems = [];
-    for (let i = 0; i < items.length; i++) {
-      const it = items[i];
-      const label = `Barang ${i + 1}`;
-      const itemName = it.name.trim();
-      const price = parseMoney(it.price);
-      const qty = /^\d+$/.test(it.qty) ? parseInt(it.qty, 10) : NaN;
-
-      if (!itemName) {
-        showToast(`${label}: nama barang harus diisi`, "error");
-        return;
-      }
-      if (!Number.isSafeInteger(price) || price <= 0) {
-        showToast(`${label}: harga harus lebih dari 0`, "error");
-        return;
-      }
-      if (!Number.isSafeInteger(qty) || qty <= 0) {
-        showToast(`${label}: jumlah harus berupa angka positif`, "error");
-        return;
-      }
-      if (!it.category) {
-        showToast(`${label}: pilih kategori`, "error");
-        return;
-      }
-      cleanItems.push({
-        itemName,
-        amount: price, // harga satuan
-        quantity: qty,
-        category: it.category,
-      });
-    }
-
-    const totalAmount = cleanItems.reduce(
-      (sum, it) => sum + it.amount * it.quantity,
-      0,
-    );
-    if (!Number.isSafeInteger(totalAmount) || totalAmount <= 0) {
-      showToast("Total transaksi tidak valid", "error");
-      return;
-    }
-
-    const payload = {
-      itemName: name,
-      amount: totalAmount, // TOTAL seluruh barang (bukan harga satuan)
-      quantity: 1,
-      type: "expense",
-      category: MULTI_DEFAULT_NAME,
-      walletId,
-      note,
-      location,
-      date,
-      time,
-      savingId: null,
-      isMultiItem: true,
-      items: cleanItems,
-    };
-
-    let record;
-    if (isEdit) {
-      record = { ...transaction, ...payload };
-      record.updatedAt = getCurrentDateTime().datetime;
-    } else {
-      record = { ...payload, createdAt: getCurrentDateTime().timestamp };
-    }
-
-    submitBtn.disabled = true;
-    let result;
-    try {
-      result = await saveMultiTransactionAtomic(
+      const result = await saveMultiTransactionAtomic(
         record,
         isEdit ? transaction : null,
       );
-    } catch (err) {
-      console.error("Gagal menyimpan transaksi banyak:", err);
-      result = { ok: false, error: "exception" };
-    }
-    submitBtn.disabled = false;
-
-    if (!result.ok) {
-      if (result.error === "wallet-missing") {
-        showToast("Dompet tidak ditemukan", "error");
-      } else if (result.error === "insufficient") {
-        showToast(
-          `Saldo ${result.wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(result.wallet.balance)})`,
-          "error",
-        );
-      } else {
-        showToast(
-          "Gagal menyimpan transaksi. Tidak ada data yang diubah.",
-          "error",
-        );
+      if (!result.ok) {
+        if (result.error === "wallet-missing") {
+          return { ok: false, message: "Dompet tidak ditemukan" };
+        }
+        if (result.error === "insufficient") {
+          return {
+            ok: false,
+            message: `Saldo ${result.wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(result.wallet.balance)})`,
+          };
+        }
+        return {
+          ok: false,
+          message: "Gagal menyimpan transaksi. Tidak ada data yang diubah.",
+        };
       }
-      return; // modal tetap terbuka, input user tidak hilang
-    }
-
-    showToast(
-      isEdit ? "Transaksi berhasil diupdate" : "Transaksi berhasil ditambahkan",
-      "success",
-    );
-
-    modal.remove();
-    await loadTransactions();
-    renderFilteredTransactions();
-
-    // Refresh dashboard hanya jika dashboard yang sedang aktif (pola dari wallet.js),
-    // agar user tidak berpindah dari halaman Transaksi setelah menyimpan
-    if (
-      window.renderDashboard &&
-      window.getCurrentPage &&
-      window.getCurrentPage() === "dashboard"
-    ) {
-      await window.renderDashboard();
-    }
+      return {
+        ok: true,
+        successMessage: isEdit
+          ? "Transaksi berhasil diupdate"
+          : "Transaksi berhasil ditambahkan",
+      };
+    },
+    afterSave: async () => {
+      await loadTransactions();
+      renderFilteredTransactions();
+      // Refresh dashboard hanya jika dashboard yang sedang aktif, agar user
+      // tidak berpindah dari halaman Transaksi setelah menyimpan
+      if (
+        window.renderDashboard &&
+        window.getCurrentPage &&
+        window.getCurrentPage() === "dashboard"
+      ) {
+        await window.renderDashboard();
+      }
+    },
   });
-
-  const closeModal = () => modal.remove();
-  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
-    btn.addEventListener("click", closeModal);
-  });
-  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
-  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
 }
 
-// Detail (read-only) Transaksi Banyak: info parent + daftar barang
+// Detail (read-only) Transaksi Banyak: ringkasan + daftar barang
 function showMultiTransactionDetailModal(transaction, wallet) {
-  const itemsHtml = transaction.items
+  ensureMultiSheetStyles();
+  document.querySelector(".mx-overlay")?.remove();
+
+  const linesHtml = transaction.items
     .map((it) => {
       const qty = it.quantity || 1;
       return `
-        <div class="td-item">
-            <div class="td-item-name">${escapeHtml(it.itemName)}</div>
-            ${detailRowsHtml([
-              ["Harga Satuan", formatCurrency(it.amount)],
-              ["Jumlah", qty],
-              ["Total", formatCurrency(it.amount * qty)],
-              ["Kategori", escapeHtml(it.category || "Umum")],
-            ])}
-        </div>`;
+        <li class="mx-line">
+          <div>
+            <div class="mx-line-name">${escapeHtml(it.itemName)}</div>
+            <div class="mx-line-sub"><span>${formatMoneyInput(qty)} × ${formatCurrency(it.amount)}</span><span>${escapeHtml(it.category || "Umum")}</span></div>
+          </div>
+          <strong>${formatCurrency(it.amount * qty)}</strong>
+        </li>`;
     })
     .join("");
 
-  openDetailModal({
-    transaction,
-    wallet,
-    icon: "fa-shopping-basket",
-    bodyHtml:
-      detailRowsHtml([
-        ["Dompet", walletPillHtml(wallet) || "-"],
-        transaction.location
-          ? ["Lokasi Transaksi", escapeHtml(transaction.location)]
-          : null,
-        transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
-        ["Tanggal", formatDate(transaction.date)],
-        ["Waktu", transaction.time || "-"],
-      ]) +
-      `<div class="td-section">Barang yang Dibeli</div>${itemsHtml}`,
+  const rows = [
+    ["Dompet", walletPillHtml(wallet) || "-"],
+    transaction.location ? ["Lokasi", escapeHtml(transaction.location)] : null,
+    transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
+  ]
+    .filter(Boolean)
+    .map(
+      ([l, v]) =>
+        `<div class="mx-row"><span>${l}</span><span>${v}</span></div>`,
+    )
+    .join("");
+
+  const overlay = document.createElement("div");
+  overlay.className = "mx-overlay mx-detail";
+  overlay.innerHTML = `
+    <div class="mx-sheet" role="dialog" aria-modal="true" aria-labelledby="mx-title">
+      <header class="mx-head">
+        <span class="mx-grab" aria-hidden="true"></span>
+        <div class="mx-head-row">
+          <span class="mx-head-ico"><i class="fas fa-cart-shopping"></i></span>
+          <div class="mx-head-text"><h3 id="mx-title">Detail transaksi</h3></div>
+          <button type="button" class="mx-x mx-close" aria-label="Tutup"><i class="fas fa-xmark"></i></button>
+        </div>
+      </header>
+      <div class="mx-body">
+        <div class="mx-hero">
+          <span class="mx-hero-label">Pengeluaran, ${transaction.items.length} barang</span>
+          <span class="mx-hero-amt">- ${formatCurrency(transaction.amount)}</span>
+          <span class="mx-hero-name">${escapeHtml(transaction.itemName)}</span>
+          <span class="mx-hero-date">${formatDate(transaction.date)}${transaction.time ? `, ${escapeHtml(transaction.time)}` : ""}</span>
+        </div>
+        <div class="mx-rows">${rows}</div>
+        <section>
+          <div class="mx-sec-head"><h4>Barang yang dibeli</h4></div>
+          <ul class="mx-lines">${linesHtml}</ul>
+        </section>
+      </div>
+      <footer class="mx-foot">
+        <div class="mx-btns">
+          <button type="button" class="mx-btn ghost mx-close">Tutup</button>
+          <button type="button" class="mx-btn primary" id="mx-edit">Edit</button>
+        </div>
+      </footer>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  const close = () => {
+    overlay.remove();
+    document.body.style.overflow = prevOverflow;
+  };
+  overlay
+    .querySelectorAll(".mx-close")
+    .forEach((b) => b.addEventListener("click", close));
+  overlay.querySelector("#mx-edit").addEventListener("click", () => {
+    close();
+    editTransaction(transaction.id);
   });
+  // Detail hanya baca, jadi aman ditutup dengan klik area gelap
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+}
+
+// Gaya modal transaksi banyak: sheet dari bawah di mobile, dialog di tengah di desktop
+function ensureMultiSheetStyles() {
+  if (document.getElementById("mx-sheet-styles")) return;
+  const style = document.createElement("style");
+  style.id = "mx-sheet-styles";
+  style.textContent = `
+    .mx-overlay {
+      --mx-accent: #0B3D2A;
+      --mx-hi: #C6F432;
+      --mx-surface: var(--bg-secondary, #fff);
+      --mx-soft: var(--bg-primary, #F4F4F7);
+      --mx-text: var(--text-primary, #242333);
+      --mx-muted: var(--text-secondary, #6F6F7B);
+      --mx-line: var(--border-color, #E6E6EC);
+      --mx-danger: #DC4C4C;
+      --mx-warn: #B45309;
+      --mx-focus: color-mix(in srgb, var(--mx-accent) 60%, var(--mx-text));
+      position: fixed;
+      inset: 0;
+      z-index: 3000;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      background: rgba(10, 18, 14, 0.52);
+      animation: mx-fade 0.18s ease-out;
+    }
+    .mx-overlay *, .mx-overlay *::before, .mx-overlay *::after { box-sizing: border-box; }
+    .mx-sheet {
+      width: 100%;
+      max-width: 560px;
+      max-height: 94vh;
+      max-height: 94dvh;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--mx-surface);
+      color: var(--mx-text);
+      font-family: inherit;
+      border-radius: 28px 28px 0 0;
+      box-shadow: 0 -14px 50px rgba(0, 0, 0, 0.25);
+      animation: mx-rise 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    @keyframes mx-fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes mx-rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    .mx-head { flex: none; padding: 10px 20px 14px; }
+    .mx-grab { display: block; width: 40px; height: 4px; margin: 0 auto 12px; border-radius: 99px; background: var(--mx-line); }
+    .mx-head-row { display: flex; align-items: center; gap: 12px; }
+    .mx-head-ico {
+      width: 44px; height: 44px; flex: none; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--mx-accent); color: var(--mx-hi); font-size: 1.05rem;
+    }
+    .mx-head-text { flex: 1; min-width: 0; }
+    .mx-head-text h3 { margin: 0; font-size: 1.08rem; font-weight: 700; letter-spacing: -0.01em; color: var(--mx-text); }
+    .mx-head-text p { margin: 2px 0 0; font-size: 0.78rem; line-height: 1.4; color: var(--mx-muted); }
+    .mx-x {
+      width: 38px; height: 38px; flex: none; padding: 0; border: 0; border-radius: 50%;
+      background: var(--mx-soft); color: var(--mx-muted); font-size: 0.95rem; cursor: pointer;
+    }
+
+    .mx-body {
+      flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+      display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 22px; padding: 6px 20px 22px; overflow-x: hidden;
+    }
+    .mx-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+    .mx-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .mx-field { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; min-width: 0; margin: 0; }
+    .mx-grid2 > * { min-width: 0; }
+    .mx-lbl { font-size: 0.78rem; font-weight: 600; color: var(--mx-muted); }
+
+    .mx-input {
+      width: 100%; min-width: 0; max-width: 100%; height: 46px; padding: 0 14px; margin: 0;
+      border: 1.5px solid transparent; border-radius: 12px;
+      background: var(--mx-soft); color: var(--mx-text);
+      font: inherit; font-size: 16px; outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    textarea.mx-input { height: auto; min-height: 72px; padding: 12px 14px; line-height: 1.4; resize: vertical; }
+    select.mx-input {
+      appearance: none; -webkit-appearance: none; padding-right: 38px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%238a8a96' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; background-size: 12px;
+    }
+    .mx-money, .mx-stepper {
+      border: 1.5px solid transparent; border-radius: 12px; background: var(--mx-soft);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .mx-money { display: flex; align-items: center; width: 100%; min-width: 0; max-width: 100%; height: 46px; padding-left: 12px; overflow: hidden; }
+    .mx-money b { margin-right: 6px; font-size: 0.85rem; font-weight: 600; color: var(--mx-muted); }
+    /* !important: CSS global aplikasi (input { width:100%; padding:... }) tidak boleh melebarkan kolom ini */
+    .mx-overlay .mx-money input {
+      flex: 1 1 0 !important; width: 0 !important; min-width: 0 !important; max-width: 100% !important;
+      height: 100% !important; margin: 0 !important; padding: 0 12px 0 0 !important;
+      border: 0 !important; border-radius: 0 !important; outline: none !important; box-shadow: none !important;
+      background: none !important; color: var(--mx-text); font: inherit; font-size: 16px; font-variant-numeric: tabular-nums;
+    }
+    .mx-stepper { display: grid; grid-template-columns: 42px minmax(0, 1fr) 42px; align-items: center; width: 100%; min-width: 0; height: 46px; overflow: hidden; }
+    .mx-step { height: 100%; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--mx-text); font-size: 0.8rem; cursor: pointer; }
+    .mx-step:active { background: var(--mx-line); }
+    .mx-overlay .mx-i-qty {
+      width: 100% !important; min-width: 0 !important; height: 100% !important; margin: 0 !important; padding: 0 !important;
+      border: 0 !important; box-shadow: none !important; outline: none !important; background: none !important;
+      color: var(--mx-text); font: inherit; font-size: 16px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums;
+    }
+    .mx-input:focus, .mx-money:focus-within, .mx-stepper:focus-within {
+      border-color: var(--mx-focus);
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--mx-accent) 16%, transparent);
+    }
+    .mx-field.is-invalid .mx-input, .mx-field.is-invalid .mx-money, .mx-field.is-invalid .mx-stepper { border-color: var(--mx-danger); }
+
+    .mx-more summary {
+      list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 2px; font-size: 0.84rem; font-weight: 600; color: var(--mx-muted);
+    }
+    .mx-more summary::-webkit-details-marker { display: none; }
+    .mx-more summary::after {
+      content: ""; width: 8px; height: 8px; margin-right: 4px;
+      border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+      transform: rotate(45deg); transition: transform 0.2s;
+    }
+    .mx-more[open] summary::after { transform: rotate(-135deg); }
+    .mx-more-body { display: grid; gap: 12px; padding-top: 10px; }
+
+    .mx-sec-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+    .mx-sec-head h4 { margin: 0; font-size: 1rem; font-weight: 700; color: var(--mx-text); }
+    .mx-count { font-size: 0.8rem; color: var(--mx-muted); }
+    .mx-items { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 12px; }
+
+    .mx-item { border: 1px solid var(--mx-line); border-radius: 16px; background: var(--mx-surface); overflow: hidden; }
+    .mx-item.is-open { border-color: color-mix(in srgb, var(--mx-accent) 45%, var(--mx-line)); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06); }
+    .mx-item.has-error { border-color: var(--mx-danger); }
+    .mx-item-bar {
+      width: 100%; display: flex; align-items: center; gap: 12px; padding: 13px 14px;
+      border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+    }
+    .mx-item-main { flex: 1; min-width: 0; display: grid; gap: 2px; }
+    .mx-item-title { font-size: 0.92rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mx-item-title.is-empty { font-weight: 500; color: var(--mx-muted); }
+    .mx-item-sub { display: flex; flex-wrap: wrap; gap: 0 10px; font-size: 0.74rem; color: var(--mx-muted); }
+    .mx-warn { color: var(--mx-warn); }
+    .mx-item-total { flex: none; font-size: 0.9rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .mx-chev { flex: none; font-size: 0.7rem; color: var(--mx-muted); transition: transform 0.2s; }
+    .mx-item.is-open .mx-chev { transform: rotate(180deg); }
+    .mx-item-body { display: grid; gap: 12px; padding: 14px; border-top: 1px solid var(--mx-line); }
+    .mx-item-body[hidden] { display: none; }
+    .mx-item-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 0.8rem; color: var(--mx-muted); }
+    .mx-item-foot strong { margin-left: 6px; font-size: 0.92rem; color: var(--mx-text); font-variant-numeric: tabular-nums; }
+    .mx-link {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 0; border: 0; background: none;
+      font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    }
+    .mx-link.danger { color: var(--mx-danger); }
+
+    .mx-add {
+      width: 100%; height: 50px; display: flex; align-items: center; justify-content: center; gap: 8px;
+      border: 1.5px dashed color-mix(in srgb, var(--mx-accent) 45%, var(--mx-line)); border-radius: 16px;
+      background: none; color: var(--mx-focus); font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    }
+
+    .mx-foot {
+      flex: none; padding: 14px 20px calc(16px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid var(--mx-line); background: var(--mx-surface);
+    }
+    .mx-total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+    .mx-total-label { font-size: 0.84rem; color: var(--mx-muted); }
+    .mx-total-amt { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
+    .mx-btns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 10px; }
+    .mx-btn { height: 50px; padding: 0 12px; border: 0; border-radius: 14px; font: inherit; font-size: 0.95rem; font-weight: 700; cursor: pointer; }
+    .mx-btn.ghost { background: var(--mx-soft); color: var(--mx-text); }
+    .mx-btn.primary { background: var(--mx-accent); color: #fff; }
+    .mx-btn:disabled { opacity: 0.6; cursor: default; }
+    .mx-btn:focus-visible, .mx-x:focus-visible, .mx-item-bar:focus-visible, .mx-add:focus-visible, .mx-step:focus-visible, .mx-link:focus-visible {
+      outline: 2px solid var(--mx-focus); outline-offset: 2px;
+    }
+
+    /* Detail */
+    .mx-hero {
+      --hc: var(--mx-danger); display: grid; gap: 4px; padding: 18px; border-radius: 20px;
+      background: color-mix(in srgb, var(--hc) 10%, transparent);
+    }
+    .mx-hero-label { font-size: 0.78rem; font-weight: 600; color: var(--hc); }
+    .mx-hero-amt { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; color: var(--hc); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .mx-hero-name { font-size: 0.92rem; font-weight: 600; overflow-wrap: anywhere; }
+    .mx-hero-date { font-size: 0.78rem; color: var(--mx-muted); }
+    .mx-row { display: flex; justify-content: space-between; gap: 16px; padding: 12px 2px; border-bottom: 1px solid var(--mx-line); font-size: 0.86rem; }
+    .mx-row:last-child { border-bottom: 0; }
+    .mx-row > span:first-child { flex: none; color: var(--mx-muted); }
+    .mx-row > span:last-child { min-width: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+    .mx-lines { margin: 0; padding: 0; list-style: none; }
+    .mx-line { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--mx-line); }
+    .mx-line:last-child { border-bottom: 0; }
+    .mx-line-name { font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
+    .mx-line-sub { display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: 2px; font-size: 0.76rem; color: var(--mx-muted); }
+    .mx-line strong { flex: none; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+    @media (min-width: 768px) {
+      .mx-overlay { align-items: center; padding: 24px; }
+      .mx-sheet { max-height: min(88vh, 860px); border-radius: 24px; }
+      .mx-grab { display: none; }
+      .mx-head { padding-top: 20px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .mx-overlay, .mx-sheet { animation: none; }
+      .mx-chev, .mx-more summary::after { transition: none; }
+    }
+  `;
+  document.head.appendChild(style);
 }
 
 // Edit transaction
