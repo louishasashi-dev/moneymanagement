@@ -17,6 +17,7 @@ import {
   getCurrentDateTime,
   formatMoneyInput,
   parseMoney,
+  safeImageSrc,
 } from "./utils.js";
 import { ensureTxSheetStyles } from "./modal-sheet.js";
 import {
@@ -320,7 +321,7 @@ function renderSavingsList() {
                         <div class="sv-lead">
                             ${
                               saving.photo
-                                ? `<div class="sv-photo"><img src="${saving.photo}" alt="${name}" class="saving-photo-thumb"></div>`
+                                ? `<div class="sv-photo"><img src="${safeImageSrc(saving.photo)}" alt="${name}" class="saving-photo-thumb"></div>`
                                 : renderTypeTile("saving")
                             }
                         </div>
@@ -351,7 +352,7 @@ function renderSavingsList() {
                 <div class="saving-card-header">
                     ${
                       saving.photo
-                        ? `<div class="saving-icon has-photo"><img src="${saving.photo}" alt="${name}" class="saving-photo-thumb"></div>`
+                        ? `<div class="saving-icon has-photo"><img src="${safeImageSrc(saving.photo)}" alt="${name}" class="saving-photo-thumb"></div>`
                         : renderTypeTile("saving", "saving-icon-tile")
                     }
                     <div class="saving-info">
@@ -532,7 +533,7 @@ async function showSavingModal(savingId = null) {
                 <label>Foto Target (Opsional)</label>
                 <div class="saving-photo-upload">
                     <div class="saving-photo-preview-wrap" id="saving-photo-preview-wrap" style="${isEdit && saving.photo ? "" : "display:none;"}">
-                        <img id="saving-photo-preview" src="${isEdit && saving.photo ? saving.photo : ""}" alt="Preview foto target">
+                        <img id="saving-photo-preview" src="${isEdit && saving.photo ? safeImageSrc(saving.photo) : ""}" alt="Preview foto target">
                         <button type="button" class="saving-photo-remove-btn" id="saving-photo-remove-btn" title="Hapus Foto">
                             <i class="fas fa-times"></i>
                         </button>
@@ -1993,7 +1994,7 @@ function showPhotoLightbox(photoUrl, title = "") {
       <button type="button" class="saving-photo-lightbox-close" title="Tutup">
         <i class="fas fa-times"></i>
       </button>
-      <img src="${photoUrl}" alt="${displayText(title)}">
+      <img src="${safeImageSrc(photoUrl)}" alt="${displayText(title)}">
       ${title ? `<div class="saving-photo-lightbox-title">${displayText(title)}</div>` : ""}
     </div>
   `;

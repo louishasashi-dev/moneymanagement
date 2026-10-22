@@ -18,6 +18,8 @@ import {
   capitalize,
   formatMoneyInput,
   parseMoney,
+  safeImageSrc,
+  escapeAttr,
 } from "./utils.js";
 import { ensureTxSheetStyles } from "./modal-sheet.js";
 
@@ -234,8 +236,8 @@ function renderWalletCard(wallet) {
                 <div class="wallet-card-icon ${wallet.photo ? "has-photo" : ""}">
                     ${
                       wallet.photo
-                        ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
-                        : `<i class="fas ${wallet.icon || "fa-wallet"}"></i>`
+                        ? `<img src="${safeImageSrc(wallet.photo)}" alt="${escapeHtml(wallet.name)}">`
+                        : `<i class="fas ${escapeAttr(wallet.icon || "fa-wallet")}"></i>`
                     }
                 </div>
                 <div class="wallet-card-info">
@@ -439,8 +441,8 @@ function renderMobileWalletCard(wallet) {
                 <div class="wm-item-icon ${wallet.photo ? "has-photo" : ""}">
                     ${
                       wallet.photo
-                        ? `<img src="${wallet.photo}" alt="${escapeHtml(wallet.name)}">`
-                        : `<i class="fas ${wallet.icon || "fa-wallet"}"></i>`
+                        ? `<img src="${safeImageSrc(wallet.photo)}" alt="${escapeHtml(wallet.name)}">`
+                        : `<i class="fas ${escapeAttr(wallet.icon || "fa-wallet")}"></i>`
                     }
                 </div>
                 <div class="wm-item-info">
@@ -704,7 +706,7 @@ async function showWalletModal(walletId = null) {
 
   const renderPhotoPreview = () => {
     photoPreview.innerHTML = photoData
-      ? `<img src="${photoData}" alt="Foto dompet">`
+      ? `<img src="${safeImageSrc(photoData)}" alt="Foto dompet">`
       : `<i class="fas fa-image"></i>`;
     photoRemoveBtn.hidden = !photoData;
     photoPickBtn.innerHTML = `<i class="fas fa-image"></i> ${photoData ? "Ganti Foto" : "Pilih Foto"}`;

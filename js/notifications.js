@@ -1,6 +1,6 @@
 // Notifications Module
 import { getAllItems, addItem, updateItem, deleteItem, STORES } from "./db.js";
-import { formatDate, showToast } from "./utils.js";
+import { formatDate, showToast, escapeAttr } from "./utils.js";
 
 // Cek dan buat notifikasi otomatis
 export async function checkAndCreateNotifications() {
@@ -162,7 +162,7 @@ export async function renderNotificationsPage() {
             .map((n) => {
               const c = colorMap[n.type] || colorMap.info;
               return `
-              <div class="notif-item card" data-id="${n.id}" data-page="${n.page || ""}" style="
+              <div class="notif-item card" data-id="${escapeAttr(n.id)}" data-page="${escapeAttr(n.page)}" style="
                 padding:16px;border-left:4px solid ${c.border};
                 cursor:${n.page ? "pointer" : "default"};
                 opacity:${n.isRead ? "0.7" : "1"};
@@ -170,13 +170,13 @@ export async function renderNotificationsPage() {
                 <div style="display:flex;align-items:flex-start;gap:12px;">
                   <i class="fas ${c.icon}" style="color:${c.color};font-size:1.2rem;margin-top:2px;flex-shrink:0;"></i>
                   <div style="flex:1;">
-                    <div style="font-weight:600;margin-bottom:4px;">${n.title}</div>
-                    <div style="font-size:.85rem;color:var(--text-secondary);margin-bottom:6px;">${n.message}</div>
+                    <div style="font-weight:600;margin-bottom:4px;">${escapeAttr(n.title)}</div>
+                    <div style="font-size:.85rem;color:var(--text-secondary);margin-bottom:6px;">${escapeAttr(n.message)}</div>
                     <div style="font-size:.75rem;color:var(--text-secondary);">
                       ${new Date(n.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
                     </div>
                   </div>
-                  <button class="delete-notif-btn" data-id="${n.id}" style="
+                  <button class="delete-notif-btn" data-id="${escapeAttr(n.id)}" style="
                     background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:1rem;padding:4px;
                   "><i class="fas fa-times"></i></button>
                 </div>

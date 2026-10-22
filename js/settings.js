@@ -17,6 +17,8 @@ import {
   showToast,
   confirmDialog,
   getCurrentDateTime,
+  escapeAttr,
+  safeImageSrc,
 } from "./utils.js";
 
 // State
@@ -821,6 +823,40 @@ async function backupData() {
     showToast("Gagal backup data", "error");
   }
 }
+// Validasi struktur file backup sebelum diimpor (tidak mengubah data)
+const MAX_BACKUP_SIZE = 10 * 1024 * 1024;
+// Field tampilan (color, icon, photo, page) dipakai di atribut HTML saat render.
+// Nilai yang ditulis aplikasi selalu berformat sederhana; tolak yang di luar itu.
+const isBlank = (v) => v === undefined || v === null || v === "";
+function hasSafeDisplayFields(item) {
+  if (!isBlank(item.color) && !(typeof item.color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(item.color))) return false;
+  if (!isBlank(item.icon) && !(typeof item.icon === "string" && /^[A-Za-z0-9_ -]{1,64}$/.test(item.icon))) return false;
+  if (!isBlank(item.photo) && !(typeof item.photo === "string" && safeImageSrc(item.photo) !== "")) return false;
+  if (!isBlank(item.page) && !(typeof item.page === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(item.page))) return false;
+  return true;
+}
+
+function isValidBackupData(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  const allowed = Object.values(STORES);
+  for (const [key, list] of Object.entries(data)) {
+    if (!allowed.includes(key) || !Array.isArray(list)) return false;
+    for (const item of list) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+      if (item.date !== undefined && typeof item.date !== "string") return false;
+      if (!hasSafeDisplayFields(item)) return false;
+    }
+  }
+  for (const w of data[STORES.WALLETS] || []) {
+    if (typeof w.id !== "string" || typeof w.name !== "string") return false;
+    if (typeof w.balance !== "number" || !Number.isFinite(w.balance)) return false;
+  }
+  for (const t of data[STORES.TRANSACTIONS] || []) {
+    if (typeof t.amount !== "number" || !Number.isFinite(t.amount)) return false;
+  }
+  return true;
+}
+
 // Restore data from JSON file
 async function restoreData(file) {
   confirmDialog(
@@ -830,8 +866,10 @@ async function restoreData(file) {
         showToast("Memulihkan data...", "info");
 
         try {
+          if (file.size > MAX_BACKUP_SIZE) throw new Error("File terlalu besar");
           const text = await file.text();
           const data = JSON.parse(text);
+          if (!isValidBackupData(data)) throw new Error("Struktur backup tidak valid");
           await importAllData(data);
 
           showToast("Restore berhasil! Aplikasi akan dimuat ulang.", "success");
@@ -1193,8 +1231,8 @@ async function showManageCategoriesModal() {
       .map(
         (c) => `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color);">
-      <span>${c.name}</span>
-      <button class="delete-cat-btn" data-id="${c.id}" style="
+      <span>${escapeHtml(c.name)}</span>
+      <button class="delete-cat-btn" data-id="${escapeAttr(c.id)}" style="
         background:none;border:none;color:#ef4444;cursor:pointer;font-size:.9rem;padding:4px 8px;
       "><i class="fas fa-trash"></i></button>
     </div>

@@ -73,7 +73,7 @@ export function showToast(message, type = "success", duration = 3000) {
   toast.className = `toast-notification toast-${type}`;
   toast.innerHTML = `
         <i class="fas ${type === "success" ? "fa-check-circle" : type === "error" ? "fa-exclamation-circle" : "fa-info-circle"}"></i>
-        <span>${message}</span>
+        <span>${escapeAttr(message)}</span>
     `;
 
   // Add styles
@@ -362,3 +362,11 @@ if (!document.getElementById("utils-global-styles")) {
   `;
   document.head.appendChild(globalStyles);
 }
+
+// Security helpers (escape saat render; data sumber tidak diubah)
+export const escapeAttr = (s) => String(s ?? "").replace(/[&<>"']/g,
+  c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+export const safeColor = (c, fb = "#64748b") =>
+  /^#[0-9a-fA-F]{3,8}$/.test(c || "") ? c : fb;
+export const safeImageSrc = (s) =>
+  /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(s || "") ? s : "";

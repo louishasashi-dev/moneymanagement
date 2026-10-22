@@ -17,6 +17,7 @@ import {
   capitalize,
   formatMoneyInput,
   parseMoney,
+  escapeAttr,
 } from "./utils.js";
 
 // ───────────────────────────────────────────────
@@ -241,10 +242,10 @@ async function showTemplateModal(templateId = null) {
             <select id="template-category" class="form-input">
               <option value="">Pilih Kategori</option>
               <optgroup label="📤 Pengeluaran">
-                ${expenseCats.map((c) => `<option value="${c.name}" ${isEdit && item.category === c.name ? "selected" : ""}>${c.name}</option>`).join("")}
+                ${expenseCats.map((c) => `<option value="${escapeAttr(c.name)}" ${isEdit && item.category === c.name ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
               </optgroup>
               <optgroup label="📥 Pemasukan">
-                ${incomeCats.map((c) => `<option value="${c.name}" ${isEdit && item.category === c.name ? "selected" : ""}>${c.name}</option>`).join("")}
+                ${incomeCats.map((c) => `<option value="${escapeAttr(c.name)}" ${isEdit && item.category === c.name ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
               </optgroup>
             </select>
           </div>
@@ -253,7 +254,7 @@ async function showTemplateModal(templateId = null) {
             <label>Dompet (Opsional)</label>
             <select id="template-wallet" class="form-input">
               <option value="">Tanpa Dompet Default</option>
-              ${wallets.map((w) => `<option value="${w.id}" ${isEdit && item.walletId === w.id ? "selected" : ""}>${w.name}</option>`).join("")}
+              ${wallets.map((w) => `<option value="${escapeAttr(w.id)}" ${isEdit && item.walletId === w.id ? "selected" : ""}>${escapeHtml(w.name)}</option>`).join("")}
             </select>
           </div>
 

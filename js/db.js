@@ -409,6 +409,22 @@ export async function exportAllData() {
 export async function importAllData(backupData) {
   const db = await initDB();
 
+  // Validasi dulu SEBELUM clear, supaya backup rusak tidak menghapus data lama
+  const validStores = Object.values(STORES);
+  if (!backupData || typeof backupData !== "object" || Array.isArray(backupData)) {
+    throw new Error("Data backup tidak valid");
+  }
+  for (const [storeName, items] of Object.entries(backupData)) {
+    if (!validStores.includes(storeName) || !Array.isArray(items)) {
+      throw new Error("Data backup tidak valid");
+    }
+    for (const item of items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        throw new Error("Data backup tidak valid");
+      }
+    }
+  }
+
   // Clear existing data dulu
   for (const storeName of Object.values(STORES)) {
     await new Promise((resolve, reject) => {

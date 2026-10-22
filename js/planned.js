@@ -19,6 +19,8 @@ import {
   formatMoneyInput,
   parseMoney,
   generateId,
+  escapeAttr,
+  safeColor,
 } from "./utils.js";
 import { getTemplatesByType } from "./template.js";
 import {
@@ -1489,7 +1491,7 @@ function renderWalletUsageStats(allItems, wallets) {
         walletId,
         name: wallet ? wallet.name : "Dompet (sudah dihapus)",
         icon: wallet?.icon || "fa-wallet",
-        color: wallet?.color || "#6366f1",
+        color: safeColor(wallet?.color, "#6366f1"),
         count: stat.count,
         income: stat.income,
         expense: stat.expense,
@@ -1518,7 +1520,7 @@ function renderWalletUsageStats(allItems, wallets) {
                 width:28px;height:28px;border-radius:8px;flex-shrink:0;
                 background:${r.color}22;color:${r.color};
                 display:flex;align-items:center;justify-content:center;font-size:.8rem;
-              "><i class="fas ${r.icon}"></i></span>
+              "><i class="fas ${escapeAttr(r.icon)}"></i></span>
               <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(r.name)}</span>
               <span style="font-weight:400;color:var(--text-secondary);font-size:.72rem;white-space:nowrap;">(${r.count} rencana)</span>
             </div>
@@ -1783,10 +1785,10 @@ async function showPlannedModal(plannedId = null) {
             <select id="planned-category" class="form-input">
               <option value="">Pilih Kategori</option>
               <optgroup label="📤 Pengeluaran">
-                ${expenseCats.map((c) => `<option value="${c.name}" ${isEdit && item.category === c.name ? "selected" : ""}>${c.name}</option>`).join("")}
+                ${expenseCats.map((c) => `<option value="${escapeAttr(c.name)}" ${isEdit && item.category === c.name ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
               </optgroup>
               <optgroup label="📥 Pemasukan">
-                ${incomeCats.map((c) => `<option value="${c.name}" ${isEdit && item.category === c.name ? "selected" : ""}>${c.name}</option>`).join("")}
+                ${incomeCats.map((c) => `<option value="${escapeAttr(c.name)}" ${isEdit && item.category === c.name ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
               </optgroup>
             </select>
           </div>
@@ -1795,7 +1797,7 @@ async function showPlannedModal(plannedId = null) {
             <label>Dompet <span class="required">*</span></label>
             <select id="planned-wallet" class="form-input" required>
               <option value="">Pilih Dompet</option>
-              ${wallets.map((w) => `<option value="${w.id}" ${isEdit && item.walletId === w.id ? "selected" : ""}>${w.name} - ${formatCurrency(w.balance)}</option>`).join("")}
+              ${wallets.map((w) => `<option value="${escapeAttr(w.id)}" ${isEdit && item.walletId === w.id ? "selected" : ""}>${escapeHtml(w.name)} - ${formatCurrency(w.balance)}</option>`).join("")}
             </select>
           </div>
 

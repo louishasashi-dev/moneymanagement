@@ -17,6 +17,8 @@ import {
   showToast,
   getCurrentDateTime,
   parseMoney,
+  escapeAttr,
+  safeColor,
 } from "./utils.js";
 
 // State
@@ -276,11 +278,11 @@ function renderWalletsList(wallets) {
     .map(
       (wallet) => `
         <div class="wallet-item">
-            <div class="wallet-icon" style="background: ${wallet.color}20; color: ${wallet.color}">
-                <i class="fas ${wallet.icon || "fa-wallet"}"></i>
+            <div class="wallet-icon" style="background: ${safeColor(wallet.color)}20; color: ${safeColor(wallet.color)}">
+                <i class="fas ${escapeAttr(wallet.icon || "fa-wallet")}"></i>
             </div>
             <div class="wallet-info">
-                <div class="wallet-name">${wallet.name}</div>
+                <div class="wallet-name">${escapeHtml(wallet.name)}</div>
                 <div class="wallet-type">${getWalletTypeName(wallet.type)}</div>
             </div>
             <div class="wallet-balance">${formatCurrency(wallet.balance)}</div>
@@ -910,7 +912,7 @@ async function showManageBudgetModal() {
         <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;">
           <select id="budget-cat-select" class="form-input" style="flex:2;min-width:120px;">
             <option value="">Pilih Kategori</option>
-            ${expCats.map((c) => `<option value="${c.name}">${c.name}</option>`).join("")}
+            ${expCats.map((c) => `<option value="${escapeAttr(c.name)}">${escapeHtml(c.name)}</option>`).join("")}
           </select>
           <input type="text" inputmode="numeric" autocomplete="off" data-money id="budget-amount-input" class="form-input" placeholder="Nominal" style="flex:2;min-width:100px;">
           <button id="add-budget-btn" style="
@@ -929,10 +931,10 @@ async function showManageBudgetModal() {
                     (b) => `
               <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border-color);">
                 <div>
-                  <span style="font-weight:500;">${b.category}</span>
+                  <span style="font-weight:500;">${escapeHtml(b.category)}</span>
                   <span style="font-size:.8rem;color:var(--text-secondary);margin-left:8px;">${formatCurrency(b.amount)}/bulan</span>
                 </div>
-                <button class="delete-budget-btn" data-cat="${b.category}" style="background:none;border:none;color:var(--danger);cursor:pointer;padding:4px 8px;">
+                <button class="delete-budget-btn" data-cat="${escapeAttr(b.category)}" style="background:none;border:none;color:var(--danger);cursor:pointer;padding:4px 8px;">
                   <i class="fas fa-trash"></i>
                 </button>
               </div>`,

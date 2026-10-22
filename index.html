@@ -3,6 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com data:; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'"
+    />
+    <meta name="referrer" content="no-referrer" />
+    <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
@@ -443,6 +448,9 @@
       }
     </script>
 
+    <!-- TODO(SRI): tambahkan integrity + crossorigin="anonymous" untuk 4 resource CDN
+         di bawah (Font Awesome 6.5.1, chart.js 4.4.0, jsPDF 2.5.1, html2canvas 1.4.1)
+         setelah hash dicek lewat srihash.org. Hash belum dihitung/dikarang. -->
     <!-- Font Awesome Icons (CDN, will work offline after caching) -->
     <link
       rel="stylesheet"
@@ -468,7 +476,7 @@
               src="images/logo/logo.png"
               alt="Logo"
               class="logo"
-              onerror="this.src = 'https://via.placeholder.com/40x40?text=MM'"
+              onerror="this.src = 'images/logo/logo.png'"
             />
             <h2>Money Manager</h2>
           </div>

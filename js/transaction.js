@@ -1464,8 +1464,8 @@ async function showTransactionModalImpl(transactionId = null) {
                         ${expenseCategories
                           .map(
                             (cat) => `
-                            <option value="${cat.name}" ${isEdit && transaction.category === cat.name && transaction.type === "expense" ? "selected" : ""}>
-                                ${cat.name}
+                            <option value="${escapeAttr(cat.name)}" ${isEdit && transaction.category === cat.name && transaction.type === "expense" ? "selected" : ""}>
+                                ${escapeHtml(cat.name)}
                             </option>
                         `,
                           )
@@ -1475,8 +1475,8 @@ async function showTransactionModalImpl(transactionId = null) {
                         ${incomeCategories
                           .map(
                             (cat) => `
-                            <option value="${cat.name}" ${isEdit && transaction.category === cat.name && transaction.type === "income" ? "selected" : ""}>
-                                ${cat.name}
+                            <option value="${escapeAttr(cat.name)}" ${isEdit && transaction.category === cat.name && transaction.type === "income" ? "selected" : ""}>
+                                ${escapeHtml(cat.name)}
                             </option>
                         `,
                           )
@@ -1492,8 +1492,8 @@ async function showTransactionModalImpl(transactionId = null) {
                     ${wallets
                       .map(
                         (w) => `
-                        <option value="${w.id}" ${isEdit && transaction.walletId === w.id ? "selected" : ""}>
-                            ${w.name} - ${formatCurrency(w.balance)}
+                        <option value="${escapeAttr(w.id)}" ${isEdit && transaction.walletId === w.id ? "selected" : ""}>
+                            ${escapeHtml(w.name)} - ${formatCurrency(w.balance)}
                         </option>
                     `,
                       )
@@ -1750,8 +1750,8 @@ async function showTransactionModalImpl(transactionId = null) {
       filtered
         .map(
           (cat) => `
-        <option value="${cat.name}" ${isEdit && transaction?.category === cat.name ? "selected" : ""}>
-          ${cat.name}
+        <option value="${escapeAttr(cat.name)}" ${isEdit && transaction?.category === cat.name ? "selected" : ""}>
+          ${escapeHtml(cat.name)}
         </option>
       `,
         )
