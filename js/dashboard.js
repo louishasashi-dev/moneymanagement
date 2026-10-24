@@ -20,6 +20,13 @@ import {
   escapeAttr,
   safeColor,
 } from "./utils.js";
+import {
+  buildBalanceBefore,
+  formatPct,
+  hasPct,
+  periodPct,
+  txPctText,
+} from "./balance-pct.js";
 
 // State
 let charts = {};
@@ -40,6 +47,11 @@ export async function renderDashboard() {
   );
   const allWallets = await getAllItems(STORES.WALLETS);
   const stats = calculateStats(monthlyTransactions);
+
+  // Persentase: hanya pengeluaran & tabungan, dari saldo dompet yang dipakai
+  const everyTransaction = await getAllItems(STORES.TRANSACTIONS);
+  const balanceBefore = buildBalanceBefore(everyTransaction, allWallets);
+  const expensePct = periodPct(monthlyTransactions, balanceBefore, "expense");
 
   // Data untuk ring statistik bulan ini (+ pembanding bulan lalu)
   const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -140,13 +152,13 @@ export async function renderDashboard() {
                         <div class="dash-card dash-tiles">
                             <div class="dash-tile income-card">
                                 <span class="tile-ico in">${typeTriangle("income")}</span>
-                                <span class="tile-pct in" title="Dari total saldo dompet">${formatPct(stats.income, totalWalletBalance)}</span>
+                                <span class="tile-pct" aria-hidden="true">&nbsp;</span>
                                 <span class="tile-label">Pemasukan</span>
                                 <span class="tile-value" id="total-income" title="${formatCurrency(stats.income)}">${formatCurrencyShort(stats.income)}</span>
                             </div>
                             <div class="dash-tile expense-card">
                                 <span class="tile-ico out">${typeTriangle("expense")}</span>
-                                <span class="tile-pct out" title="Dari total saldo dompet">${formatPct(stats.expense, totalWalletBalance)}</span>
+                                <span class="tile-pct out" title="Dari saldo dompet yang dipakai">${formatPct(expensePct.spent, expensePct.funds)}</span>
                                 <span class="tile-label">Pengeluaran</span>
                                 <span class="tile-value" id="total-expense" title="${formatCurrency(stats.expense)}">${formatCurrencyShort(stats.expense)}</span>
                             </div>
@@ -201,7 +213,7 @@ export async function renderDashboard() {
                             <a href="#" data-page="transactions" class="dash-link">Lihat Semua</a>
                         </div>
                         <div class="dash-card transactions-list" id="recent-transactions">
-                            ${renderTransactionsList(top5Recent, totalWalletBalance)}
+                            ${renderTransactionsList(top5Recent, balanceBefore)}
                         </div>
                     </section>
                 </div>
@@ -247,23 +259,6 @@ function typeTriangle(type) {
   return `<svg class="tri ${up ? "up" : "down"}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}" fill="${color}" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
 }
 
-// Persentase nominal terhadap total saldo dompet. Contoh: 2,5% / 12% / <0,1%
-// Saldo nol atau minus tidak bisa dijadikan pembanding, jadi tampil "–".
-function formatPct(amount, balance) {
-  const a = Number(amount) || 0;
-  const b = Number(balance) || 0;
-  if (b <= 0) return "–";
-  const p = (a / b) * 100;
-  if (p === 0) return "0%";
-  if (p < 0.1) return "<0,1%";
-  if (p > 999) return ">999%";
-  const text =
-    p < 10
-      ? p.toFixed(1).replace(/\.0$/, "").replace(".", ",")
-      : String(Math.round(p));
-  return `${text}%`;
-}
-
 // Render wallets list (hanya tampilkan dompet yang saldonya tidak nol)
 function renderWalletsList(wallets) {
   const walletsWithBalance = (wallets || []).filter(
@@ -293,7 +288,7 @@ function renderWalletsList(wallets) {
 }
 
 // Render transactions list
-function renderTransactionsList(transactions, walletTotal = 0) {
+function renderTransactionsList(transactions, balanceBefore = new Map()) {
   if (!transactions || transactions.length === 0) {
     return '<div class="empty-state">Belum ada transaksi</div>';
   }
@@ -309,7 +304,7 @@ function renderTransactionsList(transactions, walletTotal = 0) {
         <div class="transaction-item">
             <div class="transaction-lead ${t.type}">
                 <span class="transaction-icon ${t.type}">${lead}</span>
-                <span class="transaction-pct ${t.type}" title="Dari total saldo dompet">${formatPct(t.amount, walletTotal)}</span>
+                ${hasPct(t.type) ? `<span class="transaction-pct ${t.type}" title="Dari saldo dompet yang dipakai">${txPctText(t, balanceBefore)}</span>` : ""}
             </div>
             <div class="transaction-info">
                 <div class="transaction-name">${escapeHtml(t.itemName)}</div>
@@ -1508,4 +1503,4 @@ function addDashboardStyles() {
     `;
 
   document.head.appendChild(style);
-}
+}

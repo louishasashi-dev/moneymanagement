@@ -7,6 +7,7 @@ import {
   deleteItem,
   getAllItems,
   getItem,
+  initDB,
   STORES,
 } from "./db.js";
 import {
@@ -21,6 +22,22 @@ import {
 
 // State
 let allDebts = [];
+
+// ==================== ANGSURAN HELPERS ====================
+
+// ID stabil per angsuran, supaya pembayaran tetap menempel ke angsuran yang
+// benar walaupun daftar angsuran diedit (urutan berubah / ada yang dihapus)
+function newInstallmentId() {
+  return `inst_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+// Total yang sudah dibayarkan untuk satu angsuran
+function installmentPaid(debt, inst) {
+  if (!inst || !inst.id) return 0;
+  return (debt.payments || [])
+    .filter((p) => p.installmentId === inst.id)
+    .reduce((sum, p) => sum + (p.amount || 0), 0);
+}
 
 // ==================== INTEREST (BUNGA) HELPERS ====================
 
@@ -443,15 +460,31 @@ function renderDebtCard(debt) {
                   debt.isInstallment === true &&
                   Array.isArray(debt.installments) &&
                   debt.installments.length > 0
-                    ? `<details class="debt-installments">
-                        <summary><i class="fas fa-calendar-alt"></i> Diangsur: ${debt.installments.length} angsuran, total ${formatCurrency(debt.installments.reduce((s, it) => s + it.amount, 0))}</summary>
-                        ${debt.installments
-                          .map(
-                            (it, i) =>
-                              `<div class="inst-item">Angsuran ${i + 1}: ${formatCurrency(it.amount)} • jatuh tempo ${formatDate(it.dueDate, "dd/mm/yyyy")}</div>`,
-                          )
-                          .join("")}
-                       </details>`
+                    ? (() => {
+                        const todayStr = getCurrentDateTime().date;
+                        const rows = debt.installments.map((it, i) => {
+                          const paid = installmentPaid(debt, it);
+                          const done = paid >= it.amount;
+                          const late =
+                            !done && it.dueDate && it.dueDate < todayStr;
+                          const badge = done
+                            ? ' • <span style="color:#10b981;font-weight:600;">Lunas</span>'
+                            : paid > 0
+                              ? ` • dibayar ${formatCurrency(paid)}${late ? ' • <span style="color:#DC4C4C;font-weight:600;">Terlambat</span>' : ""}`
+                              : late
+                                ? ' • <span style="color:#DC4C4C;font-weight:600;">Terlambat</span>'
+                                : "";
+                          return {
+                            done,
+                            html: `<div class="inst-item">Angsuran ${i + 1}: ${formatCurrency(it.amount)} • jatuh tempo ${formatDate(it.dueDate, "dd/mm/yyyy")}${badge}</div>`,
+                          };
+                        });
+                        const doneCount = rows.filter((r) => r.done).length;
+                        return `<details class="debt-installments">
+                        <summary><i class="fas fa-calendar-alt"></i> Diangsur: ${debt.installments.length} angsuran (${doneCount} lunas), total ${formatCurrency(debt.installments.reduce((s, it) => s + it.amount, 0))}</summary>
+                        ${rows.map((r) => r.html).join("")}
+                       </details>`;
+                      })()
                     : ""
                 }
                 ${
@@ -853,6 +886,7 @@ async function showDebtModal(debtId = null) {
   let installments =
     isEdit && Array.isArray(debt.installments) && debt.installments.length > 0
       ? debt.installments.map((it) => ({
+          id: it.id,
           amount: String(it.amount ?? ""),
           dueDate: it.dueDate || "",
         }))
@@ -1010,7 +1044,11 @@ async function showDebtModal(debtId = null) {
           );
           return;
         }
-        installmentList.push({ amount: instAmount, dueDate: instDue });
+        installmentList.push({
+          id: installments[i].id || newInstallmentId(),
+          amount: instAmount,
+          dueDate: instDue,
+        });
       }
     }
 
@@ -1118,6 +1156,82 @@ async function showDebtModal(debtId = null) {
   });
 }
 
+function idbRequest(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+// Catat pembayaran + transaksi + perubahan saldo dompet dalam SATU transaksi
+// IndexedDB. Kalau salah satu langkah gagal (mis. saldo tidak cukup), semuanya
+// dibatalkan: tidak ada pembayaran setengah tercatat.
+//   debt     : data hutang/piutang yang SUDAH berisi pembayaran baru
+//   payment  : objek pembayaran di dalam debt.payments (diisi walletId & transactionId)
+//   txRecord : record transaksi (income untuk piutang, expense untuk hutang)
+function savePaymentWithTransaction({
+  debt,
+  payment,
+  txRecord,
+  walletId,
+  isOwe,
+}) {
+  return initDB().then(
+    (db) =>
+      new Promise((resolve) => {
+        const tx = db.transaction(
+          [STORES.DEBTS, STORES.WALLETS, STORES.TRANSACTIONS],
+          "readwrite",
+        );
+        const debtStore = tx.objectStore(STORES.DEBTS);
+        const walletStore = tx.objectStore(STORES.WALLETS);
+        const txStore = tx.objectStore(STORES.TRANSACTIONS);
+        let outcome = { ok: false, error: "aborted" };
+
+        tx.oncomplete = () => resolve({ ok: true });
+        tx.onabort = () => resolve(outcome);
+
+        (async () => {
+          try {
+            const wallet = await idbRequest(walletStore.get(walletId));
+            if (!wallet) {
+              outcome = { ok: false, error: "wallet-missing" };
+              tx.abort();
+              return;
+            }
+
+            // Hutang = uang keluar: saldo dompet harus cukup (dibaca ulang dari DB)
+            if (isOwe && (wallet.balance || 0) < txRecord.amount) {
+              outcome = { ok: false, error: "insufficient", wallet };
+              tx.abort();
+              return;
+            }
+
+            // Snapshot saldo sebelum transaksi (pembanding persentase di halaman transaksi)
+            txRecord.balanceBefore = wallet.balance || 0;
+            wallet.balance =
+              (wallet.balance || 0) +
+              (isOwe ? -txRecord.amount : txRecord.amount);
+            walletStore.put(wallet);
+
+            const txId = await idbRequest(txStore.add(txRecord));
+            payment.walletId = walletId;
+            payment.transactionId = txId;
+            debtStore.put(debt);
+          } catch (err) {
+            console.error("Gagal mencatat pembayaran:", err);
+            outcome = { ok: false, error: "exception" };
+            try {
+              tx.abort();
+            } catch (_) {
+              /* transaksi sudah selesai/abort */
+            }
+          }
+        })();
+      }),
+  );
+}
+
 // Show modal untuk tambah pembayaran
 async function showPaymentModal(debtId) {
   const debt = await getItem(STORES.DEBTS, debtId);
@@ -1133,13 +1247,38 @@ async function showPaymentModal(debtId) {
     await updateItem(STORES.DEBTS, debt);
   }
 
-  const remaining = debt.remainingAmount || debt.amount;
+  // ?? (bukan ||): sisa 0 = lunas, jangan jatuh kembali ke nominal awal
+  const remaining = debt.remainingAmount ?? debt.amount;
   if (remaining <= 0) {
     showToast("Sudah lunas!", "info");
     return;
   }
 
   const isOwe = debt.type === "owe";
+  const wallets = await getAllItems(STORES.WALLETS);
+
+  // Hutang/piutang yang diangsur: pilih angsuran mana yang dibayar
+  const insts =
+    debt.isInstallment === true && Array.isArray(debt.installments)
+      ? debt.installments
+      : [];
+  const instRows = insts
+    .map((it, i) => ({
+      i,
+      it,
+      outstanding: Math.max(0, (it.amount || 0) - installmentPaid(debt, it)),
+    }))
+    .filter((r) => r.outstanding > 0)
+    .sort(
+      (a, b) =>
+        (a.it.dueDate || "").localeCompare(b.it.dueDate || "") || a.i - b.i,
+    );
+  const hasInst = insts.length > 0;
+
+  // Nama transaksi yang tampil di halaman Transaksi / Transaksi Terbaru
+  const txName = isOwe
+    ? `Pembayaran hutang ke ${debt.partyName}`
+    : `${debt.partyName} membayar hutang`;
 
   const modalContent = `
         <form id="payment-form">
@@ -1151,11 +1290,29 @@ async function showPaymentModal(debtId) {
                 </div>
             </div>
             
+            ${
+              hasInst
+                ? `<div class="form-group">
+                <label>Bayar untuk <span class="required">*</span></label>
+                <select id="payment-installment" class="form-input">
+                    ${instRows
+                      .map(
+                        (r) =>
+                          `<option value="${r.i}">Angsuran ${r.i + 1} • ${formatCurrency(r.outstanding)} • jatuh tempo ${formatDate(r.it.dueDate, "dd/mm/yyyy")}${r.it.dueDate && r.it.dueDate < todayISO ? " • terlambat" : ""}</option>`,
+                      )
+                      .join("")}
+                    <option value="free">Pembayaran lain (di luar angsuran)</option>
+                </select>
+                ${instRows.length === 0 ? '<small class="form-help">Semua angsuran sudah lunas. Sisa (mis. bunga) dibayar sebagai pembayaran lain.</small>' : ""}
+            </div>`
+                : ""
+            }
+
             <div class="form-group">
                 <label>Jumlah Dibayar <span class="required">*</span></label>
                 <input type="text" inputmode="numeric" autocomplete="off" data-money id="payment-amount" class="form-input" 
                        placeholder="0" min="1" max="${remaining}" required>
-                <small class="form-help">Maksimal: ${formatCurrency(remaining)}</small>
+                <small class="form-help" id="payment-max-hint">Maksimal: ${formatCurrency(remaining)}</small>
             </div>
             
             <div class="form-group">
@@ -1168,6 +1325,39 @@ async function showPaymentModal(debtId) {
                 <label>Catatan (Opsional)</label>
                 <textarea id="payment-note" class="form-input" rows="2" 
                           placeholder="Catatan pembayaran..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+                    <input type="checkbox" id="payment-to-tx" style="width:auto;margin:0;">
+                    ${isOwe ? "Jadikan pembayaran hutang ini menjadi pengeluaran" : "Jadikan pembayaran piutang ini sebagai pemasukan"}
+                </label>
+            </div>
+
+            <div id="payment-tx-fields" style="display:none;">
+                <div class="form-group">
+                    <label>${isOwe ? "Dompet yang digunakan" : "Dibayarkan ke dompet"} <span class="required">*</span></label>
+                    <select id="payment-wallet" class="form-input">
+                        <option value="">Pilih dompet</option>
+                        ${wallets
+                          .map(
+                            (w) =>
+                              `<option value="${escapeAttr(w.id)}">${escapeHtml(w.name)} - ${formatCurrency(w.balance || 0)}</option>`,
+                          )
+                          .join("")}
+                    </select>
+                    <small class="form-help" id="payment-wallet-hint">${
+                      wallets.length === 0
+                        ? "Belum ada dompet. Buat dompet dulu di halaman Dompet."
+                        : isOwe
+                          ? "Saldo dompet akan dikurangi sebesar jumlah dibayar."
+                          : "Saldo dompet akan bertambah sebesar jumlah dibayar."
+                    }</small>
+                </div>
+                <div class="info-box">
+                    <div>Tercatat di Transaksi sebagai ${isOwe ? "pengeluaran" : "pemasukan"}:</div>
+                    <div><b>${escapeHtml(txName)}</b></div>
+                </div>
             </div>
             
             <div class="modal-buttons">
@@ -1194,25 +1384,95 @@ async function showPaymentModal(debtId) {
   document.body.appendChild(modal);
 
   const form = modal.querySelector("#payment-form");
+  const toTxCheck = modal.querySelector("#payment-to-tx");
+  const txFields = modal.querySelector("#payment-tx-fields");
+  const walletSelect = modal.querySelector("#payment-wallet");
+  const walletHint = modal.querySelector("#payment-wallet-hint");
+  const amountInput = modal.querySelector("#payment-amount");
+  const baseHint = walletHint.textContent;
+  const instSelect = modal.querySelector("#payment-installment");
+  const maxHint = modal.querySelector("#payment-max-hint");
+
+  // Baris angsuran yang sedang dipilih (null = pembayaran bebas)
+  const selectedRow = () =>
+    instSelect && instSelect.value !== "free"
+      ? instRows.find((r) => String(r.i) === instSelect.value) || null
+      : null;
+  // Batas jumlah: sisa angsuran terpilih, atau sisa hutang/piutang
+  const maxAllowed = () => {
+    const row = selectedRow();
+    return row ? Math.min(row.outstanding, remaining) : remaining;
+  };
+  const syncInstallment = () => {
+    const row = selectedRow();
+    maxHint.textContent = row
+      ? `Sisa Angsuran ${row.i + 1}: ${formatCurrency(maxAllowed())}`
+      : `Maksimal: ${formatCurrency(remaining)}`;
+    // Angsuran dipilih -> nominal terisi otomatis (masih bisa diubah)
+    amountInput.value = row ? formatMoneyInput(maxAllowed()) : "";
+  };
+
+  // Hutang: beri peringatan langsung kalau saldo dompet terpilih kurang
+  const updateWalletHint = () => {
+    walletHint.style.color = "";
+    walletHint.textContent = baseHint;
+    if (!isOwe || !walletSelect.value) return;
+    const w = wallets.find((x) => String(x.id) === walletSelect.value);
+    const amt = parseMoney(amountInput.value);
+    if (w && Number.isFinite(amt) && amt > (w.balance || 0)) {
+      walletHint.textContent = `Saldo ${w.name} tidak mencukupi! (Saldo: ${formatCurrency(w.balance || 0)})`;
+      walletHint.style.color = "#DC4C4C";
+    }
+  };
+  toTxCheck.addEventListener("change", () => {
+    txFields.style.display = toTxCheck.checked ? "" : "none";
+    updateWalletHint();
+  });
+  walletSelect.addEventListener("change", updateWalletHint);
+  amountInput.addEventListener("input", updateWalletHint);
+  if (instSelect) {
+    instSelect.addEventListener("change", () => {
+      syncInstallment();
+      updateWalletHint();
+    });
+    syncInstallment();
+  }
+
+  let saving = false;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (saving) return;
 
-    const amount = parseMoney(modal.querySelector("#payment-amount").value);
+    const amount = parseMoney(amountInput.value);
     const note = modal.querySelector("#payment-note").value;
     const paymentDateValue = modal.querySelector("#payment-date").value;
+    const toTx = toTxCheck.checked;
+    const walletId = walletSelect.value;
 
     if (!amount || amount <= 0) {
       showToast("Jumlah harus lebih dari 0", "error");
       return;
     }
 
-    if (amount > remaining) {
-      showToast(`Jumlah melebihi sisa (${formatCurrency(remaining)})`, "error");
+    const row = selectedRow();
+    if (amount > maxAllowed()) {
+      showToast(
+        row
+          ? `Jumlah melebihi sisa Angsuran ${row.i + 1} (${formatCurrency(maxAllowed())})`
+          : `Jumlah melebihi sisa (${formatCurrency(remaining)})`,
+        "error",
+      );
       return;
     }
 
     if (!paymentDateValue) {
       showToast("Tanggal pembayaran harus diisi", "error");
+      return;
+    }
+
+    if (toTx && !walletId) {
+      showToast("Pilih dompet dulu", "error");
+      walletSelect.focus();
       return;
     }
 
@@ -1222,29 +1482,91 @@ async function showPaymentModal(debtId) {
     const timeNow = getCurrentDateTime().time;
     const paymentDateStr = `${pd}/${pm}/${py} ${timeNow}`;
 
-    // Update remaining amount
+    // Kerjakan salinan: kalau penyimpanan gagal (mis. saldo kurang), data asli
+    // tidak berubah dan user bisa mencoba lagi tanpa pembayaran ganda.
+    const updated = structuredClone(debt);
     const newRemaining = remaining - amount;
-    debt.remainingAmount = newRemaining;
-    debt.status = newRemaining === 0 ? "completed" : "partial";
-    debt.updatedAt = getCurrentDateTime().datetime;
+    updated.remainingAmount = newRemaining;
+    updated.status = newRemaining === 0 ? "completed" : "partial";
+    updated.updatedAt = getCurrentDateTime().datetime;
 
     // Pembayaran mengurangi sisa pokok (tanpa bunga) juga
-    const prevPrincipalRemaining = debt.principalRemaining ?? remaining;
-    debt.principalRemaining = Math.max(0, prevPrincipalRemaining - amount);
+    const prevPrincipalRemaining = updated.principalRemaining ?? remaining;
+    updated.principalRemaining = Math.max(0, prevPrincipalRemaining - amount);
 
     // Add payment record
-    if (!debt.payments) debt.payments = [];
-    debt.payments.push({
+    if (!updated.payments) updated.payments = [];
+    const payment = {
       amount: amount,
       note: note,
       date: paymentDateStr,
       remainingAfter: newRemaining,
-    });
+    };
+    if (row) {
+      // Pastikan semua angsuran punya ID (data lama belum punya), lalu tautkan
+      updated.installments.forEach((it) => {
+        if (!it.id) it.id = newInstallmentId();
+      });
+      payment.installmentId = updated.installments[row.i].id;
+      payment.installmentLabel = `Angsuran ${row.i + 1}`;
+    }
+    updated.payments.push(payment);
 
-    await updateItem(STORES.DEBTS, debt);
+    saving = true;
+    try {
+      if (toTx) {
+        // Piutang dibayar -> pemasukan; hutang dibayar -> pengeluaran
+        const txRecord = {
+          itemName: txName,
+          amount,
+          quantity: 1,
+          type: isOwe ? "expense" : "income",
+          category: isOwe ? "Pembayaran Hutang" : "Pembayaran Piutang",
+          walletId,
+          note: note || payment.installmentLabel || "",
+          location: "",
+          date: paymentDateValue,
+          time: timeNow,
+          savingId: null,
+          source: "debt-payment",
+          debtId: debt.id,
+          createdAt: getCurrentDateTime().timestamp,
+        };
+        const result = await savePaymentWithTransaction({
+          debt: updated,
+          payment,
+          txRecord,
+          walletId,
+          isOwe,
+        });
+        if (!result.ok) {
+          const msg =
+            result.error === "insufficient"
+              ? `Saldo ${result.wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(result.wallet.balance || 0)})`
+              : result.error === "wallet-missing"
+                ? "Dompet tidak ditemukan"
+                : "Gagal mencatat pembayaran. Tidak ada data yang diubah.";
+          showToast(msg, "error");
+          return;
+        }
+      } else {
+        await updateItem(STORES.DEBTS, updated);
+      }
+    } catch (err) {
+      console.error("Gagal mencatat pembayaran:", err);
+      showToast(
+        "Gagal mencatat pembayaran. Tidak ada data yang diubah.",
+        "error",
+      );
+      return;
+    } finally {
+      saving = false;
+    }
 
     showToast(
-      `Berhasil mencatat pembayaran ${formatCurrency(amount)}`,
+      toTx
+        ? `Berhasil mencatat pembayaran ${formatCurrency(amount)} ke ${isOwe ? "pengeluaran" : "pemasukan"}`
+        : `Berhasil mencatat pembayaran ${formatCurrency(amount)}`,
       "success",
     );
     modal.remove();
@@ -1406,7 +1728,7 @@ async function showDebtHistoryModal(debtId) {
     kind: "payment",
     date: p.date,
     amount: p.amount,
-    note: p.note,
+    note: [p.installmentLabel, p.note].filter(Boolean).join(" • "),
   }));
   const additions = (debt.additions || []).map((a) => ({
     kind: "addition",
@@ -1750,7 +2072,10 @@ async function printDebtReport(debtId) {
       drawTableHeader();
       doc.setFontSize(8.5);
       payments.forEach((p, idx) => {
-        const noteLines = doc.splitTextToSize(p.note || "-", cols[2].w);
+        const noteLines = doc.splitTextToSize(
+          [p.installmentLabel, p.note].filter(Boolean).join(" • ") || "-",
+          cols[2].w,
+        );
         const h = Math.max(7, noteLines.length * 4 + 3);
         ensureSpace(h, drawTableHeader);
         doc.setFont("helvetica", "normal");
@@ -2630,6 +2955,10 @@ function addDebtStyles() {
     `;
 
   document.head.appendChild(style);
+}
+
+function escapeAttr(text) {
+  return escapeHtml(String(text ?? "")).replace(/"/g, "&quot;");
 }
 
 function escapeHtml(text) {

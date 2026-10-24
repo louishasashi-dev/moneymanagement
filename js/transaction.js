@@ -24,6 +24,13 @@ import {
   parseMoney,
 } from "./utils.js";
 import { ensureTxSheetStyles } from "./modal-sheet.js";
+import {
+  buildBalanceBefore,
+  formatPct,
+  hasPct,
+  periodPct,
+  txPctText,
+} from "./balance-pct.js";
 
 // State untuk pagination dan filter
 let currentPage = 1;
@@ -61,8 +68,10 @@ const MONTH_NAMES = [
 const MOBILE_QUERY = "(max-width: 767px)";
 let periodDefaultApplied = false;
 
-// Total saldo semua dompet = pembanding untuk persentase di bawah ikon
+// Total saldo semua dompet (hanya untuk tampilan saldo di header)
 let walletTotal = 0;
+// id transaksi -> saldo dompet sebelum transaksi (pembanding persentase)
+let balanceBeforeMap = new Map();
 const HIDE_BALANCE_KEY = "dashboard_hide_balance"; // sama dengan dashboard
 
 // Nominal singkat untuk kartu ringkasan: di bawah 1 juta tampil penuh,
@@ -90,23 +99,6 @@ function typeTriangle(type) {
   const color = up ? "#16A34A" : "#DC4C4C";
   const d = up ? "M12 5 L21.5 20 H2.5 Z" : "M12 19 L2.5 4 H21.5 Z";
   return `<svg class="tri ${up ? "up" : "down"}" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}" fill="${color}" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
-}
-
-// Persentase nominal terhadap total saldo dompet. Contoh: 2,5% / 12% / <0,1%
-// Saldo nol atau minus tidak bisa dijadikan pembanding, jadi tampil "–".
-function formatPct(amount, balance) {
-  const a = Number(amount) || 0;
-  const b = Number(balance) || 0;
-  if (b <= 0) return "–";
-  const p = (a / b) * 100;
-  if (p === 0) return "0%";
-  if (p < 0.1) return "<0,1%";
-  if (p > 999) return ">999%";
-  const text =
-    p < 10
-      ? p.toFixed(1).replace(/\.0$/, "").replace(".", ",")
-      : String(Math.round(p));
-  return `${text}%`;
 }
 
 // Pastikan viewport mobile normal: lebar = lebar layar, skala awal 1 (muat 1 halaman),
@@ -417,12 +409,24 @@ export async function renderTransactionsPage() {
   // Load semua transaksi + total saldo dompet
   await loadTransactions();
 
-  const tile = (type, label, id) => `
-                            <div class="tp-tile">
-                                <span class="tp-tile-ico ${type}">${type === "saving" ? '<i class="fas fa-piggy-bank"></i>' : typeTriangle(type)}</span>
-                                <span class="tp-pct ${type}" id="${id}-pct" title="Dari total saldo dompet">–</span>
+  // Pemasukan: tanpa persentase. Pengeluaran & Tabungan: persentase + bar
+  const incomeRow = `
+                            <div class="tp-sum-income">
+                                <span class="tp-tile-ico income">${typeTriangle("income")}</span>
+                                <span class="tp-sum-income-text">
+                                    <span class="tp-tile-label">Pemasukan</span>
+                                    <span class="tp-tile-value income" id="total-income-summary">Rp 0</span>
+                                </span>
+                            </div>`;
+  const pctCard = (type, label, id) => `
+                            <div class="tp-pcard ${type}">
+                                <div class="tp-pcard-top">
+                                    <span class="tp-tile-ico ${type}">${type === "saving" ? '<i class="fas fa-piggy-bank"></i>' : typeTriangle(type)}</span>
+                                    <span class="tp-pct-pill ${type}" id="${id}-pct" title="Dari saldo dompet yang dipakai">–</span>
+                                </div>
                                 <span class="tp-tile-label">${label}</span>
                                 <span class="tp-tile-value ${type}" id="${id}">Rp 0</span>
+                                <span class="tp-pbar" aria-hidden="true"><span class="tp-pbar-fill ${type}" id="${id}-bar"></span></span>
                             </div>`;
 
   // HTML Template (mengikuti desain dashboard)
@@ -476,10 +480,13 @@ export async function renderTransactionsPage() {
                             <h2>Ringkasan</h2>
                             <span class="tp-muted" id="m-period-value"></span>
                         </div>
-                        <div class="tp-card tp-tiles">
-                            ${tile("income", "Pemasukan", "total-income-summary")}
-                            ${tile("expense", "Pengeluaran", "total-expense-summary")}
-                            ${tile("saving", "Tabungan", "total-saving-summary")}
+                        <div class="tp-card tp-sum">
+                            ${incomeRow}
+                            <div class="tp-sum-pair">
+                                ${pctCard("expense", "Pengeluaran", "total-expense-summary")}
+                                ${pctCard("saving", "Tabungan", "total-saving-summary")}
+                            </div>
+                            <p class="tp-sum-note">Persentase = dari saldo dompet yang dipakai</p>
                         </div>
                     </section>
                 </div>
@@ -616,6 +623,7 @@ async function loadTransactions() {
   const wallets = await getAllItems(STORES.WALLETS);
   walletTotal = wallets.reduce((sum, w) => sum + (w.balance || 0), 0);
   walletMap = new Map(wallets.map((w) => [w.id, w]));
+  balanceBeforeMap = buildBalanceBefore(allTransactions, wallets);
 }
 
 // Load wallets untuk dropdown filter
@@ -844,8 +852,21 @@ function updateSummary(transactions) {
       el.textContent = formatCurrencyShort(value);
       el.title = formatCurrency(value);
     }
+  });
+
+  // Persentase hanya untuk pengeluaran & tabungan (dari saldo dompet yang dipakai)
+  [
+    ["total-expense-summary", "expense"],
+    ["total-saving-summary", "saving"],
+  ].forEach(([id, type]) => {
+    const { spent, funds } = periodPct(transactions, balanceBeforeMap, type);
     const pct = document.getElementById(`${id}-pct`);
-    if (pct) pct.textContent = formatPct(value, walletTotal);
+    if (pct) pct.textContent = formatPct(spent, funds);
+    const bar = document.getElementById(`${id}-bar`);
+    if (bar) {
+      const ratio = funds > 0 ? Math.min(100, (spent / funds) * 100) : 0;
+      bar.style.width = `${spent > 0 ? Math.max(ratio, 2) : 0}%`;
+    }
   });
 
   // Chip di header: selisih pemasukan - pengeluaran pada periode aktif
@@ -913,7 +934,7 @@ function renderTransactionsList(transactions) {
         <div class="tp-row" data-id="${t.id}" role="button" tabindex="0">
             <div class="tp-lead ${t.type}">
                 <span class="tp-lead-ico">${lead}</span>
-                <span class="tp-pct ${t.type}" title="Dari total saldo dompet">${formatPct(t.amount, walletTotal)}</span>
+                ${hasPct(t.type) ? `<span class="tp-pct ${t.type}" title="Dari saldo dompet yang dipakai">${txPctText(t, balanceBeforeMap)}</span>` : ""}
             </div>
             <div class="tp-info">
                 <div class="tp-name">${escapeHtml(t.itemName)}</div>
@@ -1002,101 +1023,105 @@ async function showTransactionDetailModal(id) {
     return;
   }
 
-  const quantity = transaction.quantity || 1;
-  const unitPrice = transaction.amount / quantity;
-
-  openDetailModal({
-    transaction,
-    wallet,
-    icon: "fa-receipt",
-    bodyHtml: detailRowsHtml([
-      ["Harga Satuan", formatCurrency(unitPrice)],
-      ["Jumlah", quantity],
-      ["Total", formatCurrency(transaction.amount)],
-      ["Kategori", escapeHtml(transaction.category || "Umum")],
-      ["Dompet", walletPillHtml(wallet) || "-"],
-      transaction.location
-        ? ["Lokasi Transaksi", escapeHtml(transaction.location)]
-        : null,
-      transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
-      ["Tanggal", formatDate(transaction.date)],
-      ["Waktu", transaction.time || "-"],
-    ]),
-  });
+  openDetailModal({ transaction, wallet });
 }
 
-function detailRowsHtml(rows) {
+const DETAIL_META = {
+  expense: { label: "Pengeluaran", sign: "- ", icon: "fa-receipt" },
+  income: { label: "Pemasukan", sign: "+ ", icon: "fa-receipt" },
+  saving: { label: "Tabungan", sign: "", icon: "fa-piggy-bank" },
+};
+
+// Baris "Dari saldo dompet": hanya untuk pengeluaran & tabungan
+function walletPctRow(transaction) {
+  if (!hasPct(transaction.type)) return null;
+  const before = balanceBeforeMap.get(transaction.id);
+  if (!Number.isFinite(before) || before <= 0) return null;
+  return [
+    "Dari saldo dompet",
+    `${txPctText(transaction, balanceBeforeMap)} <small style="font-weight:500;opacity:.7">dari ${formatCurrency(before)}</small>`,
+  ];
+}
+
+function mxRowsHtml(rows) {
   return rows
     .filter(Boolean)
     .map(
-      ([label, value]) => `
-        <div class="td-row">
-            <span class="td-label">${label}</span>
-            <span class="td-value">${value}</span>
-        </div>`,
+      ([l, v]) =>
+        `<div class="mx-row"><span>${l}</span><span>${v}</span></div>`,
     )
     .join("");
 }
 
-// Kerangka modal detail (dipakai transaksi biasa & transaksi banyak)
-function openDetailModal({ transaction, wallet, icon, bodyHtml }) {
-  ensureTxSheetStyles();
-  document.querySelector(".tx-detail-overlay")?.remove();
+// Detail transaksi biasa (read-only), desain sama dengan detail transaksi banyak
+function openDetailModal({ transaction, wallet }) {
+  ensureMultiSheetStyles();
+  document.querySelector(".mx-overlay")?.remove();
 
-  const typeLabel =
-    transaction.type === "income"
-      ? "Pemasukan"
-      : transaction.type === "saving"
-        ? "Tabungan"
-        : "Pengeluaran";
-  const sign =
-    transaction.type === "income"
-      ? "+ "
-      : transaction.type === "expense"
-        ? "- "
-        : "";
+  const meta = DETAIL_META[transaction.type] || DETAIL_META.expense;
+  const isSaving = transaction.type === "saving";
+  const quantity = transaction.quantity || 1;
+  const unitPrice = transaction.amount / quantity;
 
-  const modal = document.createElement("div");
-  modal.className = "modal-overlay tx-sheet-overlay tx-detail-overlay";
-  modal.innerHTML = `
-        <div class="modal-container modal-large tx-sheet tx-detail">
-            <div class="modal-header">
-                <h3><i class="fas ${icon}"></i> Detail Transaksi</h3>
-                <button type="button" class="modal-close-btn modal-close-x" aria-label="Tutup">&times;</button>
-            </div>
-            <div class="modal-body">
-                <form id="transaction-detail-form" novalidate>
-                    <div class="tx-sheet-scroll">
-                        <div class="td-hero ${transaction.type}">
-                            <span class="td-hero-type">${typeLabel}</span>
-                            <span class="td-hero-amount">${sign}${formatCurrency(transaction.amount)}</span>
-                            <span class="td-hero-name">${escapeHtml(transaction.itemName)}</span>
-                        </div>
-                        ${bodyHtml}
-                    </div>
-                    <div class="modal-buttons tx-sheet-footer">
-                        <button type="button" class="btn-secondary modal-close-btn">Tutup</button>
-                        <button type="button" class="btn-primary" id="td-edit-btn">Edit</button>
-                    </div>
-                </form>
-            </div>
+  const rows = mxRowsHtml([
+    isSaving ? null : ["Harga satuan", formatCurrency(unitPrice)],
+    isSaving ? null : ["Jumlah", formatMoneyInput(quantity)],
+    [
+      "Kategori",
+      escapeHtml(isSaving ? "Tabungan" : transaction.category || "Umum"),
+    ],
+    ["Dompet", walletPillHtml(wallet) || "-"],
+    walletPctRow(transaction),
+    transaction.location ? ["Lokasi", escapeHtml(transaction.location)] : null,
+    transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
+  ]);
+
+  const overlay = document.createElement("div");
+  overlay.className = "mx-overlay mx-detail";
+  overlay.innerHTML = `
+    <div class="mx-sheet" role="dialog" aria-modal="true" aria-labelledby="mx-title">
+      <header class="mx-head">
+        <span class="mx-grab" aria-hidden="true"></span>
+        <div class="mx-head-row">
+          <span class="mx-head-ico"><i class="fas ${meta.icon}"></i></span>
+          <div class="mx-head-text"><h3 id="mx-title">Detail transaksi</h3></div>
+          <button type="button" class="mx-x mx-close" aria-label="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
-    `;
-  document.body.appendChild(modal);
+      </header>
+      <div class="mx-body">
+        <div class="mx-hero ${transaction.type}">
+          <span class="mx-hero-label">${meta.label}</span>
+          <span class="mx-hero-amt">${meta.sign}${formatCurrency(transaction.amount)}</span>
+          <span class="mx-hero-name">${escapeHtml(transaction.itemName)}</span>
+          <span class="mx-hero-date">${formatDate(transaction.date)}${transaction.time ? `, ${escapeHtml(transaction.time)}` : ""}</span>
+        </div>
+        <div class="mx-rows">${rows}</div>
+      </div>
+      <footer class="mx-foot">
+        <div class="mx-btns">
+          <button type="button" class="mx-btn ghost mx-close">Tutup</button>
+          <button type="button" class="mx-btn primary" id="mx-edit">Edit</button>
+        </div>
+      </footer>
+    </div>`;
+  document.body.appendChild(overlay);
 
-  const closeModal = () => modal.remove();
-  modal
-    .querySelector("form")
-    .addEventListener("submit", (e) => e.preventDefault());
-  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
-    btn.addEventListener("click", closeModal);
-  });
-  modal.querySelector("#td-edit-btn").addEventListener("click", () => {
-    closeModal();
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  const close = () => {
+    overlay.remove();
+    document.body.style.overflow = prevOverflow;
+  };
+  overlay
+    .querySelectorAll(".mx-close")
+    .forEach((b) => b.addEventListener("click", close));
+  overlay.querySelector("#mx-edit").addEventListener("click", () => {
+    close();
     editTransaction(transaction.id);
   });
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) closeModal();
+  // Detail hanya baca, jadi aman ditutup dengan klik area gelap
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
   });
 }
 
@@ -1372,8 +1397,6 @@ async function showTransactionModal(transactionId = null) {
   txModalOpening = true;
   try {
     await showTransactionModalImpl(transactionId);
-    const overlays = document.querySelectorAll(".modal-overlay");
-    overlays[overlays.length - 1]?.setAttribute("data-tx-modal", "1");
   } finally {
     txModalOpening = false;
   }
@@ -1400,201 +1423,154 @@ async function showTransactionModalImpl(transactionId = null) {
   const expenseCategories = categories.filter((c) => c.type === "expense");
   const incomeCategories = categories.filter((c) => c.type === "income");
 
-  const modalContent = `
-        <form id="transaction-form">
-            <div class="tx-sheet-scroll">
-            <div class="form-group">
-                <label>Tipe Transaksi</label>
-                <div class="type-selector">
-                    <button type="button" class="type-btn ${!isEdit || transaction.type === "expense" ? "active" : ""}" data-type="expense">
-                        <span class="type-tri">${typeTriangle("expense")}</span> Pengeluaran
-                    </button>
-                    <button type="button" class="type-btn ${isEdit && transaction.type === "income" ? "active" : ""}" data-type="income">
-                        <span class="type-tri">${typeTriangle("income")}</span> Pemasukan
-                    </button>
-                    <button type="button" class="type-btn ${isEdit && transaction.type === "saving" ? "active" : ""}" data-type="saving">
-                        <i class="fas fa-piggy-bank"></i> Tabungan
-                    </button>
-                </div>
-                <input type="hidden" id="transaction-type" value="${isEdit ? transaction.type : "expense"}">
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group half">
-                    <label>Nama Transaksi</label>
-                    <input type="text" id="transaction-name" class="form-input" 
-                           value="${isEdit ? escapeHtml(transaction.itemName) : ""}" 
-                           placeholder="Contoh: Makan Siang, Belanja Bulanan..." required>
-                </div>
-                <div class="form-group half" id="transaction-template-group">
-                    <label>Template</label>
-                    <select id="transaction-template" class="form-input">
-                        <option value="">Tanpa Template</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="form-group">
-                <label>Nominal</label>
-                <input type="text" inputmode="numeric" autocomplete="off" data-money id="transaction-amount" class="form-input" 
-                       value="${isEdit ? formatMoneyInput(transaction.amount / (transaction.quantity || 1)) : ""}" 
-                       placeholder="0" min="1" required>
-            </div>
+  ensureMultiSheetStyles();
+  document.querySelector(".mx-overlay")?.remove();
 
-            <div class="form-group" id="transaction-quantity-group">
-                <label>Jumlah</label>
-                <div class="quantity-selector">
-                    <button type="button" class="qty-btn" data-qty="1">1</button>
-                    <button type="button" class="qty-btn" data-qty="2">2</button>
-                    <button type="button" class="qty-btn" data-qty="3">3</button>
-                    <button type="button" class="qty-btn" data-qty="4">4</button>
-                    <button type="button" class="qty-btn" data-qty="5">5</button>
-                    <button type="button" class="qty-btn" data-qty="other">Lainnya</button>
-                </div>
-                <input type="text" inputmode="numeric" autocomplete="off" id="transaction-quantity-custom" class="form-input"
-                       placeholder="Masukkan jumlah" style="display:none;margin-top:8px;">
-                <input type="hidden" id="transaction-quantity" value="${isEdit ? transaction.quantity || 1 : 1}">
-            </div>
-            
-            <div class="form-group" id="transaction-category-group">
-                <label>Kategori</label>
-                <select id="transaction-category" class="form-input">
-                    <option value="">Pilih Kategori</option>
-                    <optgroup label="Pengeluaran">
-                        ${expenseCategories
-                          .map(
-                            (cat) => `
-                            <option value="${escapeAttr(cat.name)}" ${isEdit && transaction.category === cat.name && transaction.type === "expense" ? "selected" : ""}>
-                                ${escapeHtml(cat.name)}
-                            </option>
-                        `,
-                          )
-                          .join("")}
-                    </optgroup>
-                    <optgroup label="Pemasukan">
-                        ${incomeCategories
-                          .map(
-                            (cat) => `
-                            <option value="${escapeAttr(cat.name)}" ${isEdit && transaction.category === cat.name && transaction.type === "income" ? "selected" : ""}>
-                                ${escapeHtml(cat.name)}
-                            </option>
-                        `,
-                          )
-                          .join("")}
-                    </optgroup>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label>Metode Pembayaran</label>
-                <select id="transaction-wallet" class="form-input" required>
-                    <option value="">Pilih Dompet</option>
-                    ${wallets
-                      .map(
-                        (w) => `
-                        <option value="${escapeAttr(w.id)}" ${isEdit && transaction.walletId === w.id ? "selected" : ""}>
-                            ${escapeHtml(w.name)} - ${formatCurrency(w.balance)}
-                        </option>
-                    `,
-                      )
-                      .join("")}
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label>Lokasi Transaksi</label>
-                <input type="text" id="transaction-location" class="form-input" autocomplete="off"
-                       value="${isEdit ? escapeAttr(transaction.location || "") : ""}"
-                       placeholder="Opsional, contoh: Indomaret, Warung Bu Siti">
-            </div>
+  const initialType = isEdit ? transaction.type : "expense";
+  const now = getCurrentDateTime();
 
-            <div class="form-group">
-                <label>Catatan (Opsional)</label>
-                <textarea id="transaction-note" class="form-input" rows="2" 
-                          placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea>
-            </div>
-            
-            <div class="form-row">
-                <div class="form-group half">
-                    <label>Tanggal</label>
-                    <input type="date" id="transaction-date" class="form-input" 
-                           value="${isEdit ? transaction.date : getCurrentDateTime().date}">
-                </div>
-                <div class="form-group half">
-                    <label>Jam</label>
-                    <input type="time" id="transaction-time" class="form-input" 
-                           value="${isEdit ? transaction.time : getCurrentDateTime().time}">
-                </div>
-            </div>
-            
-            ${
-              isEdit
-                ? ""
-                : `<div class="form-group" id="transaction-save-template-group">
-                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
-                    <input type="checkbox" id="transaction-save-template" style="width:auto;margin:0;">
-                    Jadikan transaksi ini template
-                </label>
-            </div>`
-            }
-            </div>
-
-            <div class="modal-buttons tx-sheet-footer">
-                <button type="button" class="btn-secondary modal-close-btn">Batal</button>
-                <button type="submit" class="btn-primary">${isEdit ? "Simpan Perubahan" : "Tambah Transaksi"}</button>
-            </div>
-        </form>
-    `;
-
-  // Create modal
   const modal = document.createElement("div");
-  modal.className = "modal-overlay tx-sheet-overlay";
+  modal.className = "mx-overlay";
   modal.innerHTML = `
-        <div class="modal-container modal-large tx-sheet">
-            <div class="modal-header">
-                <h3><i class="fas ${isEdit ? "fa-edit" : "fa-plus-circle"}"></i> ${isEdit ? "Edit Transaksi" : "Tambah Transaksi Baru"}</h3>
-                <button class="modal-close-btn modal-close-x">&times;</button>
-            </div>
-            <div class="modal-body">
-                ${modalContent}
-            </div>
+    <form class="mx-sheet" id="transaction-form" role="dialog" aria-modal="true" aria-labelledby="mx-title" novalidate>
+      <header class="mx-head">
+        <span class="mx-grab" aria-hidden="true"></span>
+        <div class="mx-head-row">
+          <span class="mx-head-ico"><i class="fas ${isEdit ? "fa-pen" : "fa-plus"}"></i></span>
+          <div class="mx-head-text">
+            <h3 id="mx-title">${isEdit ? "Edit transaksi" : "Tambah transaksi"}</h3>
+            <p>Catat pemasukan, pengeluaran, atau tabungan</p>
+          </div>
+          <button type="button" class="mx-x mx-close" aria-label="Tutup"><i class="fas fa-xmark"></i></button>
         </div>
-    `;
+      </header>
 
+      <div class="mx-body">
+        <section class="mx-fields">
+          <div class="mx-field">
+            <span class="mx-lbl">Tipe transaksi</span>
+            <div class="mx-seg" role="group" aria-label="Tipe transaksi">
+              <button type="button" class="mx-seg-btn ${initialType === "expense" ? "active" : ""}" data-type="expense">
+                ${typeTriangle("expense")} Pengeluaran
+              </button>
+              <button type="button" class="mx-seg-btn ${initialType === "income" ? "active" : ""}" data-type="income">
+                ${typeTriangle("income")} Pemasukan
+              </button>
+              <button type="button" class="mx-seg-btn ${initialType === "saving" ? "active" : ""}" data-type="saving">
+                <i class="fas fa-piggy-bank"></i> Tabungan
+              </button>
+            </div>
+            <input type="hidden" id="transaction-type" value="${initialType}">
+          </div>
+
+          <label class="mx-field" id="transaction-template-group">
+            <span class="mx-lbl">Template</span>
+            <select id="transaction-template" class="mx-input">
+              <option value="">Tanpa template</option>
+            </select>
+          </label>
+
+          <label class="mx-field">
+            <span class="mx-lbl">Nama transaksi</span>
+            <input type="text" id="transaction-name" class="mx-input" autocomplete="off"
+                   value="${isEdit ? escapeAttr(transaction.itemName) : ""}"
+                   placeholder="Contoh: Makan siang, Belanja bulanan">
+          </label>
+
+          <div class="mx-grid2" id="transaction-amount-row">
+            <label class="mx-field">
+              <span class="mx-lbl">Nominal</span>
+              <span class="mx-money"><b>Rp</b><input type="text" inputmode="numeric" autocomplete="off" data-money id="transaction-amount"
+                     value="${isEdit ? escapeAttr(formatMoneyInput(transaction.amount / (transaction.quantity || 1))) : ""}"
+                     placeholder="0"></span>
+            </label>
+            <div class="mx-field" id="transaction-quantity-group">
+              <span class="mx-lbl">Jumlah</span>
+              <div class="mx-stepper" role="group" aria-label="Jumlah">
+                <button type="button" class="mx-step" data-step="-1" aria-label="Kurangi jumlah"><i class="fas fa-minus"></i></button>
+                <input type="text" inputmode="numeric" autocomplete="off" class="mx-i-qty" id="transaction-quantity"
+                       value="${isEdit ? transaction.quantity || 1 : 1}" aria-label="Jumlah">
+                <button type="button" class="mx-step" data-step="1" aria-label="Tambah jumlah"><i class="fas fa-plus"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <label class="mx-field" id="transaction-category-group">
+            <span class="mx-lbl">Kategori</span>
+            <select id="transaction-category" class="mx-input">
+              <option value="">Pilih kategori</option>
+            </select>
+          </label>
+
+          <label class="mx-field">
+            <span class="mx-lbl">Dompet</span>
+            <select id="transaction-wallet" class="mx-input">
+              <option value="">Pilih dompet</option>
+              ${wallets
+                .map(
+                  (w) =>
+                    `<option value="${escapeAttr(w.id)}" ${isEdit && transaction.walletId === w.id ? "selected" : ""}>${escapeHtml(w.name)} - ${formatCurrency(w.balance)}</option>`,
+                )
+                .join("")}
+            </select>
+          </label>
+
+          <div class="mx-grid2">
+            <label class="mx-field"><span class="mx-lbl">Tanggal</span>
+              <input type="date" id="transaction-date" class="mx-input" value="${escapeAttr(isEdit ? transaction.date : now.date)}"></label>
+            <label class="mx-field"><span class="mx-lbl">Jam</span>
+              <input type="time" id="transaction-time" class="mx-input" value="${escapeAttr(isEdit ? transaction.time || "" : now.time)}"></label>
+          </div>
+
+          <details class="mx-more"${isEdit && (transaction.location || transaction.note) ? " open" : ""}>
+            <summary>Lokasi dan catatan</summary>
+            <div class="mx-more-body">
+              <label class="mx-field"><span class="mx-lbl">Lokasi</span>
+                <input type="text" id="transaction-location" class="mx-input" autocomplete="off"
+                       value="${isEdit ? escapeAttr(transaction.location || "") : ""}"
+                       placeholder="Contoh: Indomaret, Warung Bu Siti"></label>
+              <label class="mx-field"><span class="mx-lbl">Catatan</span>
+                <textarea id="transaction-note" class="mx-input" rows="2" placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea></label>
+            </div>
+          </details>
+
+          ${
+            isEdit
+              ? ""
+              : `<label class="mx-check" id="transaction-save-template-group">
+                  <input type="checkbox" id="transaction-save-template">
+                  Jadikan transaksi ini template
+                </label>`
+          }
+        </section>
+      </div>
+
+      <footer class="mx-foot">
+        <div class="mx-total">
+          <span class="mx-total-label">Total</span>
+          <strong class="mx-total-amt" id="transaction-total">${formatCurrency(0)}</strong>
+        </div>
+        <div class="mx-btns">
+          <button type="button" class="mx-btn ghost mx-close">Batal</button>
+          <button type="submit" class="mx-btn primary">${isEdit ? "Simpan perubahan" : "Tambah transaksi"}</button>
+        </div>
+      </footer>
+    </form>`;
   document.body.appendChild(modal);
 
-  // Add inline styles for form-row
-  const style = document.createElement("style");
-  style.textContent = `
-        .form-row {
-            display: flex;
-            gap: 12px;
-        }
-        .form-group.half {
-            flex: 1;
-        }
-        @media (max-width: 768px) {
-            .form-row {
-                flex-direction: column;
-                gap: 0;
-            }
-        }
-        .modal-close-x {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: var(--text-secondary);
-            padding: 0 8px;
-        }
-        .modal-close-x:hover {
-            color: var(--text-primary);
-        }
-    `;
-  document.head.appendChild(style);
+  const prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  const closeForm = () => {
+    modal.remove();
+    document.body.style.overflow = prevOverflow;
+  };
+  // Form hanya ditutup lewat Batal atau tombol silang; klik area gelap sengaja
+  // tidak menutup agar input tidak hilang.
+  modal.querySelectorAll(".mx-close").forEach((btn) => {
+    btn.addEventListener("click", closeForm);
+  });
 
-  // Setup type selector
-  const typeBtns = modal.querySelectorAll(".type-btn");
+  const typeBtns = modal.querySelectorAll(".mx-seg-btn");
   const typeInput = modal.querySelector("#transaction-type");
   const categorySelect = modal.querySelector("#transaction-category");
   const categoryGroup = modal.querySelector("#transaction-category-group");
@@ -1602,49 +1578,49 @@ async function showTransactionModalImpl(transactionId = null) {
   const templateGroup = modal.querySelector("#transaction-template-group");
   const quantityGroup = modal.querySelector("#transaction-quantity-group");
   const quantityInput = modal.querySelector("#transaction-quantity");
-  const quantityCustomInput = modal.querySelector(
-    "#transaction-quantity-custom",
-  );
-  const qtyBtns = modal.querySelectorAll(".qty-btn");
+  const amountInput = modal.querySelector("#transaction-amount");
+  const totalEl = modal.querySelector("#transaction-total");
+
+  const parseQty = () =>
+    /^\d+$/.test(quantityInput.value) ? parseInt(quantityInput.value, 10) : 0;
+
+  // Total = nominal x jumlah (tabungan selalu x1)
+  function updateTotal() {
+    const unit = parseMoney(amountInput.value);
+    const qty = typeInput.value === "saving" ? 1 : parseQty();
+    totalEl.textContent = formatCurrency(
+      Number.isFinite(unit) && unit > 0 && qty > 0 ? unit * qty : 0,
+    );
+  }
 
   // Quantity hanya berlaku untuk Pengeluaran/Pemasukan (bukan Tabungan)
   function updateQuantityVisibility() {
     quantityGroup.style.display = typeInput.value === "saving" ? "none" : "";
+    updateTotal();
   }
 
   function setQuantitySelection(qty) {
-    const isPreset = ["1", "2", "3", "4", "5"].includes(String(qty));
-    qtyBtns.forEach((b) => {
-      b.classList.toggle(
-        "active",
-        isPreset ? b.dataset.qty === String(qty) : b.dataset.qty === "other",
-      );
-    });
-    quantityCustomInput.style.display = isPreset ? "none" : "";
-    // Tampilan diformat ribuan ("1.000"); nilai hidden tetap angka murni
-    if (!isPreset)
-      quantityCustomInput.value = qty > 0 ? formatMoneyInput(qty) : "";
-    quantityInput.value = qty;
+    quantityInput.value = String(qty);
+    updateTotal();
   }
 
-  qtyBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      if (btn.dataset.qty === "other") {
-        qtyBtns.forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        quantityCustomInput.style.display = "";
-        quantityCustomInput.focus();
-        quantityInput.value = quantityCustomInput.value.replace(/\D/g, "");
-      } else {
-        setQuantitySelection(btn.dataset.qty);
-      }
-    });
+  amountInput.addEventListener("input", updateTotal);
+  quantityInput.addEventListener("input", () => {
+    quantityInput.value = quantityInput.value.replace(/\D/g, "").slice(0, 6);
+    updateTotal();
   });
-
-  quantityCustomInput.addEventListener("input", () => {
-    const digits = quantityCustomInput.value.replace(/\D/g, "");
-    quantityCustomInput.value = formatMoneyInput(digits); // "1000" -> "1.000"
-    quantityInput.value = digits; // nilai yang dipakai/disimpan: "1000"
+  // Jumlah kosong/0 tidak valid: kembalikan ke 1 saat fokus pergi
+  quantityInput.addEventListener("blur", () => {
+    if (!/^[1-9]\d*$/.test(quantityInput.value)) setQuantitySelection(1);
+  });
+  modal.querySelectorAll(".mx-step").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = Math.min(
+        999999,
+        Math.max(1, parseQty() + Number(btn.dataset.step)),
+      );
+      setQuantitySelection(next);
+    });
   });
 
   // Set state awal quantity (existing transaction atau default 1)
@@ -1681,7 +1657,7 @@ async function showTransactionModalImpl(transactionId = null) {
     }
 
     templateSelect.innerHTML =
-      `<option value="">Tanpa Template</option>` +
+      `<option value="">Tanpa template</option>` +
       templates
         .map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`)
         .join("");
@@ -1745,8 +1721,19 @@ async function showTransactionModalImpl(transactionId = null) {
 
     const filtered =
       currentType === "expense" ? expenseCategories : incomeCategories;
+    // Kategori yang tidak ada di daftar (mis. "Pembayaran Hutang" dari halaman
+    // Hutang & Piutang, atau kategori yang sudah dihapus) tetap dipertahankan
+    // saat edit supaya tidak diam-diam berganti kategori.
+    const orphan =
+      isEdit &&
+      transaction?.type === currentType &&
+      transaction.category &&
+      !filtered.some((c) => c.name === transaction.category)
+        ? `<option value="${escapeAttr(transaction.category)}" selected>${escapeHtml(transaction.category)}</option>`
+        : "";
     categorySelect.innerHTML =
-      `<option value="">Pilih Kategori</option>` +
+      `<option value="">Pilih kategori</option>` +
+      orphan +
       filtered
         .map(
           (cat) => `
@@ -1911,6 +1898,15 @@ async function showTransactionModalImpl(transactionId = null) {
         savingId: type === "saving" ? savingId : null,
       };
 
+      // Snapshot saldo dompet SEBELUM transaksi ini = pembanding persentase.
+      // Transaksi baru: saldo dompet sekarang. Edit di dompet yang sama: snapshot
+      // lama dipertahankan. Edit pindah dompet: snapshot lama tidak berlaku lagi.
+      if (!isEdit) {
+        payload.balanceBefore = wallet.balance;
+      } else if (transaction.walletId !== walletId) {
+        payload.balanceBefore = null;
+      }
+
       let txId;
       if (isEdit) {
         Object.assign(transaction, payload);
@@ -1997,8 +1993,7 @@ async function showTransactionModalImpl(transactionId = null) {
         "success",
       );
 
-      modal.remove();
-      style.remove();
+      closeForm();
       await loadTransactions();
       renderFilteredTransactions();
 
@@ -2028,17 +2023,7 @@ async function showTransactionModalImpl(transactionId = null) {
     }
   });
 
-  // Close modal functions
-  const closeModal = () => {
-    modal.remove();
-    style.remove();
-  };
-
-  modal.querySelectorAll(".modal-close-btn").forEach((btn) => {
-    btn.addEventListener("click", closeModal);
-  });
-  // Modal hanya bisa ditutup lewat tombol Batal atau tombol silang (X);
-  // klik area di luar modal sengaja tidak menutup agar input tidak hilang.
+  modal.querySelector("#transaction-name").focus({ preventScroll: true });
 }
 
 // Style modal "Pilih Tabungan Tujuan" (tambahan di atas gaya sheet transaksi)
@@ -2109,7 +2094,7 @@ function ensureSavingGoalStyles() {
 // supaya modal pilih tabungan tidak tertimpa modal di bawahnya
 function raiseAboveOverlays(modal) {
   let top = 0;
-  document.querySelectorAll(".modal-overlay").forEach((el) => {
+  document.querySelectorAll(".modal-overlay, .mx-overlay").forEach((el) => {
     if (el === modal) return;
     const z = parseInt(getComputedStyle(el).zIndex, 10);
     if (!isNaN(z) && z > top) top = z;
@@ -2330,6 +2315,11 @@ export function saveMultiTransactionAtomic(record, oldRecord) {
               tx.abort();
               return;
             }
+
+            // Snapshot saldo dompet sebelum transaksi (pembanding persentase)
+            if (!oldRecord) record.balanceBefore = newWallet.balance;
+            else if (oldRecord.walletId !== record.walletId)
+              record.balanceBefore = null;
 
             // Terapkan efek baru: kurangi saldo sebesar total, satu kali
             newWallet.balance -= record.amount;
@@ -2959,6 +2949,7 @@ function showMultiTransactionDetailModal(transaction, wallet) {
 
   const rows = [
     ["Dompet", walletPillHtml(wallet) || "-"],
+    walletPctRow(transaction),
     transaction.location ? ["Lokasi", escapeHtml(transaction.location)] : null,
     transaction.note ? ["Catatan", escapeHtml(transaction.note)] : null,
   ]
@@ -3218,6 +3209,23 @@ function ensureMultiSheetStyles() {
     .mx-line-name { font-size: 0.9rem; font-weight: 600; overflow-wrap: anywhere; }
     .mx-line-sub { display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: 2px; font-size: 0.76rem; color: var(--mx-muted); }
     .mx-line strong { flex: none; font-size: 0.9rem; font-variant-numeric: tabular-nums; }
+
+    .mx-hero.income { --hc: #16A34A; }
+    .mx-hero.saving { --hc: #8b5cf6; }
+
+    /* Form transaksi biasa */
+    .mx-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: var(--mx-soft); }
+    .mx-seg-btn {
+      display: flex; align-items: center; justify-content: center; gap: 6px; min-width: 0; height: 42px; padding: 0 6px;
+      border: 0; border-radius: 10px; background: none; color: var(--mx-muted);
+      font: inherit; font-size: 0.82rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    }
+    .mx-seg-btn svg { width: 14px; height: 14px; display: block; }
+    .mx-seg-btn.active { background: var(--mx-surface); color: var(--mx-text); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14); }
+    .mx-seg-btn:focus-visible { outline: 2px solid var(--mx-focus); outline-offset: 2px; }
+    .mx-check { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; font-weight: 500; cursor: pointer; }
+    .mx-overlay .mx-check input { flex: none; width: 18px !important; height: 18px !important; margin: 0 !important; padding: 0 !important; accent-color: var(--mx-accent); }
 
     @media (min-width: 768px) {
       .mx-overlay { align-items: center; padding: 24px; }
@@ -3516,42 +3524,46 @@ function addTransactionStyles() {
       box-shadow: 0 1px 2px rgba(15, 40, 28, 0.04), 0 8px 24px rgba(15, 40, 28, 0.05);
     }
 
-    /* ---------- Tile ringkasan ---------- */
-    .tp-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-    .tp-tile {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      text-align: center;
-      min-width: 0;
+    /* ---------- Ringkasan: pemasukan (tanpa %) + pengeluaran & tabungan (dengan %) ---------- */
+    .tp-sum { display: grid; gap: 14px; }
+    .tp-sum-income { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .tp-sum-income-text { display: grid; gap: 2px; min-width: 0; }
+    .tp-sum-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .tp-pcard {
+      --pc: var(--d-red);
+      display: flex; flex-direction: column; gap: 4px; min-width: 0;
+      padding: 12px; border-radius: 18px;
+      background: color-mix(in srgb, var(--pc) 7%, transparent);
+      border: 1px solid color-mix(in srgb, var(--pc) 16%, transparent);
     }
+    .tp-pcard.saving { --pc: var(--d-purple); }
+    .tp-pcard-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .tp-pct-pill {
+      padding: 3px 9px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; line-height: 1.2;
+      font-variant-numeric: tabular-nums; white-space: nowrap;
+      color: var(--pc); background: color-mix(in srgb, var(--pc) 14%, transparent);
+    }
+    .tp-pbar { display: block; height: 6px; margin-top: 6px; border-radius: 999px; overflow: hidden; background: color-mix(in srgb, var(--pc) 16%, transparent); }
+    .tp-pbar-fill { display: block; height: 100%; width: 0; border-radius: 999px; background: var(--pc); transition: width 0.3s ease; }
+    .tp-sum-note { margin: 0; font-size: 0.7rem; color: var(--d-muted); text-align: center; }
     .tp-tile-ico {
-      width: 52px;
-      height: 52px;
-      border-radius: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 1.1rem;
+      flex: none; width: 44px; height: 44px; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center; font-size: 1.05rem;
     }
-    .tp-tile-ico svg { width: 22px; height: 22px; display: block; }
+    .tp-tile-ico svg { width: 20px; height: 20px; display: block; }
     .tp-tile-ico.income { background: #E6F6EC; color: var(--d-green); }
     .tp-tile-ico.expense { background: #FDEBEA; color: var(--d-red); }
     .tp-tile-ico.saving { background: #F0EAFE; color: var(--d-purple); }
-    .tp-tile .tp-pct { margin-top: -2px; font-size: 0.72rem; }
-    .tp-tile-label { font-size: 0.72rem; font-weight: 500; color: var(--d-muted); }
+    .tp-tile-label { font-size: 0.74rem; font-weight: 500; color: var(--d-muted); }
     .tp-tile-value {
-      font-size: 0.85rem;
-      font-weight: 700;
-      color: var(--d-text);
-      font-variant-numeric: tabular-nums;
-      word-break: break-word;
+      font-size: 1rem; font-weight: 700; color: var(--d-text);
+      font-variant-numeric: tabular-nums; word-break: break-word;
     }
     .tp-tile-value.income { color: var(--d-green); }
+    .tp-tile-value.expense { color: var(--d-red); }
     .tp-tile-value.saving { color: var(--d-purple); }
 
-    /* Persentase terhadap total saldo */
+    /* Persentase per transaksi terhadap saldo dompet yang dipakai */
     .tp-pct {
       font-size: 0.68rem;
       font-weight: 700;
