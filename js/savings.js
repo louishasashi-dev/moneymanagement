@@ -1023,9 +1023,11 @@ async function showHistoryModal(savingId) {
                   <div class="sv-hist-amount ${isDeposit ? "in" : "out"}">
                     ${isDeposit ? "+" : "-"}${formatCurrency(h.amount)}
                   </div>
-                  <div class="sv-hist-balance">
-                    Saldo: ${formatCurrency(h.newAmount)}
-                  </div>
+                  ${
+                    Number.isFinite(h.newAmount)
+                      ? `<div class="sv-hist-balance">Saldo: ${formatCurrency(h.newAmount)}</div>`
+                      : ""
+                  }
                 </div>
               </div>`;
           })
@@ -1036,21 +1038,21 @@ async function showHistoryModal(savingId) {
   modal.innerHTML = `
     <div class="modal-container modal-medium tx-sheet">
       <div class="modal-header">
-        <h3><i class="fas fa-eye"></i> Riwayat &mdash; ${displayText(saving.name)}</h3>
+        <h3 class="sv-hist-title"><i class="fas fa-eye"></i> Riwayat &mdash; ${displayText(saving.name)}</h3>
         <button type="button" class="modal-close-btn modal-close-x">&times;</button>
       </div>
       <div class="modal-body">
         <div class="tx-sheet-scroll">
           <div class="sv-hist-summary">
-            <div>
+            <div class="sv-hist-sum-row">
               <span class="sv-hist-sum-label">Total Uang Masuk</span>
               <span class="sv-hist-sum-value in">${formatCurrency(totalMasuk)}</span>
             </div>
-            <div>
+            <div class="sv-hist-sum-row">
               <span class="sv-hist-sum-label">Total Uang Keluar</span>
               <span class="sv-hist-sum-value out">${formatCurrency(totalKeluar)}</span>
             </div>
-            <div>
+            <div class="sv-hist-sum-row">
               <span class="sv-hist-sum-label">Total Transaksi</span>
               <span class="sv-hist-sum-value">${history.length}</span>
             </div>
@@ -1456,40 +1458,52 @@ function addSavingsStyles() {
         }
 
         /* ===== Riwayat tabungan (modal) ===== */
+        .sv-hist-title { min-width: 0; overflow-wrap: anywhere; }
         .sv-hist-summary {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
+            display: flex;
+            flex-direction: column;
             margin-bottom: 8px;
-            padding: 14px;
-            text-align: center;
+            padding: 4px 14px;
             border-radius: 18px;
             background: var(--bg-primary);
             border: 1px solid var(--border-color);
         }
+        .sv-hist-sum-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 2px 12px;
+            padding: 11px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .sv-hist-sum-row:last-child { border-bottom: 0; }
         .sv-hist-sum-label {
-            display: block;
-            margin-bottom: 4px;
-            font-size: 0.7rem;
+            font-size: 0.8rem;
             color: var(--text-secondary);
         }
         .sv-hist-sum-value {
-            display: block;
+            margin-left: auto;
             font-size: 0.95rem;
             font-weight: 700;
+            text-align: right;
+            white-space: nowrap;
             font-variant-numeric: tabular-nums;
         }
         .sv-hist-sum-value.in { color: #16A34A; }
         .sv-hist-sum-value.out { color: #DC4C4C; }
         .sv-hist-row {
             display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            gap: 12px;
+            gap: 8px 12px;
             padding: 12px 0;
             border-bottom: 1px solid var(--border-color);
         }
         .sv-hist-row:last-child { border-bottom: 0; }
-        .sv-hist-main { flex: 1; min-width: 0; }
+        .sv-hist-row > :first-child { flex: none; }
+        /* Kolom teks boleh mengecil; kolom nominal turun ke baris bawah kalau tidak muat */
+        .sv-hist-main { flex: 1 1 130px; min-width: 0; overflow-wrap: anywhere; }
         .sv-hist-name { font-size: 0.9rem; font-weight: 600; }
         .sv-hist-meta {
             margin-top: 2px;
@@ -1497,12 +1511,18 @@ function addSavingsStyles() {
             color: var(--text-secondary);
         }
         .sv-hist-note { display: block; font-style: italic; }
-        .sv-hist-end { flex-shrink: 0; text-align: right; }
-        .sv-hist-amount { font-size: 0.95rem; font-weight: 700; }
+        .sv-hist-end { flex: 0 0 auto; max-width: 100%; margin-left: auto; text-align: right; }
+        .sv-hist-amount {
+            font-size: 0.95rem;
+            font-weight: 700;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
         .sv-hist-amount.in { color: #16A34A; }
         .sv-hist-amount.out { color: #DC4C4C; }
         .sv-hist-balance {
             font-size: 0.7rem;
+            white-space: nowrap;
             color: var(--text-secondary);
         }
 

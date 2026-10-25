@@ -39,6 +39,315 @@ function installmentPaid(debt, inst) {
     .reduce((sum, p) => sum + (p.amount || 0), 0);
 }
 
+// ==================== MEMBERI PINJAMAN (PIUTANG BARU) -> PENGELUARAN ====================
+
+const LEND_CATEGORY = "Pemberian Pinjaman";
+const lendTxName = (name) => `Memberi pinjaman ke ${name || "[nama]"}`;
+
+// Blok "catat sebagai pengeluaran": pilih sumber uang (dompet / tabungan)
+function lendSourceHtml(p, wallets, savings) {
+  return `
+            <div id="${p}-lend" style="display:none;">
+                <div class="form-group">
+                    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500;">
+                        <input type="checkbox" id="${p}-lend-check" style="width:auto;margin:0;">
+                        Catat sebagai pengeluaran (memberi pinjaman)
+                    </label>
+                </div>
+                <div id="${p}-lend-fields" style="display:none;">
+                    <div class="form-group">
+                        <label>Ambil uang dari <span class="required">*</span></label>
+                        <select id="${p}-lend-source" class="form-input">
+                            <option value="wallet">Saldo dompet</option>
+                            <option value="saving">Tabungan</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="${p}-lend-wallet-group">
+                        <label>Dompet yang dikeluarkan uangnya <span class="required">*</span></label>
+                        <select id="${p}-lend-wallet" class="form-input">
+                            <option value="">Pilih dompet</option>
+                            ${wallets
+                              .map(
+                                (w) =>
+                                  `<option value="${escapeAttr(w.id)}">${escapeHtml(w.name)} - ${formatCurrency(w.balance || 0)}</option>`,
+                              )
+                              .join("")}
+                        </select>
+                    </div>
+                    <div class="form-group" id="${p}-lend-saving-group" style="display:none;">
+                        <label>Tabungan yang diambil uangnya <span class="required">*</span></label>
+                        <select id="${p}-lend-saving" class="form-input">
+                            <option value="">Pilih tabungan</option>
+                            ${savings
+                              .map(
+                                (sv) =>
+                                  `<option value="${escapeAttr(sv.id)}">${escapeHtml(sv.name)} - ${formatCurrency(sv.currentAmount || 0)}</option>`,
+                              )
+                              .join("")}
+                        </select>
+                    </div>
+                    <small class="form-help" id="${p}-lend-hint"></small>
+                    <div class="info-box">
+                        <div>Tercatat di Transaksi sebagai pengeluaran:</div>
+                        <div><b id="${p}-lend-name"></b></div>
+                    </div>
+                </div>
+            </div>`;
+}
+
+// Pasang logika blok di atas. Mengembalikan kontroler kecil.
+function setupLendSource(modal, p, wallets, savings, { getAmount, getName }) {
+  const q = (suffix) => modal.querySelector(`#${p}-lend${suffix}`);
+  const box = q("");
+  const check = q("-check");
+  const fields = q("-fields");
+  const sourceSel = q("-source");
+  const walletSel = q("-wallet");
+  const savingSel = q("-saving");
+  const walletGroup = q("-wallet-group");
+  const savingGroup = q("-saving-group");
+  const hint = q("-hint");
+  const nameEl = q("-name");
+  let visible = false;
+
+  const findWallet = () =>
+    wallets.find((w) => String(w.id) === walletSel.value);
+  const findSaving = () =>
+    savings.find((sv) => String(sv.id) === savingSel.value);
+
+  // Pesan masalah saldo (null = aman). Menuntun user: dompet lain yang cukup ->
+  // kalau tidak ada, pindah ke tabungan -> kalau dua-duanya kurang, tidak bisa.
+  const findProblem = (fromSaving, amt) => {
+    if (!(amt > 0)) return null;
+    const okWallets = wallets.filter((w) => (w.balance || 0) >= amt);
+    const okSavings = savings.filter((sv) => (sv.currentAmount || 0) >= amt);
+    if (okWallets.length === 0 && okSavings.length === 0) {
+      return "Tidak ada dompet maupun tabungan yang saldonya cukup, jadi tidak bisa dicatat sebagai pengeluaran. Hapus centang untuk menyimpan piutang tanpa mengambil saldo.";
+    }
+    const names = (list) => list.map((x) => x.name).join(", ");
+    if (fromSaving) {
+      const sv = findSaving();
+      if (!sv || amt <= (sv.currentAmount || 0)) return null;
+      const head = `Saldo tabungan ${sv.name} tidak mencukupi! (Tersedia: ${formatCurrency(sv.currentAmount || 0)}).`;
+      if (okSavings.length)
+        return `${head} Tabungan yang cukup: ${names(okSavings)}.`;
+      return `${head} Tidak ada tabungan lain yang cukup. Pilih sumber "Saldo dompet" (cukup: ${names(okWallets)}).`;
+    }
+    const w = findWallet();
+    if (!w || amt <= (w.balance || 0)) return null;
+    const head = `Saldo ${w.name} tidak mencukupi! (Saldo: ${formatCurrency(w.balance || 0)}).`;
+    if (okWallets.length)
+      return `${head} Dompet yang cukup: ${names(okWallets)}.`;
+    return `${head} Tidak ada dompet lain yang cukup. Pilih sumber "Tabungan" (cukup: ${names(okSavings)}).`;
+  };
+
+  const refresh = () => {
+    fields.style.display = check.checked ? "" : "none";
+    const fromSaving = sourceSel.value === "saving";
+    walletGroup.style.display = fromSaving ? "none" : "";
+    savingGroup.style.display = fromSaving ? "" : "none";
+    nameEl.textContent = lendTxName(getName());
+
+    const amt = getAmount();
+    let msg = fromSaving
+      ? "Saldo tabungan akan dikurangi sebesar nominal."
+      : "Saldo dompet akan dikurangi sebesar nominal.";
+    const problem = findProblem(fromSaving, amt);
+    if (problem) msg = problem;
+
+    // Tandai opsi yang saldonya tidak cukup untuk nominal ini
+    const mark = (select, items, balanceOf) => {
+      [...select.options].forEach((opt) => {
+        if (!opt.value) return;
+        if (opt.dataset.base === undefined) opt.dataset.base = opt.textContent;
+        const item = items.find((x) => String(x.id) === opt.value);
+        const short = item && amt > balanceOf(item);
+        opt.textContent = opt.dataset.base + (short ? " • tidak cukup" : "");
+      });
+    };
+    mark(walletSel, wallets, (w) => w.balance || 0);
+    mark(savingSel, savings, (sv) => sv.currentAmount || 0);
+
+    hint.textContent = msg;
+    hint.style.color = problem ? "#DC4C4C" : "";
+  };
+
+  check.addEventListener("change", refresh);
+  sourceSel.addEventListener("change", refresh);
+  walletSel.addEventListener("change", refresh);
+  savingSel.addEventListener("change", refresh);
+  refresh();
+
+  return {
+    refresh,
+    setVisible(v) {
+      visible = v;
+      box.style.display = v ? "" : "none";
+    },
+    // Aktif = terlihat DAN dicentang
+    active: () => visible && check.checked,
+    // Validasi pilihan user -> { ok, walletId | savingId } atau { ok:false, message }
+    read(amount) {
+      const fromSaving = sourceSel.value === "saving";
+      const target = fromSaving ? findSaving() : findWallet();
+      const selected = fromSaving ? savingSel.value : walletSel.value;
+      if (!selected || !target) {
+        return {
+          ok: false,
+          message:
+            findProblem(fromSaving, amount) ||
+            (fromSaving ? "Pilih tabungan dulu" : "Pilih dompet dulu"),
+        };
+      }
+      const problem = findProblem(fromSaving, amount);
+      if (problem) return { ok: false, message: problem };
+      return fromSaving
+        ? { ok: true, savingId: target.id }
+        : { ok: true, walletId: target.id };
+    },
+  };
+}
+
+function lendErrorMessage(result) {
+  switch (result.error) {
+    case "insufficient":
+      return `Saldo ${result.wallet.name} tidak mencukupi! (Saldo: ${formatCurrency(result.wallet.balance || 0)})`;
+    case "saving-insufficient":
+      return `Saldo tabungan ${result.saving.name} tidak mencukupi! (Tersedia: ${formatCurrency(result.saving.currentAmount || 0)})`;
+    case "wallet-missing":
+      return "Dompet tidak ditemukan";
+    case "saving-missing":
+      return "Tabungan tidak ditemukan";
+    default:
+      return "Gagal menyimpan. Tidak ada data yang diubah.";
+  }
+}
+
+// Simpan piutang (baru / tambahan) + transaksi pengeluaran + potong saldo dompet
+// ATAU saldo tabungan, dalam SATU transaksi IndexedDB (gagal = semua dibatalkan).
+//   debt      : data piutang yang sudah berisi perubahan (baru atau hasil tambah nominal)
+//   isNew     : true -> debt ditambahkan sebagai data baru
+//   txRecord  : record transaksi pengeluaran (walletId diisi di sini bila dari dompet)
+//   walletId / savingId : salah satu saja
+//   onTxId(id): dipanggil setelah transaksi tersimpan (untuk menautkan ke debt)
+function saveLendWithTransaction({
+  debt,
+  isNew,
+  txRecord,
+  walletId,
+  savingId,
+  onTxId,
+}) {
+  return initDB().then(
+    (db) =>
+      new Promise((resolve) => {
+        const tx = db.transaction(
+          [STORES.DEBTS, STORES.WALLETS, STORES.TRANSACTIONS, STORES.SAVINGS],
+          "readwrite",
+        );
+        const debtStore = tx.objectStore(STORES.DEBTS);
+        const walletStore = tx.objectStore(STORES.WALLETS);
+        const txStore = tx.objectStore(STORES.TRANSACTIONS);
+        const savingStore = tx.objectStore(STORES.SAVINGS);
+        let outcome = { ok: false, error: "aborted" };
+        const fail = (o) => {
+          outcome = o;
+          tx.abort();
+        };
+
+        tx.oncomplete = () => resolve({ ok: true });
+        tx.onabort = () => resolve(outcome);
+
+        (async () => {
+          try {
+            const amount = txRecord.amount;
+            let wallet = null;
+            let saving = null;
+
+            // Baca ulang sumber dana dari DB & validasi SEBELUM menulis apa pun
+            if (walletId !== undefined && walletId !== null) {
+              wallet = await idbRequest(walletStore.get(walletId));
+              if (!wallet) return fail({ ok: false, error: "wallet-missing" });
+              if ((wallet.balance || 0) < amount)
+                return fail({ ok: false, error: "insufficient", wallet });
+              txRecord.walletId = walletId;
+              txRecord.balanceBefore = wallet.balance || 0; // pembanding persentase
+              wallet.balance = (wallet.balance || 0) - amount;
+            } else {
+              saving = await idbRequest(savingStore.get(savingId));
+              if (!saving) return fail({ ok: false, error: "saving-missing" });
+              if ((saving.currentAmount || 0) < amount)
+                return fail({
+                  ok: false,
+                  error: "saving-insufficient",
+                  saving,
+                });
+              txRecord.walletId = null; // tidak menyentuh saldo dompet
+              txRecord.fundingSavingId = savingId;
+            }
+
+            if (isNew) {
+              debt.id = await idbRequest(debtStore.add(debt));
+            }
+            txRecord.debtId = debt.id;
+            const txId = await idbRequest(txStore.add(txRecord));
+            if (onTxId) onTxId(txId);
+
+            if (wallet) walletStore.put(wallet);
+            if (saving) {
+              const previousAmount = saving.currentAmount || 0;
+              saving.currentAmount = previousAmount - amount;
+              saving.status =
+                saving.currentAmount >= (saving.targetAmount || 0)
+                  ? "completed"
+                  : "active";
+              saving.updatedAt = getCurrentDateTime().datetime;
+              if (!Array.isArray(saving.history)) saving.history = [];
+              saving.history.push({
+                type: "withdraw",
+                amount,
+                note: `Dipinjamkan ke ${debt.partyName}`,
+                date: new Date().toISOString(),
+                previousAmount,
+                newAmount: saving.currentAmount,
+                source: "debt",
+                transactionId: txId,
+              });
+              savingStore.put(saving);
+            }
+            debtStore.put(debt);
+          } catch (err) {
+            console.error("Gagal menyimpan pinjaman:", err);
+            outcome = { ok: false, error: "exception" };
+            try {
+              tx.abort();
+            } catch (_) {
+              /* transaksi sudah selesai/abort */
+            }
+          }
+        })();
+      }),
+  );
+}
+
+function buildLendTxRecord({ partyName, amount, date, time, note, debtNote }) {
+  return {
+    itemName: lendTxName(partyName),
+    amount,
+    quantity: 1,
+    type: "expense",
+    category: LEND_CATEGORY,
+    walletId: null, // diisi saat disimpan
+    note: note || debtNote || "",
+    location: "",
+    date,
+    time,
+    savingId: null,
+    source: "debt-loan",
+    createdAt: getCurrentDateTime().timestamp,
+  };
+}
+
 // ==================== INTEREST (BUNGA) HELPERS ====================
 
 // Label periode bunga
@@ -647,6 +956,10 @@ async function showDebtModal(debtId = null) {
     }
   }
 
+  // Sumber dana untuk "memberi pinjaman" (hanya saat membuat piutang baru)
+  const lendWallets = isEdit ? [] : await getAllItems(STORES.WALLETS);
+  const lendSavings = isEdit ? [] : await getAllItems(STORES.SAVINGS);
+
   const hasAdvanced =
     isEdit &&
     ((debt.interestPeriod && debt.interestPeriod !== "none") ||
@@ -685,6 +998,8 @@ async function showDebtModal(debtId = null) {
                            placeholder="0" min="1" required>
                 </div>
             </div>
+
+            ${isEdit ? "" : lendSourceHtml("dl", lendWallets, lendSavings)}
 
             <div class="dm-row">
                 <div class="form-group">
@@ -985,6 +1300,23 @@ async function showDebtModal(debtId = null) {
   renderInstallmentRows();
   updateInstallmentUI();
 
+  // Piutang baru: opsi catat sebagai pengeluaran (ambil dari dompet / tabungan)
+  const lend = isEdit
+    ? null
+    : setupLendSource(modal, "dl", lendWallets, lendSavings, {
+        getAmount: () =>
+          parseMoney(modal.querySelector("#debt-amount").value) || 0,
+        getName: () => partyInput.value.trim(),
+      });
+  if (lend) {
+    const syncLend = () => lend.setVisible(typeInput.value === "debt");
+    typeBtns.forEach((btn) => btn.addEventListener("click", syncLend));
+    partyInput.addEventListener("input", lend.refresh);
+    amountInput.addEventListener("input", lend.refresh);
+    syncLend();
+  }
+  let lendBusy = false;
+
   // Handle form submission
   const form = modal.querySelector("#debt-form");
   form.addEventListener("submit", async (e) => {
@@ -1014,6 +1346,13 @@ async function showDebtModal(debtId = null) {
 
     if (interestRate < 0) {
       showToast("Persentase bunga tidak boleh negatif", "error");
+      return;
+    }
+
+    // Memberi pinjaman -> pengeluaran: sumber dana harus dipilih & saldonya cukup
+    const lendSel = lend && lend.active() ? lend.read(amount) : null;
+    if (lendSel && !lendSel.ok) {
+      showToast(lendSel.message, "error");
       return;
     }
 
@@ -1138,8 +1477,46 @@ async function showDebtModal(debtId = null) {
         interestLog: [],
       };
 
-      await addItem(STORES.DEBTS, newDebt);
-      showToast("Data berhasil ditambahkan", "success");
+      if (lendSel) {
+        if (lendBusy) return;
+        lendBusy = true;
+        const now = getCurrentDateTime();
+        let result;
+        try {
+          result = await saveLendWithTransaction({
+            debt: newDebt,
+            isNew: true,
+            txRecord: buildLendTxRecord({
+              partyName,
+              amount,
+              date: now.date,
+              time: now.time,
+              note: description,
+            }),
+            walletId: lendSel.walletId,
+            savingId: lendSel.savingId,
+            onTxId: (id) => {
+              newDebt.loanTransactionId = id;
+            },
+          });
+        } catch (err) {
+          console.error("Gagal menyimpan pinjaman:", err);
+          result = { ok: false, error: "exception" };
+        } finally {
+          lendBusy = false;
+        }
+        if (!result.ok) {
+          showToast(lendErrorMessage(result), "error");
+          return;
+        }
+        showToast(
+          "Piutang ditambahkan dan dicatat sebagai pengeluaran",
+          "success",
+        );
+      } else {
+        await addItem(STORES.DEBTS, newDebt);
+        showToast("Data berhasil ditambahkan", "success");
+      }
     }
 
     modal.remove();
@@ -1598,7 +1975,10 @@ async function showAddAmountModal(debtId) {
   }
 
   const isOwe = debt.type === "owe";
-  const currentRemaining = debt.remainingAmount || debt.amount;
+  const currentRemaining = debt.remainingAmount ?? debt.amount;
+  // Tambah piutang: opsi catat sebagai pengeluaran (ambil dari dompet / tabungan)
+  const lendWallets = isOwe ? [] : await getAllItems(STORES.WALLETS);
+  const lendSavings = isOwe ? [] : await getAllItems(STORES.SAVINGS);
 
   const modalContent = `
         <form id="add-amount-form">
@@ -1615,6 +1995,8 @@ async function showAddAmountModal(debtId) {
                        placeholder="0" min="1" required>
             </div>
             
+            ${isOwe ? "" : lendSourceHtml("aa", lendWallets, lendSavings)}
+
             <div class="form-group">
                 <label>Tanggal <span class="required">*</span></label>
                 <input type="date" id="add-amount-date" class="form-input" 
@@ -1651,6 +2033,18 @@ async function showAddAmountModal(debtId) {
   document.body.appendChild(modal);
 
   const form = modal.querySelector("#add-amount-form");
+  const addAmountInput = modal.querySelector("#add-amount-value");
+  const lend = isOwe
+    ? null
+    : setupLendSource(modal, "aa", lendWallets, lendSavings, {
+        getAmount: () => parseMoney(addAmountInput.value) || 0,
+        getName: () => debt.partyName,
+      });
+  if (lend) {
+    lend.setVisible(true);
+    addAmountInput.addEventListener("input", lend.refresh);
+  }
+  let lendBusy = false;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -1674,33 +2068,80 @@ async function showAddAmountModal(debtId) {
     const timeNow = getCurrentDateTime().time;
     const dateStr = `${ad}/${am}/${ay} ${timeNow}`;
 
-    // Ambil nilai SEBELUM dimutasi supaya perhitungan akurat
-    const remainingBefore = debt.remainingAmount ?? debt.amount;
-    const prevPrincipalRemaining = debt.principalRemaining ?? remainingBefore;
+    // Memberi pinjaman -> pengeluaran: sumber dana harus dipilih & saldonya cukup
+    const lendSel = lend && lend.active() ? lend.read(addAmount) : null;
+    if (lendSel && !lendSel.ok) {
+      showToast(lendSel.message, "error");
+      return;
+    }
 
-    debt.amount = (debt.amount || 0) + addAmount;
-    debt.remainingAmount = remainingBefore + addAmount;
-    debt.principalRemaining = prevPrincipalRemaining + addAmount;
-    debt.status =
-      debt.remainingAmount <= 0
+    // Kalau disimpan bersama transaksi, kerjakan salinan: gagal = data asli utuh
+    const d = lendSel ? structuredClone(debt) : debt;
+
+    // Ambil nilai SEBELUM dimutasi supaya perhitungan akurat
+    const remainingBefore = d.remainingAmount ?? d.amount;
+    const prevPrincipalRemaining = d.principalRemaining ?? remainingBefore;
+
+    d.amount = (d.amount || 0) + addAmount;
+    d.remainingAmount = remainingBefore + addAmount;
+    d.principalRemaining = prevPrincipalRemaining + addAmount;
+    d.status =
+      d.remainingAmount <= 0
         ? "completed"
-        : debt.remainingAmount < debt.amount
+        : d.remainingAmount < d.amount
           ? "partial"
           : "active";
-    debt.updatedAt = getCurrentDateTime().datetime;
+    d.updatedAt = getCurrentDateTime().datetime;
 
     // Simpan riwayat penambahan
-    if (!debt.additions) debt.additions = [];
-    debt.additions.push({
+    if (!d.additions) d.additions = [];
+    const addition = {
       amount: addAmount,
       note: note,
       date: dateStr,
-    });
+    };
+    d.additions.push(addition);
 
-    await updateItem(STORES.DEBTS, debt);
+    if (lendSel) {
+      if (lendBusy) return;
+      lendBusy = true;
+      let result;
+      try {
+        result = await saveLendWithTransaction({
+          debt: d,
+          isNew: false,
+          txRecord: buildLendTxRecord({
+            partyName: d.partyName,
+            amount: addAmount,
+            date: dateValue,
+            time: timeNow,
+            note,
+            debtNote: "Tambahan piutang",
+          }),
+          walletId: lendSel.walletId,
+          savingId: lendSel.savingId,
+          onTxId: (id) => {
+            addition.transactionId = id;
+          },
+        });
+      } catch (err) {
+        console.error("Gagal menyimpan pinjaman:", err);
+        result = { ok: false, error: "exception" };
+      } finally {
+        lendBusy = false;
+      }
+      if (!result.ok) {
+        showToast(lendErrorMessage(result), "error");
+        return;
+      }
+    } else {
+      await updateItem(STORES.DEBTS, d);
+    }
 
     showToast(
-      `Berhasil menambah ${formatCurrency(addAmount)} ke hutang ${debt.partyName}`,
+      lendSel
+        ? `Berhasil menambah ${formatCurrency(addAmount)} ke piutang ${d.partyName} dan mencatat pengeluaran`
+        : `Berhasil menambah ${formatCurrency(addAmount)} ke hutang ${d.partyName}`,
       "success",
     );
     modal.remove();

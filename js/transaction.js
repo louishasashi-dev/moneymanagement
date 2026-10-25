@@ -10,7 +10,12 @@ import {
   initDB,
   STORES,
 } from "./db.js";
-import { getTemplatesByType } from "./template.js";
+import {
+  getTemplatesByType,
+  locationTemplateSaveHtml,
+  locationTemplateSelectHtml,
+  setupLocationTemplates,
+} from "./template.js";
 import {
   formatCurrency,
   formatDate,
@@ -94,7 +99,7 @@ function formatCurrencyShort(n) {
 }
 
 // Ikon tipe transaksi: pengeluaran = segitiga terbalik merah, pemasukan = segitiga ke atas hijau
-function typeTriangle(type) {
+export function typeTriangle(type) {
   const up = type === "income";
   const color = up ? "#16A34A" : "#DC4C4C";
   const d = up ? "M12 5 L21.5 20 H2.5 Z" : "M12 19 L2.5 4 H21.5 Z";
@@ -103,7 +108,7 @@ function typeTriangle(type) {
 
 // Pastikan viewport mobile normal: lebar = lebar layar, skala awal 1 (muat 1 halaman),
 // dan pengguna tetap boleh zoom in/out (tanpa maximum-scale / user-scalable=no)
-function ensureMobileViewport() {
+export function ensureMobileViewport() {
   let meta = document.querySelector('meta[name="viewport"]');
   if (!meta) {
     meta = document.createElement("meta");
@@ -346,7 +351,7 @@ function refitTxHeader() {
 }
 
 // Jalankan ulang setelah layout/font selesai agar ukuran bleed akurat
-function scheduleTxFullBleed() {
+export function scheduleTxFullBleed() {
   refitTxHeader();
   requestAnimationFrame(refitTxHeader);
   setTimeout(refitTxHeader, 150);
@@ -1525,10 +1530,12 @@ async function showTransactionModalImpl(transactionId = null) {
           <details class="mx-more"${isEdit && (transaction.location || transaction.note) ? " open" : ""}>
             <summary>Lokasi dan catatan</summary>
             <div class="mx-more-body">
+              ${locationTemplateSelectHtml("transaction")}
               <label class="mx-field"><span class="mx-lbl">Lokasi</span>
                 <input type="text" id="transaction-location" class="mx-input" autocomplete="off"
                        value="${isEdit ? escapeAttr(transaction.location || "") : ""}"
                        placeholder="Contoh: Indomaret, Warung Bu Siti"></label>
+              ${locationTemplateSaveHtml("transaction")}
               <label class="mx-field"><span class="mx-lbl">Catatan</span>
                 <textarea id="transaction-note" class="mx-input" rows="2" placeholder="Tambahkan catatan...">${isEdit ? escapeHtml(transaction.note || "") : ""}</textarea></label>
             </div>
@@ -1558,6 +1565,7 @@ async function showTransactionModalImpl(transactionId = null) {
     </form>`;
   document.body.appendChild(modal);
 
+  let locTpl = null; // diisi setelah template lokasi selesai dimuat
   const prevOverflow = document.body.style.overflow;
   document.body.style.overflow = "hidden";
   const closeForm = () => {
@@ -1984,12 +1992,17 @@ async function showTransactionModalImpl(transactionId = null) {
         }
       }
 
+      // Opsional: simpan lokasi sebagai template lokasi (tanpa duplikat)
+      const locationSaved =
+        locTpl && locTpl.shouldSave() ? await locTpl.save() : false;
+
       showToast(
-        isEdit
+        (isEdit
           ? "Transaksi berhasil diupdate"
           : templateSaved
             ? "Transaksi ditambahkan & disimpan sebagai template"
-            : "Transaksi berhasil ditambahkan",
+            : "Transaksi berhasil ditambahkan") +
+          (locationSaved ? " (lokasi disimpan sebagai template)" : ""),
         "success",
       );
 
@@ -2022,6 +2035,13 @@ async function showTransactionModalImpl(transactionId = null) {
       await commitTransaction(null);
     }
   });
+
+  // Template lokasi: pilih untuk mengisi lokasi / simpan lokasi yang diketik
+  locTpl = await setupLocationTemplates(
+    modal,
+    "transaction",
+    modal.querySelector("#transaction-location"),
+  );
 
   modal.querySelector("#transaction-name").focus({ preventScroll: true });
 }
@@ -2511,8 +2531,10 @@ export function openMultiItemForm(config) {
           <details class="mx-more"${hasExtra ? " open" : ""}>
             <summary>Lokasi dan catatan</summary>
             <div class="mx-more-body">
+              ${locationTemplateSelectHtml("mx")}
               <label class="mx-field"><span class="mx-lbl">Lokasi</span>
                 <input type="text" id="mx-location" class="mx-input" autocomplete="off" value="${escapeAttr(initial.location || "")}" placeholder="Contoh: Indomaret, Warung Bu Siti"></label>
+              ${locationTemplateSaveHtml("mx")}
               <label class="mx-field"><span class="mx-lbl">Catatan</span>
                 <textarea id="mx-note" class="mx-input" rows="2" placeholder="Tambahkan catatan...">${escapeHtml(initial.note || "")}</textarea></label>
             </div>
@@ -2547,6 +2569,14 @@ export function openMultiItemForm(config) {
   };
 
   const $ = (sel) => overlay.querySelector(sel);
+
+  // Template lokasi (dimuat async; kalau gagal, form tetap jalan tanpa template)
+  let locTpl = null;
+  setupLocationTemplates(overlay, "mx", $("#mx-location"))
+    .then((t) => {
+      locTpl = t;
+    })
+    .catch((err) => console.error("Gagal memuat template lokasi:", err));
   const form = $(".mx-sheet");
   const itemsEl = $("#mx-items");
   const totalEl = $("#mx-total");
@@ -2805,7 +2835,13 @@ export function openMultiItemForm(config) {
       );
       return;
     }
-    showToast(result.successMessage || "Tersimpan", "success");
+    const locationSaved =
+      locTpl && locTpl.shouldSave() ? await locTpl.save() : false;
+    showToast(
+      (result.successMessage || "Tersimpan") +
+        (locationSaved ? " (lokasi disimpan sebagai template)" : ""),
+      "success",
+    );
     close();
     if (config.afterSave) await config.afterSave();
   });
@@ -3014,7 +3050,7 @@ function showMultiTransactionDetailModal(transaction, wallet) {
 }
 
 // Gaya modal transaksi banyak: sheet dari bawah di mobile, dialog di tengah di desktop
-function ensureMultiSheetStyles() {
+export function ensureMultiSheetStyles() {
   if (document.getElementById("mx-sheet-styles")) return;
   const style = document.createElement("style");
   style.id = "mx-sheet-styles";
@@ -3323,7 +3359,7 @@ async function deleteTransactionById(id) {
 
 // Helper functions
 // Style halaman transaksi: mengikuti desain dashboard (header hijau, kartu, tile, daftar bergaris tipis)
-function addTransactionStyles() {
+export function addTransactionStyles() {
   if (document.getElementById("transaction-styles")) return;
 
   const style = document.createElement("style");
